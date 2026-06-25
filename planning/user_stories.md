@@ -1,6 +1,6 @@
 # Project Proposal
 
-Pod Members: **Add Pod Members Names**
+Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 
 ## Problem Statement
 
@@ -22,4 +22,4 @@ Include at least 10 user stories.
 
 ## Wireframe (Bonus)
 
-Insert link or image to your group's wireframe. 
+Insert link or image to your group's wireframe.
