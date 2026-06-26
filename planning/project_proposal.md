@@ -81,10 +81,10 @@ Combine social platforms with food discovery, all in one app based on user profi
 - `timeSlot`: ISO 8601 datetime for filtering by open hours — e.g. `"2026-07-04T19:00:00"`. `null` means no time constraint yet
 
 **What the backend does:**
-1. Fetch all member profiles from the database and merge with the request snapshot — the DB is the source of truth for full dietary and allergy data
+1. Fetch all member profiles from the database and merge with the request
 2. Determine search scope from `locationMode`: if `"named"` or `"realtime"`, query restaurants within `radiusMiles` of `location` filtered by `timeSlot`; if `"unset"`, skip geographic filtering entirely and set `locationPrompt: true` in the response. In both cases, exclude any restaurant that cannot accommodate every member's hard dietary restrictions
 3. Construct a prompt for the AI model containing: the `occasion` type, the merged group preference profile, the candidate restaurant list with menu tags and descriptions, and a system instruction tuned to the occasion (e.g. for `"date"`, the AI weights ambiance and intimacy; for `"business_meal"`, it weights prestige and noise level)
-4. Call the AI model with the prompt, requesting a ranked JSON list of up to 5 restaurants each with a plain-English justification
+4. Call the AI model with the prompt, requesting a ranked JSON list of up to 5 restaurants each with a justification
 5. Log the session context and AI response to the audit table for admin observability
 6. Return the ranked recommendations to the frontend
 
@@ -125,7 +125,7 @@ The AI API key and the full restaurant and user database never leave the server 
 
 **Endpoint:** `POST /ai/analyze`
 
-**Who calls it:** The frontend calls this after every user turn in the personal agent chat — both during first-time profile setup and during an active group session when a member is describing what they want. It is the backbone of the voice-first experience.
+**Who calls it:** The frontend calls this after every user turn in the personal agent chat. Including during both first-time profile setup and during an active group session when a member is describing what they want. It is the backbone of the voice-first experience.
 
 **Request body:**
 - `userId`: the logged-in user's ID
@@ -139,9 +139,9 @@ The AI API key and the full restaurant and user database never leave the server 
 1. Validate that the user belongs to the given session, or is in a valid profile-edit state if `sessionId` is null
 2. Construct a structured extraction prompt instructing the AI to read the message in context of the conversation history and output a JSON object of any new or updated preference signals — cuisine inclinations, mood and vibe signals, noise tolerance, dietary flags, price sensitivity cues, occasion context clues, and **location intent** (whether the user named a place, expressed intent to search nearby right now, or said nothing location-related). The AI maps location to `locationMode: "named" | "realtime" | "unset"` and, if `"named"`, extracts the place name or neighborhood string for the frontend to geocode
 3. Call the AI model requesting a strict JSON-only response
-4. Diff the extracted signals against the user's `currentProfile` — only write fields that are new or changed
+4. Diff the extracted signals against the user's `currentProfile` writing fields that are new or changed
 5. Update the user's profile and session preference snapshot in the database
-6. Construct and return an `agentReply` — a natural-language response the frontend plays back to the user via voice or text — confirming what was understood and asking a follow-up if key signals are still missing
+6. Construct and return an `agentReply,` a natural-language response the frontend plays back to the user via voice or text — confirming what was understood and asking a follow-up if key signals are still missing
 
 **Success response:**
 - Status: `200`
@@ -187,7 +187,7 @@ The AI model receives the user's full conversation history and profile — inclu
 1. Authenticate the request and verify the requesting user was a participant in session `:id`
 2. Check the `session_summaries` cache table — if a summary was already generated when the session closed (async), return it immediately without calling the AI model
 3. If no cached summary exists, fetch the raw session data: occasion type, aggregated group preferences, the final restaurant match and score, and each member's cart selections
-4. Construct a prompt asking the AI to write a 2–3 sentence warm, human-sounding recap naming the occasion, the restaurant, and the key group signals that drove the match (e.g. everyone needed vegan options, budget was around $25 a head)
+4. Construct a prompt asking the AI to write a 2–3 sentence recap naming the occasion, the restaurant, and the key group signals that drove the match (e.g. everyone needed vegan options, budget was around $25 a head)
 5. Cache the generated summary in `session_summaries` tagged to the `sessionId`
 6. Return the summary to the frontend
 
@@ -213,7 +213,7 @@ The AI model receives the user's full conversation history and profile — inclu
 **Failure response:**
 - Status: `500`
 - Body: `{ "error": "Summary unavailable" }`
-- Fallback behavior: Frontend displays a minimal structured recap — restaurant name, occasion, group size, and date — without the AI prose. No error is shown to the user; the structured fallback is designed to look intentional.
+- Fallback behavior: Frontend displays a minimal structured recap: restaurant name, occasion, group size, and date. No error is shown to the user; the structured fallback is designed to look intentional.
 
 **Why this runs on the backend (not in the browser):**
 Summaries are generated once and cached server-side so every group member who opens their session history sees the same consistent recap rather than a newly generated (and potentially different) one each time. The AI call happens asynchronously when the session closes, so no user ever waits for it when they open the recap screen.
