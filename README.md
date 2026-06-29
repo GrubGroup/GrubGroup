@@ -4,7 +4,7 @@ SITE Course Year: **2026**
 
 Cohort: **Salesforce**
 
-Team Member Names:**Della Lee, Daniel Lam, Audrey Dequito, Miguel Cuevas **
+Team Member Names: **Della Lee, Daniel Lam, Audrey Dequito, Miguel Cuevas **
 
 Mentors Names: ** Jennifer Jin, Allan George Thomas, Areeta Wong, Ashish Khanchandani, Raghav Abboy, Rajiv Kochumman**
 
