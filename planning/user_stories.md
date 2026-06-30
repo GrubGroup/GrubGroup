@@ -15,20 +15,6 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 
 ## 2. User Personas
 
-# User Roles & Personas
-
----
-
-## 1. User Roles
-
-- **"member"**: a user who joins or creates a group session to find a restaurant that works for everyone
-- **"restaurant_owner"**: a user who manages their restaurant's listing, menu photos, and descriptions on the platform
-- **"admin"**: an internal operator who approves restaurant listings, moderates content, and monitors the AI pipeline
-
----
-
-## 2. User Personas
-
 ### Role: Member
 
 **Maya**, 26, grad student in San Francisco. The default planner in her friend group — always the one starting the chat and researching options while everyone else says "whatever." Phone-first, uses the app weekly with groups of 4–6 that have mixed dietary needs (vegan, nut allergy, varying budgets). Wants the app to take the planning burden off her without feeling like a form.
@@ -53,7 +39,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 
 ## User Stories
 
-## Member
+### Member
 
 **Onboarding & Profile**
 - As a member, I want to set my dietary restrictions and food preferences once, so that I don't have to repeat them every time I join a session.
@@ -77,7 +63,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 - As a member, I want to end a session once we've picked a restaurant, so that the result is saved and the group chat returns to normal.
 - As a member, I want to see a short summary of how a past session was decided, so that I can recall the outcome without re-reading the whole conversation.
 
-## Restaurant Owner
+### Restaurant Owner
 
 **Listing Management**
 - As a restaurant owner, I want to create a profile for my restaurant, so that groups can discover and consider it.
@@ -90,7 +76,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 - As a restaurant owner, I want to see incoming group orders before they arrive, so that my kitchen can prepare for larger parties.
 - As a restaurant owner managing multiple locations, I want to update my menu across all locations at once, so that I don't have to repeat the same edit multiple times.
 
-## Admin
+### Admin
 
 **Content Moderation**
 - As an admin, I want to review new restaurant listings before they go live, so that only accurate, legitimate businesses appear on the platform.
@@ -102,7 +88,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 - As an admin, I want to manage user roles and permissions, so that I can grant or revoke restaurant owner and admin access as needed.
 - As an admin, I want to suspend a user or restaurant account, so that I can respond to abuse or fraud on the platform.
 
-# Backlog
+### Backlog
 
 *Stories considered but not actively being built. Revisit as priorities shift.*
 
@@ -113,7 +99,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 - As an admin, I want to run the same set of test inputs through the AI pipeline and compare outputs over time, so that I can catch regressions in recommendation quality.
 - As a member, I want to set a time limit on a session, so that the group is nudged to make a decision instead of stalling indefinitely.
 
----
+## Previous User Stories
 
 1. As a Group Member, I want to fill out my preference profile once (dietary restrictions, food preferences, budget) so that I don't have to re-enter it every time.
 2. As a Group Member, I want to edit my preference profile anytime so that my recommendations stay accurate as my tastes change.
