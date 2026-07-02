@@ -6,10 +6,214 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  OWNER
+  ADMIN
+}
+
+enum MessageType {
+  TEXT
+  IMG
+  SYSTEM
+  SESSION_BLOCK
+}
+
+model User {
+  // -- Fields (columns) --
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String   @unique
+  role         Role     @default(USER)
+  display_name String?
+  avatar_url   String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  // -- Relations (virtual, no columns) --
+  profile             Profile?
+  hosted_sessions     Session[]       @relation("SessionHost")
+  session_memberships SessionMember[]
+  events              Event[]         @relation("EventAttendees")
+  group_memberships   GroupMember[]
+  group_messages      GroupMessage[]
+}
+
+model Profile {
+  // -- Fields (columns) --
+  id                   Int      @id @default(autoincrement())
+  user_id              Int      @unique
+  dietary_restrictions String[]
+  disliked_cuisines    String[]
+  preferred_cuisines   String[]
+  budget_min           Int
+  budget_max           Int
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  liked_restaurant_ids Int[]
+
+  // -- Relations (virtual, no columns) --
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  // -- Fields (columns) --
+  id           Int       @id @default(autoincrement())
+  host_user_id Int
+  group_id     Int? // originating group; server reads this to stamp the Event
+  time_limit   Int
+  created_at   DateTime  @default(now())
+  closed_at    DateTime?
+  avg_budget   Float
+
+  // -- Relations (virtual, no columns) --
+  host            User             @relation("SessionHost", fields: [host_user_id], references: [id])
+  group           Group?           @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  members         SessionMember[]
+  qas             Qa[]             @relation("SessionQas")
+  recommendations Recommendation[]
+}
+
+// Join model: one row per (user joined a session). Carries per-member status.
+model SessionMember {
+  // -- Fields (columns) --
+  session_id Int
+  user_id    Int
+  status     Boolean  @default(false) // was Session.members_status — now per-member
+  joined_at  DateTime @default(now())
+
+  // -- Relations (virtual, no columns) --
+  session Session @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([session_id, user_id])
+}
+
+model Event {
+  // -- Fields (columns) --
+  id              Int      @id @default(autoincrement())
+  date            DateTime
+  address         String
+  restaurant_id   Int
+  restaurant_name String
+  group_id        Int?
+  group_name      String? // snapshot of Group.name at creation; persists after group deletion
+
+  // -- Relations (virtual, no columns) --
+  restaurant Restaurant @relation(fields: [restaurant_id], references: [id])
+  attendees  User[]     @relation("EventAttendees")
+  group      Group?     @relation(fields: [group_id], references: [id], onDelete: SetNull)
+}
+
+model Restaurant {
+  // -- Fields (columns) --
+  id           Int      @id @default(autoincrement())
+  name         String
+  description  String?
+  cuisine_tags String[]
+  dietary_tags String[]
+  price_avg    Float?
+  address      String?
+  lat          Float?
+  long         Float?
+  hours        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  avg_rating   Float?
+
+  // -- Relations (virtual, no columns) --
+  events               Event[]
+  recommendation_items RecommendationItem[]
+}
+
+model Qa {
+  // -- Fields (columns) --
+  id            Int     @id @default(autoincrement())
+  session_id    Int
+  occasion      String?
+  location_mode String?
+  location_lat  Float?
+  location_lon  Float?
+  radius_miles  Float?
+  time_slot     String?
+  budget_min    Int?
+  budget_max    Int?
+  member_status String?
+
+  // -- Relations (virtual, no columns) --
+  session Session @relation("SessionQas", fields: [session_id], references: [id], onDelete: Cascade)
+}
+
+model Group {
+  // -- Fields (columns) --
+  id         Int       @id @default(autoincrement())
+  created_at DateTime  @default(now())
+  closed_at  DateTime?
+  name       String
+
+  // -- Relations (virtual, no columns) --
+  members  GroupMember[]
+  messages GroupMessage[]
+  events   Event[]
+  sessions Session[]
+}
+
+// Join model: one row per (user in a group).
+model GroupMember {
+  // -- Fields (columns) --
+  group_id  Int
+  user_id   Int
+  joined_at DateTime @default(now())
+
+  // -- Relations (virtual, no columns) --
+  group Group @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([group_id, user_id])
+}
+
+model GroupMessage {
+  // -- Fields (columns) --
+  id           Int         @id @default(autoincrement())
+  group_id     Int
+  user_id      Int
+  content      String
+  message_type MessageType @default(TEXT)
+  created_at   DateTime    @default(now())
+
+  // -- Relations (virtual, no columns) --
+  group Group @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id])
+}
+
+model Recommendation {
+  // -- Fields (columns) --
+  id         Int      @id @default(autoincrement())
+  session_id Int
+  created_at DateTime @default(now())
+
+  // -- Relations (virtual, no columns) --
+  session Session              @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  items   RecommendationItem[]
+}
+
+// Join model: one row per recommended restaurant, carrying its score + justification.
+model RecommendationItem {
+  // -- Fields (columns) --
+  id                Int     @id @default(autoincrement())
+  recommendation_id Int
+  restaurant_id     Int
+  match_score       Float?
+  justification     String?
+
+  // -- Relations (virtual, no columns) --
+  recommendation Recommendation @relation(fields: [recommendation_id], references: [id], onDelete: Cascade)
+  restaurant     Restaurant     @relation(fields: [restaurant_id], references: [id])
 }
