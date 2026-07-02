@@ -115,4 +115,4 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 
 ## Wireframe (Bonus)
 
-Insert link or image to your group's wireframe.
+[Wireframe](https://www.figma.com/proto/mEDkotB3eUYXYc1E6arQ7t/GrubGroup-Wireframes--Separated-?node-id=8-2258&p=f&t=hpotyvnyr1hUF0H6-0&scaling=min-zoom&content-scaling=fixed&page-id=0%3A1&starting-point-node-id=8%3A2258)
