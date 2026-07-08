@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Environment (keep .env.example committed, ignore real secrets)
+.env
+.env.local
+
+# Prisma generated client
+generated/
+.prisma/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
