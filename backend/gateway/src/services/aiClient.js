@@ -4,7 +4,9 @@ import { config } from '../config/index.js';
 
 const client = axios.create({
   baseURL: config.aiServiceUrl,
-  timeout: 30_000,
+  // Embedding tail latency can be high (cold provider routing on OpenRouter),
+  // so allow generous headroom before giving up and storing a NULL embedding.
+  timeout: 120_000,
   headers: {
     // Shared internal secret so /embed isn't openly callable. Must match the
     // ai_service JWT_SECRET (see app/api/deps.py).
