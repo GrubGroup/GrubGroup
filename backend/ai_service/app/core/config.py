@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # LLM / RAG (via OpenRouter)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    embedding_model: str = "qwen/qwen3-embedding"
+    embedding_model: str = "qwen/qwen3-embedding-8b"
 
     # Shared internal secret guarding service-to-service endpoints (must match
     # the gateway JWT_SECRET).
