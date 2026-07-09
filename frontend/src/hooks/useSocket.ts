@@ -10,13 +10,11 @@ import { useGroupChatStore } from '@/stores/groupChatStore'
 // messages, and leaves on unmount.
 export function useSocket(groupId: number) {
   const token = useAuthStore((s) => s.token)
-  const userId = useAuthStore((s) => s.user?.id)
   const name = useAuthStore((s) => s.user?.display_name ?? s.user?.username)
 
   useEffect(() => {
     const socket = getSocket({
       token: token ?? undefined,
-      userId: userId ?? undefined,
       name: name ?? undefined,
     })
     if (!socket) return
@@ -40,5 +38,5 @@ export function useSocket(groupId: number) {
       socket.off('chat:message', handleMessage)
       socket.off('session:start', handleSessionStart)
     }
-  }, [token, userId, name, groupId])
+  }, [token, name, groupId])
 }

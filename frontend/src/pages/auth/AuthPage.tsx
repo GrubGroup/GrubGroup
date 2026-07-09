@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Button, Input } from '@/components/ui'
 import { BrandPanel } from '@/components/layout/BrandPanel'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { MOCK_USER } from '@/api/mock/profile.mock'
+import { useGoogleSignIn } from '@/hooks/useGoogleSignIn'
+import * as authApi from '@/api/auth.api'
 
 export interface AuthPageProps {
   mode: 'signin' | 'signup'
@@ -17,22 +19,63 @@ const GoogleMark = () => (
   </svg>
 )
 
-const AppleMark = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M16.4 12.8c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3-.8-1.6 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7 2-1 2.8-2.1c.9-1.3 1.2-2.5 1.3-2.6-.1 0-2.5-1-2.5-3.8ZM14.3 5.9c.6-.8 1-1.9.9-3-.9 0-2 .6-2.7 1.4-.6.7-1.1 1.8-.9 2.8 1 .1 2-.5 2.7-1.2Z" />
-  </svg>
-)
-
 export function AuthPage({ mode }: AuthPageProps) {
   const go = useNavStore((s) => s.go)
-  const loginAsGuest = useAuthStore((s) => s.loginAsGuest)
+  const login = useAuthStore((s) => s.login)
   const isSignup = mode === 'signup'
 
-  const handleSubmit = () => {
-    loginAsGuest(MOCK_USER.display_name ?? 'Dev Patel')
-    // Sign in → group chats; Sign up → onboarding.
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // On any successful auth, store the session then route per mode.
+  const onAuthed = (result: authApi.AuthResult) => {
+    login(result.token, result.user)
+    // Sign up → onboarding; sign in → group chats.
     go(isSignup ? 'onboarding-1' : 'empty-groups')
   }
+
+  // Extract a human-readable message from an axios error, else a generic one.
+  const toMessage = (err: unknown): string => {
+    const data = (err as { response?: { data?: { error?: string } } })?.response?.data
+    return data?.error ?? 'Something went wrong. Please try again.'
+  }
+
+  const handleSubmit = async () => {
+    setError(null)
+    if (!email || !password) {
+      setError('Email and password are required.')
+      return
+    }
+    setLoading(true)
+    try {
+      const result = isSignup
+        ? await authApi.register({ email, password, displayName: fullName })
+        : await authApi.login({ email, password })
+      onAuthed(result)
+    } catch (err) {
+      setError(toMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const google = useGoogleSignIn({
+    onToken: async (idToken) => {
+      setError(null)
+      setLoading(true)
+      try {
+        onAuthed(await authApi.loginWithGoogle({ idToken }))
+      } catch (err) {
+        setError(toMessage(err))
+      } finally {
+        setLoading(false)
+      }
+    },
+    onError: () => setError('Google sign-in failed. Please try again.'),
+  })
 
   return (
     <div className="flex h-screen bg-surface-raised">
@@ -52,11 +95,13 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <button className="flex h-11 w-full items-center justify-center gap-2 rounded-input border border-border bg-surface-raised text-sm font-medium text-text hover:bg-surface-sunken">
+            <button
+              type="button"
+              onClick={google.signIn}
+              disabled={!google.ready || loading}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-input border border-border bg-surface-raised text-sm font-medium text-text hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <GoogleMark /> Continue with Google
-            </button>
-            <button className="flex h-11 w-full items-center justify-center gap-2 rounded-input bg-surface-inverse text-sm font-medium text-white hover:opacity-90">
-              <AppleMark /> Continue with Apple
             </button>
           </div>
 
@@ -67,13 +112,26 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
 
           <div className="flex flex-col gap-3">
-            {isSignup && <Input label="FULL NAME" placeholder="Dev Patel" />}
-            <Input label="EMAIL" type="email" placeholder="you@example.com" />
+            {isSignup && (
+              <Input
+                label="FULL NAME"
+                placeholder="Dev Patel"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            )}
+            <Input
+              label="EMAIL"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
             <div className="flex flex-col gap-1.5">
               {!isSignup && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-text">PASSWORD</span>
-                  <button className="text-xs text-text-muted hover:text-text">
+                  <button type="button" className="text-xs text-text-muted hover:text-text">
                     Forgot password?
                   </button>
                 </div>
@@ -82,11 +140,18 @@ export function AuthPage({ mode }: AuthPageProps) {
                 label={isSignup ? 'PASSWORD' : undefined}
                 type="password"
                 placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSubmit()
+                }}
               />
             </div>
           </div>
 
-          <Button fullWidth variant="primary" onClick={handleSubmit}>
+          {error && <p className="text-sm text-error">{error}</p>}
+
+          <Button fullWidth variant="primary" onClick={handleSubmit} isLoading={loading}>
             {isSignup ? 'Create account' : 'Sign in'}
           </Button>
 

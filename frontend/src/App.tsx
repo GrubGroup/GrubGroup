@@ -8,11 +8,21 @@ import { EventsPage } from '@/pages/member/EventsPage'
 import { AgentChatPage } from '@/pages/member/session/AgentChatPage'
 import { TopPicksPage } from '@/pages/member/session/TopPicksPage'
 import { useNavStore } from '@/stores/navStore'
+import { useAuthStore } from '@/stores/authStore'
+import { USE_MOCK } from '@/lib/env'
 
 // Frontend-only screen switch (no router). Transitions follow the wireframe
 // journey (see frontend-user-journey memory).
 function App() {
   const screen = useNavStore((s) => s.screen)
+  const user = useAuthStore((s) => s.user)
+
+  // Auth guard (live mode only): every screen except the auth pages requires a
+  // signed-in user. Mock mode boots pre-authenticated, so this is a no-op there.
+  const isAuthScreen = screen === 'sign-in' || screen === 'sign-up'
+  if (!USE_MOCK && !user && !isAuthScreen) {
+    return <AuthPage mode="signin" />
+  }
 
   switch (screen) {
     case 'sign-in':

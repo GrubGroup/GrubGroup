@@ -28,14 +28,17 @@ enum MessageType {
 
 model User {
   // -- Fields (columns) --
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  email        String   @unique
-  role         Role     @default(USER)
-  display_name String?
-  avatar_url   String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  email         String   @unique
+  role          Role     @default(USER)
+  display_name  String?
+  avatar_url    String?
+  // -- Auth credentials --
+  password_hash String? // bcrypt hash; null for Google-only accounts
+  google_id     String?  @unique // Google 'sub'; null for password-only accounts
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   // -- Relations (virtual, no columns) --
   profile             Profile?
