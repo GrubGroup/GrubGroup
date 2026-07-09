@@ -3,4 +3,4 @@
 // the real gateway — no component/store changes required.
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 
-export const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:3000'
+export const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:4000'
