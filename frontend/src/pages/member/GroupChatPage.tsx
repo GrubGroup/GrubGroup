@@ -7,11 +7,11 @@ import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { cn } from '@/utils/cn'
 import { SESSION_STARTED_BY } from '@/api/mock/groupChat.mock'
-import { MOCK_GROUPS } from '@/api/mock/groups.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { useGroupsStore } from '@/stores/groupsStore'
 import {
   useGroupChatStore,
   selectGroupMessages,
@@ -48,7 +48,8 @@ export function GroupChatPage() {
   // client shows the card inline at the same point. Broadcasts to the whole room.
   const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
 
-  const groupName = MOCK_GROUPS.find((g) => g.id === groupId)?.name ?? 'Group'
+  const groups = useGroupsStore((s) => s.groups)
+  const groupName = groups.find((g) => g.id === groupId)?.name ?? 'Group'
 
   useEffect(() => {
     if (members.length === 0) void loadSession(42, currentUserId)

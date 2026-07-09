@@ -1,21 +1,34 @@
+import { useState } from 'react'
 import { Icon } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
+import { NewGroupModal } from '@/components/session/NewGroupModal'
 import { useNavStore } from '@/stores/navStore'
-import { MOCK_GROUPS } from '@/api/mock/groups.mock'
+import { useGroupsStore } from '@/stores/groupsStore'
 import { cn } from '@/utils/cn'
 
 // Left column for the group-chat / agent-chat context: AppSidebar with the
 // recent-groups list as its body. Clicking a group selects it as the active
-// chat room and navigates to the group-chat screen.
+// chat room; "New group" opens a name prompt and creates one (local-only).
 export function GroupsSidebar() {
   const go = useNavStore((s) => s.go)
   const groupId = useNavStore((s) => s.groupId)
   const setGroup = useNavStore((s) => s.setGroup)
+  const groups = useGroupsStore((s) => s.groups)
+  const addGroup = useGroupsStore((s) => s.addGroup)
+
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const handleCreate = (name: string) => {
+    const group = addGroup(name)
+    setGroup(group.id)
+    go('group-chat')
+    setModalOpen(false)
+  }
 
   return (
     <AppSidebar activeTab="groups">
       <button
-        onClick={() => go('group-chat')}
+        onClick={() => setModalOpen(true)}
         className="flex w-full items-center gap-3 border-b border-border px-4 py-2.5 text-left"
       >
         <span className="text-text-muted">
@@ -23,7 +36,7 @@ export function GroupsSidebar() {
         </span>
         <span className="text-xs font-medium text-text-muted">New group</span>
       </button>
-      {MOCK_GROUPS.map((g) => (
+      {groups.map((g) => (
         <button
           key={g.id}
           onClick={() => {
@@ -47,6 +60,12 @@ export function GroupsSidebar() {
           </div>
         </button>
       ))}
+
+      <NewGroupModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleCreate}
+      />
     </AppSidebar>
   )
 }
