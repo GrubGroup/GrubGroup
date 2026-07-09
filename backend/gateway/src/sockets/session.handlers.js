@@ -46,4 +46,15 @@ export function registerSessionHandlers(io, socket) {
 
     io.to(room(groupId)).emit('chat:message', msg)
   })
+
+  // A member started a session. Broadcast to the whole room (incl. sender) so
+  // every client shows the session card live, inline in their own chat.
+  socket.on('session:start', ({ groupId }) => {
+    if (groupId == null) return
+    io.to(room(groupId)).emit('session:start', {
+      groupId,
+      startedBy: socket.data.userId ?? null,
+      at: new Date().toISOString(),
+    })
+  })
 }

@@ -12,7 +12,11 @@ import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { useGroupChatStore, selectGroupMessages } from '@/stores/groupChatStore'
+import {
+  useGroupChatStore,
+  selectGroupMessages,
+  selectSessionStartIndex,
+} from '@/stores/groupChatStore'
 import { useSocket } from '@/hooks/useSocket'
 
 // Card state derives from which group-chat screen we're on.
@@ -37,6 +41,12 @@ export function GroupChatPage() {
   useSocket(groupId)
   const messages = useGroupChatStore(selectGroupMessages(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
+  const startSession = useGroupChatStore((s) => s.startSession)
+
+  // Session-start is synced live via the socket. The store records, per group,
+  // the message index where the card belongs (null = not started), so every
+  // client shows the card inline at the same point. Broadcasts to the whole room.
+  const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
 
   const groupName = MOCK_GROUPS.find((g) => g.id === groupId)?.name ?? 'Group'
 
@@ -47,6 +57,8 @@ export function GroupChatPage() {
   const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
   const total = members.length || 6
+
+  const handleStartSession = () => startSession(groupId)
 
   const handleJoin = () => {
     join()
@@ -80,9 +92,9 @@ export function GroupChatPage() {
               {total} members · <span className="text-primary">session active</span>
             </p>
           </div>
-          {cardState === 'not-joined' && (
+          {sessionStartIndex === null && (
             <button
-              onClick={handleJoin}
+              onClick={handleStartSession}
               className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
             >
               <Icon name="sparkles" size={12} /> Start session
@@ -92,26 +104,35 @@ export function GroupChatPage() {
 
         {/* Messages */}
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
-          {/* Session-started divider + card */}
-          <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
-            <span className="h-px flex-1 bg-border" />
-            {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
-            <span className="h-px flex-1 bg-border" />
-          </div>
-          <SessionCard
-            state={cardState}
-            memberIds={memberIds}
-            readyCount={cardState === 'complete' ? total : doneCount}
-            total={total}
-            onJoin={handleJoin}
-            onContinue={() => go('agent-chat')}
-            onViewResults={() => go('top-picks')}
-          />
-
-          {/* Live messages (server echo in live mode; seeded mocks in mock mode) */}
-          {messages.map((m) => (
+          {/* Messages that existed before the session started */}
+          {(sessionStartIndex === null ? messages : messages.slice(0, sessionStartIndex)).map((m) => (
             <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
           ))}
+
+          {/* Session-started divider + card — inline at the point the user started it */}
+          {sessionStartIndex !== null && (
+            <>
+              <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
+                <span className="h-px flex-1 bg-border" />
+                {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <SessionCard
+                state={cardState}
+                memberIds={memberIds}
+                readyCount={cardState === 'complete' ? total : doneCount}
+                total={total}
+                onJoin={handleJoin}
+                onContinue={() => go('agent-chat')}
+                onViewResults={() => go('top-picks')}
+              />
+
+              {/* Messages that arrived after the session started */}
+              {messages.slice(sessionStartIndex).map((m) => (
+                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
+              ))}
+            </>
+          )}
         </div>
 
         {/* Composer — same reusable message bar as the agent chat */}

@@ -28,11 +28,17 @@ export function useSocket(groupId: number) {
     }
     socket.on('chat:message', handleMessage)
 
+    const handleSessionStart = (payload: { groupId: number }) => {
+      useGroupChatStore.getState().receiveSessionStart(payload.groupId)
+    }
+    socket.on('session:start', handleSessionStart)
+
     // TODO(live, out of scope): session:member_done, cart:update.
 
     return () => {
       socket.emit('group:leave', { groupId })
       socket.off('chat:message', handleMessage)
+      socket.off('session:start', handleSessionStart)
     }
   }, [token, userId, name, groupId])
 }
