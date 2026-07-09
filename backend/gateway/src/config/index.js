@@ -16,6 +16,7 @@ function required(name) {
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
+  // Must match the Vite dev server origin so the browser can open the socket.
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   jwtSecret: required('JWT_SECRET'),
   aiServiceUrl: required('AI_SERVICE_URL'),
