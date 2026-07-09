@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Claude Code
+CLAUDE.md
+.claude/
+
+# Cursor Code
+CURSOR.md
+.cursor/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# OS files
+.DS_Store

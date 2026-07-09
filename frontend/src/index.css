@@ -1,111 +1,119 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ * GrubGroup design tokens — the SINGLE source of truth for all visual design.
+ *
+ * Two tiers:
+ *   Tier 1 — raw palette ("crayon box"). NEVER referenced by components.
+ *   Tier 2 — semantic aliases. The ONLY tokens components/utilities may use
+ *            (e.g. `bg-primary`, `text-text-muted`, `rounded-card`).
+ *
+ * To re-theme the whole app: edit Tier 2 aliases (and Tier 1 hexes) only.
+ * To swap a font: change the @font-face/<link> name + the one --font-* line.
+ * Components must never contain a hex, rgb(), or arbitrary value like bg-[#...].
+ */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@theme {
+  /* ============================================================
+   * TIER 1 — raw palette (never used directly by components)
+   * Hexes taken verbatim from the GrubGroup Figma wireframes.
+   * ============================================================ */
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Orange — brand scale (warm terracotta) */
+  --color-orange-700: #c2410c; /* deep */
+  --color-orange-500: #ea6a1e; /* brand */
+  --color-orange-300: #f6b27a; /* soft */
+
+  /* Cocoa — warm dark neutrals (wireframe uses #1a1208 as near-black) */
+  --color-cocoa-900: #1a1208; /* headings / primary text / dark panels */
+  --color-cocoa-800: #2c2820; /* user chat bubble */
+  --color-taupe-500: #9a8b7a; /* muted text */
+  --color-taupe-300: #b8a898; /* subtle text */
+
+  /* Sand — warm light surfaces (wireframe) */
+  --color-sand-300: #e5e4df;
+  --color-sand-200: #f0ede8;
+  --color-chat-bg: #f5f3ee; /* chat scroll area */
+  --color-panel-bg: #f7f4f0; /* side panels */
+
+  /* Member identity colors (avatars / progress) — from wireframe */
+  --color-member-purple: #6d28d9;
+  --color-member-pink: #be185d;
+  --color-member-terracotta: #c2410c;
+  --color-member-green: #15803d;
+  --color-member-blue: #1d4ed8;
+  --color-member-amber: #b45309;
+
+  /* Utility */
+  --color-focus: #61aaf2;
+  --color-success-base: #15803d;
+  --color-error-base: #bf4d43;
+  --color-black: #000000;
+  --color-white: #ffffff;
+
+  /* ============================================================
+   * TIER 2 — semantic aliases (components use ONLY these)
+   * ============================================================ */
+
+  /* Brand + interactive */
+  --color-primary: var(--color-orange-500);
+  --color-primary-hover: var(--color-orange-700);
+  --color-primary-soft: var(--color-orange-300);
+  --color-on-primary: var(--color-white);
+  --color-secondary: var(--color-orange-700);
+  --color-on-secondary: var(--color-white);
+
+  /* Surfaces (page → card → sunken → panels → inverse) */
+  --color-surface: var(--color-chat-bg);
+  --color-surface-raised: var(--color-white);
+  --color-surface-sunken: var(--color-sand-200);
+  --color-surface-panel: var(--color-panel-bg);
+  --color-surface-inverse: var(--color-cocoa-900);
+  --color-bubble-user: var(--color-cocoa-800);
+
+  /* Text */
+  --color-text: var(--color-cocoa-900);
+  --color-text-muted: var(--color-taupe-500);
+  --color-text-subtle: var(--color-taupe-300);
+  --color-on-inverse: var(--color-white);
+
+  /* Lines */
+  --color-border: rgba(0, 0, 0, 0.06);
+  --color-border-strong: rgba(0, 0, 0, 0.1);
+
+  /* State */
+  --color-focus-ring: var(--color-focus);
+  --color-success: var(--color-success-base);
+  --color-error: var(--color-error-base);
+  --color-overlay: color-mix(in srgb, var(--color-cocoa-900) 50%, transparent);
+
+  /* Typography — swap a font by editing one line (+ the <link> in index.html) */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', monospace;
+
+  /* Radius (semantic; wireframe uses generous 12-16px rounding) */
+  --radius-input: 0.75rem;
+  --radius-card: 1rem;
+  --radius-pill: 9999px;
+
+  /* Named spacing steps (extend Tailwind's numeric scale) */
+  --spacing-gutter: 1.25rem;
+  --spacing-section: 2rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
+/* Minimal global resets — layout/visuals belong in components via tokens. */
+html,
+body,
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  min-height: 100vh;
 }
 
 body {
   margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  font-family: var(--font-sans);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
