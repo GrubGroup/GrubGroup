@@ -44,7 +44,6 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 **Onboarding & Profile**
 - As a member, I want to set my dietary restrictions and food preferences once, so that I don't have to repeat them every time I join a session.
 - As a member, I want to update my profile at any time, so that my preferences stay accurate as they change.
-- As a member, I want to join a session without creating an account, so that I can participate even if I'm new to the app.
 
 **Groups**
 - As a member, I want to create a group with my regular friends or coworkers, so that I don't have to re-invite the same people every time we want to eat together.
@@ -116,4 +115,4 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 
 ## Wireframe (Bonus)
 
-Insert link or image to your group's wireframe.
+[Wireframe](https://www.figma.com/proto/mEDkotB3eUYXYc1E6arQ7t/GrubGroup-Wireframes--Separated-?node-id=8-2258&p=f&t=hpotyvnyr1hUF0H6-0&scaling=min-zoom&content-scaling=fixed&page-id=0%3A1&starting-point-node-id=8%3A2258)
