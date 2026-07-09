@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { GroupMessage } from '@/types'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
@@ -10,11 +11,32 @@ import {
   MOCK_GROUP_MESSAGES,
   MOCK_GROUP_MESSAGES_AFTER,
   SESSION_STARTED_BY,
+  type GroupMsg,
 } from '@/api/mock/groupChat.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { useGroupChatStore, selectGroupMessages } from '@/stores/groupChatStore'
+import { useSocket } from '@/hooks/useSocket'
+import { USE_MOCK } from '@/lib/env'
+
+// The group this chat belongs to. Hardcoded for now — the app has no real group
+// routing yet (matches the mock session's group_id: 7). Real routing is future work.
+const GROUP_ID = 7
+
+// Adapt a mock GroupMsg (display-time string) to a live GroupMessage (ISO `at`).
+function mockToMessage(m: GroupMsg): GroupMessage {
+  return {
+    id: m.id,
+    groupId: GROUP_ID,
+    userId: m.userId,
+    name: MOCK_MEMBER_NAMES[m.userId],
+    text: m.text,
+    // Best-effort ISO for the mock display time on an arbitrary fixed date.
+    at: new Date(`2026-07-08 ${m.time}`).toISOString(),
+  }
+}
 
 // Card state derives from which group-chat screen we're on.
 const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'complete'> = {
@@ -33,9 +55,22 @@ export function GroupChatPage() {
   const loadSession = useSessionStore((s) => s.load)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
+  // Live group chat: connect + join the room (no-op in mock mode).
+  useSocket(GROUP_ID)
+  const messages = useGroupChatStore(selectGroupMessages(GROUP_ID))
+  const sendMessage = useGroupChatStore((s) => s.sendMessage)
+  const seed = useGroupChatStore((s) => s.seed)
+
   useEffect(() => {
     if (members.length === 0) void loadSession(42, currentUserId)
   }, [members.length, loadSession, currentUserId])
+
+  // In mock mode there's no socket, so seed the chat from the mock scripts once.
+  useEffect(() => {
+    if (USE_MOCK && messages.length === 0) {
+      seed(GROUP_ID, [...MOCK_GROUP_MESSAGES, ...MOCK_GROUP_MESSAGES_AFTER].map(mockToMessage))
+    }
+  }, [messages.length, seed])
 
   const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
@@ -85,10 +120,6 @@ export function GroupChatPage() {
 
         {/* Messages */}
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
-          {MOCK_GROUP_MESSAGES.map((m) => (
-            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
-          ))}
-
           {/* Session-started divider + card */}
           <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
             <span className="h-px flex-1 bg-border" />
@@ -105,13 +136,14 @@ export function GroupChatPage() {
             onViewResults={() => go('top-picks')}
           />
 
-          {MOCK_GROUP_MESSAGES_AFTER.map((m) => (
+          {/* Live messages (server echo in live mode; seeded mocks in mock mode) */}
+          {messages.map((m) => (
             <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
           ))}
         </div>
 
         {/* Composer — same reusable message bar as the agent chat */}
-        <VoiceComposer onSend={() => {}} placeholder="Message" />
+        <VoiceComposer onSend={(text) => sendMessage(GROUP_ID, text)} placeholder="Message" />
       </div>
     </div>
   )
