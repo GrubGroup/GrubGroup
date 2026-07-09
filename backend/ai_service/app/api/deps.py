@@ -4,9 +4,19 @@ Only the internal service-to-service guard is implemented so far; the DB/user
 dependencies remain to be built as the read paths are added.
 """
 
+from collections.abc import AsyncGenerator
+
 from fastapi import Header, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.session import async_session_factory
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield an async SQLModel session for FastAPI Depends, closed on request end."""
+    async with async_session_factory() as session:
+        yield session
 
 
 async def require_internal_secret(
