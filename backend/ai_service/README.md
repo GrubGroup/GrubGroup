@@ -4,10 +4,10 @@ Python backend dedicated to API logic, agent orchestration, and the AI pipeline.
 
 ## Responsibilities
 
-- **SQLModel ORM** over PostgreSQL + pgvector (data layer)
+- **SQLModel ORM** — read-side mirror of the Prisma-owned schema over PostgreSQL + pgvector (data layer)
 - **LangGraph / LangChain** multi-agent pipeline (per-user preference agent + group orchestrator agent)
 - **RAG** — Qwen embeddings via OpenRouter + pgvector retrieval over restaurants/menus
-- **LLM calls** (DeepSeek / Claude via OpenRouter) for CoT reasoning and preference extraction
+- **LLM chat calls** via the Salesforce internal model gateway → Claude (active; OpenRouter/DeepSeek commented in `ai/llm/client.py` for deploy) for ranking, reasoning, and preference extraction
 - **Voice relay** — Whisper / Gemini STT and ElevenLabs TTS (transcribed text feeds the same pipeline as typed text)
 
 The Node.js **gateway** service proxies AI/RAG requests to this service.
@@ -21,8 +21,8 @@ FastAPI · SQLModel · asyncpg · pgvector · LangChain · LangGraph · OpenAI/O
 ```
 app/
   main.py        # FastAPI app factory
-  core/          # config, security (JWT verify), logging, exceptions
-  db/            # async engine/session, metadata base, init_db (create_all + pgvector)
+  core/          # config, security (end-user JWT verify — stub), logging, exceptions
+  db/            # async engine/session, metadata base, init_db (stub — Prisma owns DDL)
   models/        # SQLModel tables
   schemas/       # Pydantic request/response DTOs
   api/v1/        # versioned routers (health, ai, voice, public, members, restaurants, admin)

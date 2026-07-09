@@ -124,13 +124,13 @@ ai_service/
     ├── main.py                   # Builds & configures the FastAPI app
     ├── core/                     # App-wide infrastructure
     │   ├── config.py             # Reads settings from environment
-    │   ├── security.py           # Verifies JWTs issued by the gateway
+    │   ├── security.py           # End-user JWT verify (stub); internal hop uses X-Internal-Secret
     │   ├── logging.py
     │   └── exceptions.py
     ├── db/                       # Database connection & setup
     │   ├── session.py            # Async database engine/session
-    │   ├── base.py               # Registers all tables
-    │   └── init_db.py            # Creates tables + enables pgvector
+    │   ├── base.py               # Registers all tables (metadata mirror of Prisma)
+    │   └── init_db.py            # Stub — Prisma (gateway) owns DDL + pgvector, not create_all
     ├── models/                   # Database tables (SQLModel)
     │   ├── user.py  profile.py  session.py  session_member.py
     │   ├── message.py  restaurant.py  menu_item.py
@@ -161,7 +161,7 @@ ai_service/
     │   └── restaurant.py         # Includes pgvector similarity search
     └── ai/                       # The AI subsystem
         ├── llm/                  # Talking to language models
-        │   ├── client.py         # OpenRouter client (DeepSeek / Claude)
+        │   ├── client.py         # Salesforce gateway → Claude (active; OpenRouter/DeepSeek commented)
         │   └── prompts.py        # Prompt templates
         ├── rag/                  # Restaurant search by meaning ("RAG")
         │   ├── embeddings.py     # Turns text into vectors (Qwen)
