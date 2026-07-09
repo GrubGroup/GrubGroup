@@ -33,12 +33,23 @@ export function useSocket(groupId: number) {
     }
     socket.on('session:start', handleSessionStart)
 
+    const handleTyping = (payload: {
+      groupId: number
+      userId: number | null
+      name: string | null
+      isTyping: boolean
+    }) => {
+      useGroupChatStore.getState().receiveTyping(payload)
+    }
+    socket.on('typing:update', handleTyping)
+
     // TODO(live, out of scope): session:member_done, cart:update.
 
     return () => {
       socket.emit('group:leave', { groupId })
       socket.off('chat:message', handleMessage)
       socket.off('session:start', handleSessionStart)
+      socket.off('typing:update', handleTyping)
     }
   }, [token, userId, name, groupId])
 }

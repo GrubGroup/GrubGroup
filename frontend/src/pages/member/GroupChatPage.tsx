@@ -5,6 +5,7 @@ import { SessionCard } from '@/components/session/SessionCard'
 import { Avatar, Icon } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
+import { TypingIndicator } from '@/components/session/TypingIndicator'
 import { cn } from '@/utils/cn'
 import { SESSION_STARTED_BY } from '@/api/mock/groupChat.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
@@ -16,6 +17,7 @@ import {
   useGroupChatStore,
   selectGroupMessages,
   selectSessionStartIndex,
+  selectTypers,
 } from '@/stores/groupChatStore'
 import { useSocket } from '@/hooks/useSocket'
 
@@ -42,6 +44,8 @@ export function GroupChatPage() {
   const messages = useGroupChatStore(selectGroupMessages(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
+  const setTyping = useGroupChatStore((s) => s.setTyping)
+  const typers = useGroupChatStore(selectTypers(groupId))
 
   // Session-start is synced live via the socket. The store records, per group,
   // the message index where the card belongs (null = not started), so every
@@ -136,8 +140,15 @@ export function GroupChatPage() {
           )}
         </div>
 
+        {/* Live "… is typing" bubble, pinned just above the composer */}
+        <TypingIndicator typers={typers} />
+
         {/* Composer — same reusable message bar as the agent chat */}
-        <VoiceComposer onSend={(text) => sendMessage(groupId, text)} placeholder="Message" />
+        <VoiceComposer
+          onSend={(text) => sendMessage(groupId, text)}
+          onTyping={(isTyping) => setTyping(groupId, isTyping)}
+          placeholder="Message"
+        />
       </div>
     </div>
   )

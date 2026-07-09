@@ -57,4 +57,18 @@ export function registerSessionHandlers(io, socket) {
       at: new Date().toISOString(),
     })
   })
+
+  // Typing presence — ephemeral, never stored. Relay to OTHERS in the room
+  // (socket.to excludes the sender) so you never see your own "typing…".
+  const emitTyping = (groupId, isTyping) => {
+    if (groupId == null) return
+    socket.to(room(groupId)).emit('typing:update', {
+      groupId,
+      userId: socket.data.userId ?? null,
+      name: socket.data.name ?? null,
+      isTyping,
+    })
+  }
+  socket.on('typing:start', ({ groupId }) => emitTyping(groupId, true))
+  socket.on('typing:stop', ({ groupId }) => emitTyping(groupId, false))
 }

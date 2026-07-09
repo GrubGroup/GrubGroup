@@ -12,24 +12,45 @@ import { getSocket } from '@/lib/socket'
 // so every client shows the session card live — inline, after the messages that
 // existed when it started.
 
+// A person currently typing in a group. `at` is a client-side timestamp used
+// only for auto-expiry (clearing a ghost indicator if a stop event is missed).
+export interface Typer {
+  userId: number | null
+  name: string | null
+  at: number
+}
+
+interface TypingUpdate {
+  groupId: number
+  userId: number | null
+  name: string | null
+  isTyping: boolean
+}
+
 interface GroupChatState {
   messagesByGroup: Record<number, GroupMessage[]>
   // Per group: index in the message list where the session card belongs, or null
   // if no session has started. null = not started.
   sessionStartIndexByGroup: Record<number, number | null>
+  // Per group: who is currently typing (ephemeral presence, never persisted).
+  typingByGroup: Record<number, Typer[]>
   receiveMessage: (msg: GroupMessage) => void
   sendMessage: (groupId: number, text: string) => void
   startSession: (groupId: number) => void
   receiveSessionStart: (groupId: number) => void
+  setTyping: (groupId: number, isTyping: boolean) => void
+  receiveTyping: (update: TypingUpdate) => void
 }
 
 // Stable empty reference so the messagesFor selector never returns a fresh
 // array (which would loop under React 19 StrictMode). Mirrors MenuList's EMPTY.
 const EMPTY: GroupMessage[] = []
+const EMPTY_TYPERS: Typer[] = []
 
 export const useGroupChatStore = create<GroupChatState>((set) => ({
   messagesByGroup: {},
   sessionStartIndexByGroup: {},
+  typingByGroup: {},
 
   receiveMessage: (msg) =>
     set((s) => ({
@@ -61,6 +82,22 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
         sessionStartIndexByGroup: { ...s.sessionStartIndexByGroup, [groupId]: count },
       }
     }),
+
+  // Emit only — tell the gateway I started/stopped typing. Nothing local changes;
+  // the indicator for OTHERS is driven by their receiveTyping.
+  setTyping: (groupId, isTyping) => {
+    getSocket()?.emit(isTyping ? 'typing:start' : 'typing:stop', { groupId })
+  },
+
+  // A typing:update arrived from another member. Add/refresh them (bump `at`) or
+  // remove them from this group's list. De-duped by userId; immutable spread.
+  receiveTyping: ({ groupId, userId, name, isTyping }) =>
+    set((s) => {
+      const current = s.typingByGroup[groupId] ?? EMPTY_TYPERS
+      const without = current.filter((t) => t.userId !== userId)
+      const next = isTyping ? [...without, { userId, name, at: Date.now() }] : without
+      return { typingByGroup: { ...s.typingByGroup, [groupId]: next } }
+    }),
 }))
 
 // Selector helper: returns the stable EMPTY array when a group has no messages.
@@ -70,3 +107,7 @@ export const selectGroupMessages = (groupId: number) => (s: GroupChatState) =>
 // Selector: the message index where the session card belongs, or null.
 export const selectSessionStartIndex = (groupId: number) => (s: GroupChatState) =>
   s.sessionStartIndexByGroup[groupId] ?? null
+
+// Selector: who is currently typing in this group (stable EMPTY when none).
+export const selectTypers = (groupId: number) => (s: GroupChatState) =>
+  s.typingByGroup[groupId] ?? EMPTY_TYPERS
