@@ -6,6 +6,11 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "asyncpg>=0.31.0",
+    # SQLAlchemy's async engine (used by our asyncpg sessions) requires greenlet at
+    # runtime, but SQLAlchemy 2.0.x only auto-installs it on select platforms — its
+    # dependency marker omits macOS arm64 (platform_machine == 'arm64'), so uv skips
+    # it there. Declare it explicitly so `uv sync` installs it on every dev machine.
+    "greenlet>=3.5.3",
     "fastapi[standard]>=0.138.2",
     "httpx>=0.28.1",
     "langchain>=1.3.11",
