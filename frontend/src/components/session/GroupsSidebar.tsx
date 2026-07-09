@@ -1,20 +1,16 @@
 import { Icon } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { useNavStore } from '@/stores/navStore'
+import { MOCK_GROUPS } from '@/api/mock/groups.mock'
 import { cn } from '@/utils/cn'
 
-// Recent group chats shown in the left sidebar (mock, matches wireframe).
-const GROUPS = [
-  { emoji: '🍱', name: 'Work Lunch Crew', preview: 'Tomás: Just joined the session 🎉', time: '2m', active: true },
-  { emoji: '🍕', name: 'Friday Friends', preview: 'Dev: This Friday?', time: '1h' },
-  { emoji: '☕', name: 'Dev + Maya', preview: 'Maya: See you there!', time: '3h' },
-  { emoji: '🍷', name: 'Date Night', preview: 'Priya: Saturday works 😊', time: '1d' },
-]
-
 // Left column for the group-chat / agent-chat context: AppSidebar with the
-// recent-groups list as its body.
+// recent-groups list as its body. Clicking a group selects it as the active
+// chat room and navigates to the group-chat screen.
 export function GroupsSidebar() {
   const go = useNavStore((s) => s.go)
+  const groupId = useNavStore((s) => s.groupId)
+  const setGroup = useNavStore((s) => s.setGroup)
 
   return (
     <AppSidebar activeTab="groups">
@@ -27,12 +23,16 @@ export function GroupsSidebar() {
         </span>
         <span className="text-xs font-medium text-text-muted">New group</span>
       </button>
-      {GROUPS.map((g) => (
-        <div
-          key={g.name}
+      {MOCK_GROUPS.map((g) => (
+        <button
+          key={g.id}
+          onClick={() => {
+            setGroup(g.id)
+            go('group-chat')
+          }}
           className={cn(
-            'flex items-center gap-3 border-b border-border px-4 py-3',
-            g.active && 'bg-surface-raised/40',
+            'flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left',
+            g.id === groupId && 'bg-surface-raised/40',
           )}
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-surface-raised text-lg">
@@ -45,7 +45,7 @@ export function GroupsSidebar() {
             </div>
             <p className="truncate text-xs text-text-muted">{g.preview}</p>
           </div>
-        </div>
+        </button>
       ))}
     </AppSidebar>
   )

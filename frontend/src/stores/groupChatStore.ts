@@ -6,13 +6,9 @@ import { getSocket } from '@/lib/socket'
 // single source of truth: sendMessage() only emits — it does NOT optimistically
 // append; the server echoes the message back to everyone (incl. the sender),
 // and receiveMessage() appends it. This avoids duplicates and drift.
-//
-// Under mock mode getSocket() returns null; seed() feeds local mock messages so
-// the UI still renders.
 
 interface GroupChatState {
   messagesByGroup: Record<number, GroupMessage[]>
-  seed: (groupId: number, messages: GroupMessage[]) => void
   receiveMessage: (msg: GroupMessage) => void
   sendMessage: (groupId: number, text: string) => void
 }
@@ -23,9 +19,6 @@ const EMPTY: GroupMessage[] = []
 
 export const useGroupChatStore = create<GroupChatState>((set) => ({
   messagesByGroup: {},
-
-  seed: (groupId, messages) =>
-    set((s) => ({ messagesByGroup: { ...s.messagesByGroup, [groupId]: messages } })),
 
   receiveMessage: (msg) =>
     set((s) => ({

@@ -7,3 +7,4 @@ export type { Recommendation, RecommendationItem, RankedPick } from './recommend
 export type { MenuItem, CartItem } from './menu'
 export type { ChatRole, ChatMessage, NotedPref } from './chat'
 export type { GroupMessage } from './groupChat'
+export type { Group } from './group'

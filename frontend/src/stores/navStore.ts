@@ -29,10 +29,14 @@ export type Screen =
 
 interface NavState {
   screen: Screen
+  groupId: number // currently-selected group (chat room)
   go: (screen: Screen) => void
+  setGroup: (id: number) => void
 }
 
 export const useNavStore = create<NavState>((set) => ({
   screen: 'sign-in',
+  groupId: 7, // default matches the seeded session/messages
   go: (screen) => set({ screen }),
+  setGroup: (id) => set({ groupId: id }),
 }))
