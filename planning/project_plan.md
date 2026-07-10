@@ -312,6 +312,8 @@ GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of
 
 Auth is the exception: the gateway (Express) manages login with **Better Auth** and gives the browser an httpOnly cookie it can't read. The app calls **`useSession()`** to ask "who am I?" and mirrors that into `authStore`. In the **Owner** column, most rows are a *store*; a few (like `AuthPage`) are a *component* — throwaway form fields only one screen needs.
 
+### Global state (Zustand stores + auth session)
+
 | State Variable | Type | Initial Value | Owner | Trigger |
 | --- | --- | --- | --- | --- |
 | `user` | `User \| null` | `null` (live) / `MOCK_USER` (mock) | authStore | Better Auth session change, guest login, logout |
@@ -337,9 +339,28 @@ Auth is the exception: the gateway (Express) manages login with **Better Auth** 
 | `items` (cart) | `CartItem[]` | `[]` | cartStore | Add / remove / update qty |
 | `messages` (agent) | `ChatMessage[]` | `[]` | chatStore | Seed, user sends, agent reply |
 | `notedPreferences` | `NotedPref[]` | `[]` | chatStore | Seeded from agent chat |
+| `replyIndex` | `number` | `0` | chatStore | Each user message (cycles mock replies) |
 | `messagesByGroup` | `Record<number, GroupMessage[]>` | `{}` | groupChatStore | Socket.IO `chat:message` echo |
 | `sessionStartIndexByGroup` | `Record<number, number \| null>` | `{}` | groupChatStore | Socket.IO `session:start` echo |
-| `identifier` / `email` / `password` / `username` / `fullName` | `string` | `''` | AuthPage (local) | User input |
-| `error` | `string \| null` | `null` | AuthPage (local) | Auth request failure |
+
+### Component-local state (`useState`)
+
+| State Variable | Type | Initial Value | Owner | Trigger |
+| --- | --- | --- | --- | --- |
+| `fullName` | `string` | `''` | AuthPage | User input (sign-up) |
+| `username` | `string` | `''` | AuthPage | User input (sign-up) |
+| `email` | `string` | `''` | AuthPage | User input (sign-up) |
+| `identifier` | `string` | `''` | AuthPage | User input (sign-in: username or email) |
+| `password` | `string` | `''` | AuthPage | User input |
+| `error` | `string \| null` | `null` | AuthPage | Auth request failure |
+| `loading` | `boolean` | `false` | AuthPage | Auth request start/end |
+| `selectedId` | `number \| null` | `null` | TopPicksPage | Picking a restaurant card |
+| `text` | `string` | `''` | VoiceComposer | Typing in the message bar; cleared on send |
+| `modalOpen` | `boolean` | `false` | GroupsSidebar | Open/close "New group" modal |
+| `name` | `string` | `''` | NewGroupModal | Typing the new group name |
+| `name` | `string` | `''` | GuestNameModal | Typing the guest name |
+| `value` | `string` | `initial` arg (e.g. `'San Francisco, CA'`) | usePlacesInput (hook) | Location autocomplete typing |
+
+The major decisions nailed down: **authentication state lives in Better Auth's cookie session** (mirrored into `authStore`, so there's one source of truth that survives refresh); **live data re-fetches** are triggered by store `load*` actions hitting the gateway; and **real-time group chat / session sync flows in over Socket.IO** into `groupChatStore`. State flows out of the stores via hooks — components subscribe to the slices they need instead of prop-drilling from a single top-level owner.
 
 **_Don't forget to set up your Issues, Milestones, and Project Board!_**
