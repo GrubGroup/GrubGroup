@@ -39,6 +39,8 @@ Postgres (with the `vector`/pgvector extension), mirrored from `backend/gateway/
 | role | Role | account role (default `USER`) |
 | display_name | string? | display name |
 | avatar_url | string? | avatar image URL |
+| emailVerified | bool | whether the email is verified false; set true on Google sign-in) |
+| displayUsername | string? | non-normalized username for display |
 | created_at | datetime | row creation time |
 | updated_at | datetime | last update time |
 
@@ -176,6 +178,55 @@ Composite primary key `(group_id, user_id)`.
 | content | string | message body |
 | message_type | MessageType | message kind (default `TEXT`) |
 | created_at | datetime | when sent |
+
+### Better Auth tables
+> Managed by Better Auth (email/password + Google) in the gateway. Column names are **camelCase** (Better Auth convention), unlike the snake_case domain tables. The auth-session model is named `AuthSession` — not `Session` — to avoid colliding with the domain `Session` table.
+
+### `Account` — a login method for a user (password or OAuth provider)
+
+| column name | type | description |
+| --- | --- | --- |
+| id | int | primary key |
+| accountId | string | provider's account id (user's id at Google; user id for password) |
+| providerId | string | `"credential"` for email/password, `"google"` for Google |
+| userId | int | foreign key to User; cascade delete |
+| password | string? | password hash — set only for the `credential` provider |
+| accessToken | string? | OAuth access token (Google) |
+| refreshToken | string? | OAuth refresh token (Google) |
+| idToken | string? | OAuth ID token (Google) |
+| accessTokenExpiresAt | datetime? | access-token expiry |
+| refreshTokenExpiresAt | datetime? | refresh-token expiry |
+| scope | string? | granted OAuth scopes |
+| createdAt | datetime | row creation time |
+| updatedAt | datetime | last update time |
+
+Indexed on `userId`. A user has one `Account` row per login method (e.g. both `credential` and `google` after linking).
+
+### `AuthSession` — an active login session (cookie-backed)
+
+| column name | type | description |
+| --- | --- | --- |
+| id | int | primary key |
+| token | string | unique session token (stored in the httpOnly cookie) |
+| userId | int | foreign key to User; cascade delete |
+| expiresAt | datetime | when the session expires |
+| ipAddress | string? | client IP at sign-in |
+| userAgent | string? | client user-agent at sign-in |
+| createdAt | datetime | row creation time |
+| updatedAt | datetime | last update time |
+
+Unique on `token`; indexed on `userId`.
+
+### `Verification` — verification tokens (email verification, etc.)
+
+| column name | type | description |
+| --- | --- | --- |
+| id | int | primary key |
+| identifier | string | what's being verified (e.g. an email) |
+| value | string | the verification token/value |
+| expiresAt | datetime | when the token expires |
+| createdAt | datetime | row creation time |
+| updatedAt | datetime | last update time |
 
 ### Notes
 
