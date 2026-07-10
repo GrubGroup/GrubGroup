@@ -241,8 +241,6 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 
 ### Auth — `/api/auth`
 
-### Auth — `/api/auth`
-
 > Served by **Better Auth** (mounted as a catch-all: `app.all('/api/auth/*', toNodeHandler(auth))`), **not** hand-written controllers. Email/password + username + Google, backed by an **httpOnly session cookie** — there is no JWT/Bearer token. Sign-in/up responses set the cookie and return the user; the browser then rides `withCredentials: true`. Request/response envelopes follow the Better Auth spec; the table lists the routes this app relies on, not an exhaustive set.
 
 | CRUD | HTTP Verb | Endpoint | Description | Request Shape | Response Shape | Error Cases | User Stories |
@@ -307,5 +305,41 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 | CRUD | HTTP Verb | Endpoint | Description | Request Shape | Response Shape | Error Cases | User Stories |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Read | GET | `/api/events` | Past outings the caller attended | — | `[{ id, date, address, restaurant_id, restaurant_name, group_id, group_name }]` | — | Dining history |
+
+## State Architecture
+
+GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of state any component can read directly, so we skip prop-drilling and React Context (and use a `navStore` instead of a router). Each store owns one concern: `authStore`, `cartStore`, `sessionStore`, etc.
+
+Auth is the exception: the gateway (Express) manages login with **Better Auth** and gives the browser an httpOnly cookie it can't read. The app calls **`useSession()`** to ask "who am I?" and mirrors that into `authStore`. In the **Owner** column, most rows are a *store*; a few (like `AuthPage`) are a *component* — throwaway form fields only one screen needs.
+
+| State Variable | Type | Initial Value | Owner | Trigger |
+| --- | --- | --- | --- | --- |
+| `user` | `User \| null` | `null` (live) / `MOCK_USER` (mock) | authStore | Better Auth session change, guest login, logout |
+| `role` | `Role \| null` | `null` | authStore | Set alongside `user` |
+| `isGuest` | `boolean` | `false` | authStore | Guest login / real session |
+| `session` (Better Auth) | `object \| null` | `null` | `useSession()` (App) | Sign-in / sign-out, cookie refresh |
+| `screen` | `Screen` (union) | `'sign-in'` | navStore | Navigation (`go()`) |
+| `groupId` | `number` | `7` | navStore | Selecting a group (`setGroup()`) |
+| `groups` | `Group[]` | `MOCK_GROUPS` | groupsStore | Create group (`addGroup`) |
+| `profile` | `Profile \| null` | `null` | profileStore | Fetch on load; edit prefs; save |
+| `preferredLocation` | `LocationPref \| undefined` | `undefined` | profileStore | Location autocomplete (client-only) |
+| `loading` / `saving` | `boolean` | `false` | profileStore | Profile API call start/end |
+| `byId` | `Record<number, Restaurant>` | `{}` | restaurantStore | Fetch restaurants |
+| `menus` | `Record<number, MenuItem[]>` | `{}` | restaurantStore | Fetch a restaurant's menu |
+| `loaded` | `boolean` | `false` | restaurantStore | Restaurants fetched |
+| `session` | `Session \| null` | `null` | sessionStore | Load session |
+| `members` | `SessionMember[]` | `[]` | sessionStore | Load, join, member marks done |
+| `recommendation` | `Recommendation \| null` | `null` | sessionStore | Fetch recommendation |
+| `phase` | `SessionPhase` (union) | `'joining'` | sessionStore | Derived UI state (join → picks → complete) |
+| `votes` | `Record<number, number[]>` | `{}` | sessionStore | Cast / un-cast a vote |
+| `chosenRestaurantId` | `number \| null` | `null` | sessionStore | Host picks a restaurant |
+| `currentUserId` | `number` | `1` | sessionStore | Set on session load |
+| `items` (cart) | `CartItem[]` | `[]` | cartStore | Add / remove / update qty |
+| `messages` (agent) | `ChatMessage[]` | `[]` | chatStore | Seed, user sends, agent reply |
+| `notedPreferences` | `NotedPref[]` | `[]` | chatStore | Seeded from agent chat |
+| `messagesByGroup` | `Record<number, GroupMessage[]>` | `{}` | groupChatStore | Socket.IO `chat:message` echo |
+| `sessionStartIndexByGroup` | `Record<number, number \| null>` | `{}` | groupChatStore | Socket.IO `session:start` echo |
+| `identifier` / `email` / `password` / `username` / `fullName` | `string` | `''` | AuthPage (local) | User input |
+| `error` | `string \| null` | `null` | AuthPage (local) | Auth request failure |
 
 **_Don't forget to set up your Issues, Milestones, and Project Board!_**
