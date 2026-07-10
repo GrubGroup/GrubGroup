@@ -6,7 +6,12 @@
 
 generator client {
   provider        = "prisma-client-js"
+  // postgresqlExtensions lets Prisma manage the `vector` extension (datasource below).
   previewFeatures = ["postgresqlExtensions"]
+  // Emit into the gateway — the only service that runs the Prisma client (auth).
+  // ai_service uses SQLModel, not Prisma. Path is relative to this schema file
+  // (backend/gateway/prisma/), so ../node_modules resolves to gateway/node_modules.
+  output          = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -30,14 +35,17 @@ enum MessageType {
 
 model User {
   // -- Fields (columns) --
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  email        String   @unique
-  role         Role     @default(USER)
-  display_name String?
-  avatar_url   String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  username        String   @unique
+  email           String   @unique
+  role            Role     @default(USER)
+  display_name    String?
+  avatar_url      String?
+  // -- Auth (Better Auth) --
+  emailVerified   Boolean  @default(false)
+  displayUsername String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
 
   // -- Relations (virtual, no columns) --
   profile             Profile?
@@ -46,6 +54,8 @@ model User {
   events              Event[]         @relation("EventAttendees")
   group_memberships   GroupMember[]
   group_messages      GroupMessage[]
+  auth_sessions       AuthSession[]
+  accounts            Account[]
 }
 
 model Profile {
@@ -84,6 +94,7 @@ model Session {
 }
 
 // Join model: one row per (user joined a session). Carries per-member status.
+
 model SessionMember {
   // -- Fields (columns) --
   session_id Int
@@ -169,6 +180,7 @@ model Group {
 }
 
 // Join model: one row per (user in a group).
+
 model GroupMember {
   // -- Fields (columns) --
   group_id  Int
@@ -208,6 +220,7 @@ model Recommendation {
 }
 
 // Join model: one row per recommended restaurant, carrying its score + justification.
+
 model RecommendationItem {
   // -- Fields (columns) --
   id                Int     @id @default(autoincrement())
@@ -219,4 +232,52 @@ model RecommendationItem {
   // -- Relations (virtual, no columns) --
   recommendation Recommendation @relation(fields: [recommendation_id], references: [id], onDelete: Cascade)
   restaurant     Restaurant     @relation(fields: [restaurant_id], references: [id])
+}
+
+model AuthSession {
+  id        Int      @id @default(autoincrement())
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("AuthSession")
+}
+
+model Account {
+  id                    Int       @id @default(autoincrement())
+  accountId             String
+  providerId            String
+  userId                Int
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         Int      @id @default(autoincrement())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }

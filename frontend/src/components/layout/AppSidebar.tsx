@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Avatar, Icon } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { signOut } from '@/lib/authClient'
 import { cn } from '@/utils/cn'
 
 // Shared height for the top row of EVERY column (sidebar brand, chat header,
@@ -30,7 +31,15 @@ export function AppSidebar({
   responsive = false,
 }: AppSidebarProps) {
   const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
   const go = useNavStore((s) => s.go)
+
+  // Clear the Better Auth session (cookie) + local state, then return to sign-in.
+  const handleSignOut = async () => {
+    await signOut()
+    logout()
+    go('sign-in')
+  }
 
   return (
     <aside
@@ -58,18 +67,26 @@ export function AppSidebar({
       {/* Body */}
       <div className="flex flex-1 flex-col overflow-y-auto">{children}</div>
 
-      {/* Footer: current user */}
+      {/* Footer: current user + sign out */}
       {showFooter && (
-        <div className="border-t border-border px-3 py-3">
+        <div className="flex items-center gap-1 border-t border-border px-3 py-3">
           <button
             onClick={() => go('empty-groups')}
-            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-surface-raised/60"
+            className="flex flex-1 items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-surface-raised/60"
           >
             <Avatar name={user?.display_name ?? 'Dev'} size="sm" colorClass="member-purple" />
             <div>
               <p className="text-[13px] font-semibold text-text">{user?.display_name ?? 'Dev'}</p>
               <p className="text-[10px] text-text-muted">Allergies saved</p>
             </div>
+          </button>
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-surface-raised/60 hover:text-text"
+          >
+            <Icon name="logout" size={16} />
           </button>
         </div>
       )}

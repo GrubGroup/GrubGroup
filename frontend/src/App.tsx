@@ -7,12 +7,45 @@ import { GroupChatPage } from '@/pages/member/GroupChatPage'
 import { EventsPage } from '@/pages/member/EventsPage'
 import { AgentChatPage } from '@/pages/member/session/AgentChatPage'
 import { TopPicksPage } from '@/pages/member/session/TopPicksPage'
+import { useEffect } from 'react'
 import { useNavStore } from '@/stores/navStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useSession } from '@/lib/authClient'
+import { USE_MOCK } from '@/lib/env'
+import type { SessionUser } from '@/stores/authStore'
 
 // Frontend-only screen switch (no router). Transitions follow the wireframe
 // journey (see frontend-user-journey memory).
 function App() {
   const screen = useNavStore((s) => s.screen)
+  const go = useNavStore((s) => s.go)
+  const user = useAuthStore((s) => s.user)
+  const setSessionUser = useAuthStore((s) => s.setSessionUser)
+
+  // Live mode: mirror Better Auth's session (httpOnly cookie) into the store, so
+  // the guard and pages read a single source of truth and survive refresh. Mock
+  // mode boots pre-authenticated and skips this.
+  const { data: session, isPending } = useSession()
+  useEffect(() => {
+    if (USE_MOCK) return
+    setSessionUser((session?.user as SessionUser | undefined) ?? null)
+  }, [session, setSessionUser])
+
+  const isAuthScreen = screen === 'sign-in' || screen === 'sign-up'
+
+  // After Google OAuth the browser reloads fresh at the app origin with the
+  // nav store defaulted to 'sign-in'. Once the session resolves, move an
+  // authenticated user off the auth screens into the app.
+  useEffect(() => {
+    if (USE_MOCK) return
+    if (session?.user && isAuthScreen) go('empty-groups')
+  }, [session, isAuthScreen, go])
+
+  // Auth guard (live mode only): every screen except the auth pages requires a
+  // signed-in user. Wait for the initial session check before bouncing.
+  if (!USE_MOCK && !isPending && !user && !isAuthScreen) {
+    return <AuthPage mode="signin" />
+  }
 
   switch (screen) {
     case 'sign-in':
