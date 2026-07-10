@@ -11,4 +11,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Proxy API + socket traffic to the gateway so the browser sees ONE origin.
+  // This makes Better Auth's session cookie first-party (SameSite=Lax works);
+  // without it, the :5173 app can't send the cookie the :4000 gateway sets.
+  // changeOrigin:false preserves the Host so Better Auth's baseURL matches.
+  server: {
+    proxy: {
+      '/api': { target: 'http://localhost:4000', changeOrigin: false },
+      '/socket.io': { target: 'http://localhost:4000', ws: true, changeOrigin: false },
+    },
+  },
 })

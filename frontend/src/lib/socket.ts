@@ -7,10 +7,10 @@ import { GATEWAY_URL, USE_MOCK } from './env'
 let socket: Socket | null = null
 
 export interface SocketAuth {
-  // The gateway authenticates the handshake from this JWT; connections without
-  // a valid token are rejected. Identity (userId/role) is read from the token's
-  // claims server-side — `name` is only a cosmetic display label.
-  token?: string
+  // The gateway authenticates the handshake from the Better Auth session cookie
+  // (sent via withCredentials); connections without a valid session are rejected.
+  // Identity (userId/role) is read from the verified session server-side —
+  // `name` is only a cosmetic display label.
   name?: string
 }
 

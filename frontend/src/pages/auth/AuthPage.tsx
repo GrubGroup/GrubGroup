@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import { Button, Input } from '@/components/ui'
 import { BrandPanel } from '@/components/layout/BrandPanel'
-import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { useGoogleSignIn } from '@/hooks/useGoogleSignIn'
-import * as authApi from '@/api/auth.api'
+import { signIn, signUp } from '@/lib/authClient'
 
 export interface AuthPageProps {
   mode: 'signin' | 'signup'
@@ -21,61 +19,70 @@ const GoogleMark = () => (
 
 export function AuthPage({ mode }: AuthPageProps) {
   const go = useNavStore((s) => s.go)
-  const login = useAuthStore((s) => s.login)
   const isSignup = mode === 'signup'
 
   const [fullName, setFullName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
+  // Sign-in accepts a username OR an email in one field.
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // On any successful auth, store the session then route per mode.
-  const onAuthed = (result: authApi.AuthResult) => {
-    login(result.token, result.user)
-    // Sign up → onboarding; sign in → group chats.
-    go(isSignup ? 'onboarding-1' : 'empty-groups')
-  }
-
-  // Extract a human-readable message from an axios error, else a generic one.
-  const toMessage = (err: unknown): string => {
-    const data = (err as { response?: { data?: { error?: string } } })?.response?.data
-    return data?.error ?? 'Something went wrong. Please try again.'
-  }
+  // After a successful email/password auth, route per mode. The session cookie
+  // is already set; App's useSession picks up the user. (Google redirects away
+  // and returns to the app, so it doesn't reach here.)
+  const onAuthed = () => go(isSignup ? 'onboarding-1' : 'empty-groups')
 
   const handleSubmit = async () => {
     setError(null)
-    if (!email || !password) {
-      setError('Email and password are required.')
+    setLoading(true)
+
+    let authError
+    if (isSignup) {
+      if (!email || !password || !username) {
+        setError('Username, email, and password are required.')
+        setLoading(false)
+        return
+      }
+      // Better Auth client methods resolve with { data, error } (no throw).
+      ;({ error: authError } = await signUp.email({
+        email,
+        password,
+        name: fullName,
+        username,
+      }))
+    } else {
+      if (!identifier || !password) {
+        setError('Enter your username or email and password.')
+        setLoading(false)
+        return
+      }
+      // Detect which credential the user typed: an "@" means it's an email.
+      ;({ error: authError } = identifier.includes('@')
+        ? await signIn.email({ email: identifier, password })
+        : await signIn.username({ username: identifier, password }))
+    }
+
+    setLoading(false)
+    if (authError) {
+      setError(authError.message ?? 'Something went wrong. Please try again.')
       return
     }
-    setLoading(true)
-    try {
-      const result = isSignup
-        ? await authApi.register({ email, password, displayName: fullName })
-        : await authApi.login({ email, password })
-      onAuthed(result)
-    } catch (err) {
-      setError(toMessage(err))
-    } finally {
-      setLoading(false)
-    }
+    onAuthed()
   }
 
-  const google = useGoogleSignIn({
-    onToken: async (idToken) => {
-      setError(null)
-      setLoading(true)
-      try {
-        onAuthed(await authApi.loginWithGoogle({ idToken }))
-      } catch (err) {
-        setError(toMessage(err))
-      } finally {
-        setLoading(false)
-      }
-    },
-    onError: () => setError('Google sign-in failed. Please try again.'),
-  })
+  // Google: full server-side OAuth redirect. On return, App routes based on the
+  // now-active session; callbackURL brings the browser back to the app.
+  const handleGoogle = async () => {
+    setError(null)
+    const { error: authError } = await signIn.social({
+      provider: 'google',
+      callbackURL: window.location.origin,
+    })
+    if (authError) setError('Google sign-in failed. Please try again.')
+  }
 
   return (
     <div className="flex h-screen bg-surface-raised">
@@ -97,8 +104,8 @@ export function AuthPage({ mode }: AuthPageProps) {
           <div className="flex flex-col gap-2.5">
             <button
               type="button"
-              onClick={google.signIn}
-              disabled={!google.ready || loading}
+              onClick={handleGoogle}
+              disabled={loading}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-input border border-border bg-surface-raised text-sm font-medium text-text hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50"
             >
               <GoogleMark /> Continue with Google
@@ -112,21 +119,37 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
 
           <div className="flex flex-col gap-3">
-            {isSignup && (
+            {isSignup ? (
+              <>
+                <Input
+                  label="FULL NAME"
+                  placeholder="Dev Patel"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+                <Input
+                  label="USERNAME"
+                  placeholder="devpatel"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  hint="3–30 characters: letters, numbers, dots, underscores."
+                />
+                <Input
+                  label="EMAIL"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </>
+            ) : (
               <Input
-                label="FULL NAME"
-                placeholder="Dev Patel"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                label="USERNAME OR EMAIL"
+                placeholder="devpatel or you@example.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
               />
             )}
-            <Input
-              label="EMAIL"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
             <div className="flex flex-col gap-1.5">
               {!isSignup && (
                 <div className="flex items-center justify-between">

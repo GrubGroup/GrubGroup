@@ -9,14 +9,12 @@ import { useGroupChatStore } from '@/stores/groupChatStore'
 // seeded locally instead. Joins the group's room on mount, listens for incoming
 // messages, and leaves on unmount.
 export function useSocket(groupId: number) {
-  const token = useAuthStore((s) => s.token)
   const name = useAuthStore((s) => s.user?.display_name ?? s.user?.username)
 
   useEffect(() => {
-    const socket = getSocket({
-      token: token ?? undefined,
-      name: name ?? undefined,
-    })
+    // Auth rides on the session cookie (withCredentials); we pass only the
+    // cosmetic display name.
+    const socket = getSocket({ name: name ?? undefined })
     if (!socket) return
 
     socket.emit('group:join', { groupId })
@@ -38,5 +36,5 @@ export function useSocket(groupId: number) {
       socket.off('chat:message', handleMessage)
       socket.off('session:start', handleSessionStart)
     }
-  }, [token, name, groupId])
+  }, [name, groupId])
 }

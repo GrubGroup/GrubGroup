@@ -1,0 +1,92 @@
+// Better Auth instance — the gateway's auth authority.
+//
+// Cookie-based sessions (httpOnly), email/password + Google. Configured to fit
+// the existing domain schema:
+//   - numeric autoincrement IDs (the whole schema uses Int) via generateId:'serial'
+//   - the auth-session model is renamed to `AuthSession` so it does NOT collide
+//     with the domain `Session` table (dining sessions)
+//   - core user fields map onto existing columns (name->display_name, image->avatar_url)
+//   - `role` is a read-only mirror; authorization stays Prisma/gateway-owned
+//   - username plugin (we rely on User.username @unique); since it isn't required
+//     at signup, a create-hook derives a unique username from the email
+import { betterAuth } from 'better-auth'
+import { prismaAdapter } from 'better-auth/adapters/prisma'
+import { username } from 'better-auth/plugins'
+import { prisma } from './prisma.js'
+import { config } from '../config/index.js'
+
+// Derive a unique, valid username from an email, appending a numeric suffix on
+// collision (User.username is NOT NULL + unique). Runs for password AND social
+// signups (Google users have no username otherwise).
+async function uniqueUsernameFromEmail(email) {
+  const base = (email?.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '') || 'user'
+  let candidate = base
+  let n = 1
+  while (await prisma.user.findUnique({ where: { username: candidate } })) {
+    candidate = `${base}${n++}`
+  }
+  return candidate
+}
+
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, { provider: 'postgresql' }),
+  secret: config.BETTER_AUTH_SECRET,
+  baseURL: config.BETTER_AUTH_URL,
+  trustedOrigins: [config.CORS_ORIGIN],
+
+  emailAndPassword: { enabled: true },
+  socialProviders: {
+    google: {
+      clientId: config.GOOGLE_CLIENT_ID,
+      clientSecret: config.GOOGLE_CLIENT_SECRET,
+    },
+  },
+
+  account: {
+    accountLinking: {
+      enabled: true,
+      // Auto-link Google to an existing same-email account (incl. accounts that
+      // already have a password). Safe because Google verifies email ownership.
+      trustedProviders: ['google'],
+    },
+  },
+
+  advanced: {
+    // The whole domain schema uses Int autoincrement PKs; let Postgres generate them.
+    database: { generateId: 'serial' },
+  },
+
+  user: {
+    // Map Better Auth's core fields onto the existing snake_case columns.
+    fields: {
+      name: 'display_name',
+      image: 'avatar_url',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+    // Expose `role` as a read-only mirror — the DB default (USER) fills it on
+    // insert; we never let clients set it. Authorization stays gateway-owned.
+    additionalFields: {
+      role: { type: 'string', input: false, required: false },
+    },
+  },
+
+  // Rename the auth-session model so it never clobbers the domain `Session`.
+  session: { modelName: 'AuthSession' },
+
+  plugins: [username()],
+
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          // Fill the NOT-NULL unique username the domain schema requires.
+          if (!user.username) {
+            return { data: { ...user, username: await uniqueUsernameFromEmail(user.email) } }
+          }
+          return { data: user }
+        },
+      },
+    },
+  },
+})

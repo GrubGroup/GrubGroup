@@ -1,10 +1,10 @@
-// Route aggregator: mounts auth, ai, and sessions routers under /api.
+// Route aggregator: mounts app REST routers under /api.
+//
+// Auth endpoints are NOT here — Better Auth owns /api/auth/* directly in app.js.
 import { Router } from 'express'
-import authRoutes from './auth.routes.js'
 
 const router = Router()
 
-router.use('/auth', authRoutes)
 // ai + sessions routers are mounted here as those verticals land.
 
 export default router

@@ -2,22 +2,13 @@ import axios from 'axios'
 import { GATEWAY_URL } from './env'
 
 // Single axios instance pointed at the gateway. The frontend talks ONLY to the
-// gateway (never ai_service directly). Auth token is attached per-request from
-// the auth store when present.
+// gateway (never ai_service directly). Auth is cookie-based (Better Auth), so
+// requests carry the httpOnly session cookie via withCredentials — there's no
+// bearer token to attach.
 export const api = axios.create({
+  // Empty GATEWAY_URL → same-origin `/api` (dev proxies to the gateway so the
+  // session cookie is first-party).
   baseURL: `${GATEWAY_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
-})
-
-let authToken: string | null = null
-
-export function setAuthToken(token: string | null) {
-  authToken = token
-}
-
-api.interceptors.request.use((config) => {
-  if (authToken) {
-    config.headers.Authorization = `Bearer ${authToken}`
-  }
-  return config
+  withCredentials: true,
 })

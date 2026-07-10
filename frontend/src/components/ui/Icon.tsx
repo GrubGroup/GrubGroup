@@ -24,6 +24,7 @@ export type IconName =
   | 'search'
   | 'bell'
   | 'party'
+  | 'logout'
 
 const PATHS: Record<IconName, ReactSvgContent> = {
   mic: (
@@ -110,6 +111,13 @@ const PATHS: Record<IconName, ReactSvgContent> = {
       <path d="M5.8 11.3 2 22l10.7-3.8" />
       <path d="M4 3h.01M22 8h.01M15 2h.01M22 20h.01" />
       <path d="M11 13a9 9 0 0 1 8-8M19 5a9 9 0 0 1-8 8" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
     </>
   ),
 }
