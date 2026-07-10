@@ -18,7 +18,8 @@ GrubGroup is a voice-first, group restaurant-recommendation web app. The reposit
 The backend is itself split into **two services**:
 
 - **`backend/gateway/`** — Node.js + Express + Socket.IO. The frontend talks to this. It
-  handles real-time updates, login/auth (JWT), and forwards AI requests to the AI service.
+  handles real-time updates, auth (Better Auth cookie sessions), and forwards AI requests to the
+  AI service.
 - **`backend/ai_service/`** — Python + FastAPI. The "brains": AI agents, restaurant
   search (RAG), the database, and voice processing.
 
@@ -70,37 +71,41 @@ backend/
 
 ### 3a. `backend/gateway/` — Real-Time Service (Node.js + Express)
 
-The **frontend-facing** service. Responsibilities: WebSocket live sync (cart & session
-state), JWT authentication, and proxying AI/RAG requests to `ai_service`.
+The **frontend-facing** service. Responsibilities: Better Auth (cookie sessions), Socket.IO
+live chat/session sync, Prisma writes for frontend data, and proxying AI/RAG requests to
+`ai_service`. Auth is **Better Auth**, mounted at `/api/auth/*` directly in `app.js` — there is
+no `auth.routes.js` / `auth.controller.js` / `jwt.service.js`.
 
 ```
 gateway/
-├── package.json                  # Dependencies (Express, Socket.IO, JWT, axios) + Bun scripts
+├── package.json                  # Deps (Express, Socket.IO, better-auth, @prisma/client, axios) + Bun scripts
 ├── .env.example                  # Sample environment variables
 ├── .gitignore
 ├── server.js                     # Entry point: starts the HTTP + WebSocket server
 └── src/
-    ├── app.js                    # Express app setup (middleware + route mounting)
+    ├── app.js                    # Express app: mounts Better Auth /api/auth/* (before express.json), /api/me, routes
+    ├── lib/
+    │   ├── auth.js               # Better Auth config (Prisma adapter, email/password + Google)
+    │   └── prisma.js             # Prisma client singleton
     ├── config/
     │   └── index.js              # Loads & validates environment config
     ├── routes/                   # URL → controller mappings
-    │   ├── index.js              # Combines all routes
-    │   ├── auth.routes.js        # /auth   — register / login
-    │   ├── ai.routes.js          # /ai     — forward to Python service
-    │   └── sessions.routes.js    # /sessions — group session & cart
+    │   ├── index.js              # Combines routes; mounts /health, /restaurants, /sessions
+    │   ├── restaurants.routes.js # /restaurants — create + embed (WIRED)
+    │   ├── sessions.routes.js    # /sessions — POST /:id/recommendations proxy (WIRED)
+    │   └── ai.routes.js          # /ai — one-line starter, NOT mounted (proxy lives in sessions + aiClient)
     ├── controllers/              # Request handlers (the logic per route)
-    │   ├── auth.controller.js
-    │   ├── ai.controller.js
-    │   └── sessions.controller.js
+    │   ├── restaurants.controller.js  # create Restaurant + embed via ai_service + ::vector write (WIRED)
+    │   ├── sessions.controller.js     # proxy to ai_service w/ status passthrough (WIRED)
+    │   └── ai.controller.js           # one-line starter (NOT wired)
     ├── middleware/               # Cross-cutting request logic
-    │   ├── auth.middleware.js    # Checks the JWT on protected routes
+    │   ├── auth.middleware.js    # Better Auth session guard (requireAuth / requireRole)
     │   └── error.middleware.js   # Central error handling
     ├── sockets/                  # Real-time WebSocket logic
-    │   ├── index.js              # Socket.IO setup + auth handshake
-    │   └── session.handlers.js   # join/leave, cart sync, preference broadcast
+    │   ├── index.js              # Socket.IO setup + session-cookie handshake
+    │   └── session.handlers.js   # group:join/leave, chat:message, session:start, typing:* (ephemeral)
     ├── services/                 # Reusable helpers
-    │   ├── aiClient.js           # Talks to the FastAPI ai_service
-    │   └── jwt.service.js        # Creates & verifies tokens
+    │   └── aiClient.js           # Talks to the FastAPI ai_service (embed + getRecommendations)
     └── utils/
         └── logger.js             # Logging helper
 ```
@@ -118,61 +123,65 @@ ai_service/
 ├── README.md                     # Service-specific setup instructions
 ├── main.py                       # Small shim → runs app/main.py
 ├── scripts/                      # One-off dev/ops scripts
-│   ├── seed_restaurants.py       # Fills the DB with 50+ mock restaurants
-│   └── reset_db.py               # Resets the database for local development
+│   ├── seed_restaurants.py       # Fills the DB with ~54 mock restaurants (with embeddings)
+│   ├── reset_db.py               # Resets the database for local development
+│   ├── smoke_orchestrator.py     # Direct end-to-end orchestrator graph smoke test
+│   └── live_http_gateway_e2e.py  # Live HTTP harness across ai_service + gateway (401/409/200)
 └── app/                          # The actual application code
-    ├── main.py                   # Builds & configures the FastAPI app
+    ├── main.py                   # Builds & configures the FastAPI app (WIRED)
     ├── core/                     # App-wide infrastructure
-    │   ├── config.py             # Reads settings from environment
-    │   ├── security.py           # End-user JWT verify (stub); internal hop uses X-Internal-Secret
-    │   ├── logging.py
-    │   └── exceptions.py
+    │   ├── config.py             # Reads settings from environment (WIRED)
+    │   ├── security.py           # End-user token verify — one-line starter; internal hop uses X-Internal-Secret
+    │   ├── logging.py            # one-line starter
+    │   └── exceptions.py         # one-line starter
     ├── db/                       # Database connection & setup
-    │   ├── session.py            # Async database engine/session
+    │   ├── session.py            # Async database engine/session (WIRED)
     │   ├── base.py               # Registers all tables (metadata mirror of Prisma)
-    │   └── init_db.py            # Stub — Prisma (gateway) owns DDL + pgvector, not create_all
-    ├── models/                   # Database tables (SQLModel)
-    │   ├── user.py  profile.py  session.py  session_member.py
-    │   ├── message.py  restaurant.py  menu_item.py
-    │   └── enums.py              # Shared value lists (roles, statuses, …)
+    │   └── init_db.py            # Starter, unused — Prisma (gateway) owns DDL + pgvector; ai_service never runs create_all
+    ├── models/                   # Database tables (SQLModel read-side mirror)
+    │   ├── user.py  profile.py  session.py  session_member.py     # WIRED
+    │   ├── restaurant.py  qa.py  group.py                         # WIRED (restaurant has vector(1024) embedding)
+    │   ├── recommendation.py  recommendation_item.py              # WIRED
+    │   ├── timestamps.py  enums.py                                # WIRED (utcnow helper; Role/MessageType)
+    │   └── message.py  menu_item.py                               # one-line starters (no table yet)
     ├── schemas/                  # Request/response shapes (Pydantic)
-    │   ├── user.py  profile.py  session.py  restaurant.py  menu_item.py
-    │   ├── ai.py                 # AI request/response shapes (no DB table)
-    │   ├── voice.py
-    │   └── common.py
+    │   ├── ai.py                 # AI request/response DTOs (WIRED: Embed*, Recommendation*)
+    │   └── user.py  profile.py  session.py  restaurant.py  voice.py  common.py   # starters
     ├── api/                      # The HTTP endpoints
-    │   ├── deps.py               # Shared dependencies (current user, DB session)
+    │   ├── deps.py               # Shared deps: get_db_session, require_internal_secret (WIRED)
     │   └── v1/                   # Version 1 of the API (mounted at /api/v1)
-    │       ├── router.py         # Combines all v1 routes
+    │       ├── router.py         # Combines v1 routes — mounts only health + ai today
     │       └── routes/
-    │           ├── health.py         # Is the service up?
-    │           ├── ai.py             # AI analyze + recommendations
-    │           ├── voice.py          # Speech-to-text / text-to-speech
-    │           ├── public.py         # Public restaurant browsing (no login)
-    │           ├── members.py        # Logged-in members: sessions, cart, profile
-    │           ├── restaurants.py    # Restaurant owners: menu, dashboard
-    │           └── admin.py          # Admins: moderation, roles, audit
+    │           ├── health.py         # Is the service up? (WIRED)
+    │           ├── ai.py             # POST /embed, POST /sessions/{id}/recommendations (WIRED)
+    │           ├── voice.py          # STT / TTS — starter, not mounted
+    │           ├── public.py         # Public browsing — starter, not mounted
+    │           ├── members.py        # Member endpoints — starter, not mounted
+    │           ├── restaurants.py    # Owner endpoints — starter, not mounted
+    │           └── admin.py          # Admin endpoints — starter, not mounted
     ├── services/                 # Business logic (multi-step workflows)
-    │   ├── session_service.py  profile_service.py
-    │   ├── recommendation_service.py  message_service.py
-    │   └── restaurant_service.py
+    │   ├── recommendation_service.py  # WIRED (orchestrator wrapper: guard → pipeline → persist)
+    │   └── session_service.py  profile_service.py  message_service.py  restaurant_service.py  # starters
     ├── crud/                     # Direct database read/write helpers
-    │   ├── base.py  user.py  session.py  message.py
-    │   └── restaurant.py         # Includes pgvector similarity search
-    └── ai/                       # The AI subsystem
+    │   ├── base.py               # Generic async CRUDBase (WIRED)
+    │   ├── session.py            # Reads: members, profiles, Qa, all_confirmed (WIRED)
+    │   ├── restaurant.py         # Reads + pgvector similarity search (WIRED)
+    │   ├── recommendation.py     # WRITES Recommendation + RecommendationItem (WIRED)
+    │   └── user.py  message.py   # one-line starters
+    └── ai/                       # The AI subsystem (all WIRED except voice/)
         ├── llm/                  # Talking to language models
         │   ├── client.py         # Salesforce gateway → Claude (active; OpenRouter/DeepSeek commented)
-        │   └── prompts.py        # Prompt templates
+        │   └── prompts.py        # Prompt templates (preference-normalize, group re-rank)
         ├── rag/                  # Restaurant search by meaning ("RAG")
-        │   ├── embeddings.py     # Turns text into vectors (Qwen)
-        │   └── retriever.py      # Finds similar restaurants via pgvector
+        │   ├── embeddings.py     # Turns text into vectors (Qwen3 via OpenRouter, 1024-dim)
+        │   └── retriever.py      # pgvector cosine search + hard filters (dietary/price/geo)
         ├── agents/               # The AI "personas"
-        │   ├── preference_agent.py    # Learns one person's preferences
-        │   └── orchestrator_agent.py  # Reconciles the whole group
+        │   ├── preference_agent.py    # Normalizes one member's Profile → MemberPref
+        │   └── orchestrator_agent.py  # Reconciles the group: retrieve → LLM re-rank → fallback
         ├── graph/                # Multi-step AI pipeline (LangGraph)
-        │   ├── pipeline.py       # Wires the steps together
-        │   └── state.py          # Data passed between steps
-        └── voice/                # Voice input/output
+        │   ├── pipeline.py       # StateGraph: fan-out preference → orchestrator
+        │   └── state.py          # Typed state passed between steps
+        └── voice/                # Voice input/output — one-line starters
             ├── stt.py            # Speech → text (Whisper / Gemini)
             └── tts.py            # Text → speech (ElevenLabs)
 ```
@@ -184,59 +193,56 @@ ai_service/
 React + TypeScript app built with **Vite**, styled with **TailwindCSS**, managed with
 **Bun**.
 
-> **Status:** The frontend is currently the initial Vite starter (below). Feature folders
-> (pages, components, state, API client) will be added as the UI is built out.
+> **Status:** The frontend is a **full build-out** (not a Vite starter). It uses Better Auth
+> for auth and a zustand **screen-based navigation** store — there is **no `react-router-dom`**.
+> Styling is TailwindCSS v4, wired via `@tailwindcss/vite` + `@import "tailwindcss"` (`@theme`
+> tokens in `index.css`; no `tailwind.config.js`).
 
 ```
 frontend/
-├── package.json          # Dependencies (React, Router, axios, socket.io-client, zustand, …)
+├── package.json          # Deps (React 19, axios, socket.io-client, zustand, better-auth, tailwindcss v4, …)
 ├── bun.lock              # Locked dependency versions
-├── vite.config.ts        # Vite build/dev configuration
+├── vite.config.ts        # Vite config — registers react() + @tailwindcss/vite(); dev proxy to gateway
 ├── tsconfig*.json        # TypeScript configuration
 ├── eslint.config.js      # Linting rules
 ├── index.html            # HTML entry point
 ├── README.md
-├── public/               # Static files served as-is
-│   ├── favicon.svg
-│   └── icons.svg
-└── src/                  # Application source
+├── public/               # Static files served as-is (favicon.svg, icons.svg)
+└── src/                  # Application source (see §4a)
     ├── main.tsx          # App entry point (mounts React)
-    ├── App.tsx           # Root component
-    ├── index.css         # Global styles (Tailwind)
-    ├── App.css
-    └── assets/           # Images used in components
-        ├── hero.png  react.svg  vite.svg
+    ├── App.tsx           # Root — session guard + navStore-driven screen switch (no router)
+    ├── index.css         # Tailwind import + @theme design tokens
+    └── assets/           # hero.png, react.svg, vite.svg
 ```
 
-### 4a. Planned `src/` layout (not yet created)
+### 4a. `src/` layout (implemented)
 
-As features are built, `src/` is expected to grow into the structure below. It mirrors the
-role-based areas of the backend (public / member / owner / admin) and maps directly to the
-installed libraries.
+The feature structure below **exists and is populated** — build new work into these folders.
 
 ```
 src/
-├── api/            # HTTP calls to the gateway (uses axios)
-├── routes/         # App routing setup (react-router-dom)
-├── pages/          # Full screens, grouped by user role
-│   ├── public/         # Landing page, restaurant discovery
-│   ├── auth/           # Login / signup
-│   ├── member/         # Group session, cart, profile, history
-│   ├── owner/          # Restaurant dashboard, menu editor
-│   └── admin/          # Moderation, audit, roles
-├── components/     # Reusable UI pieces
-│   ├── ui/             # Buttons, inputs, cards (design system)
-│   ├── layout/         # Headers, nav, page shells
-│   ├── session/        # Group session room widgets
-│   ├── voice/          # Voice input UI (react-speech-recognition)
-│   ├── restaurant/     # Restaurant/menu cards
-│   └── cart/           # Shared group cart
-├── hooks/          # Reusable React logic (useAuth, useSocket, useVoiceInput)
-├── stores/         # Client state (zustand)
-├── lib/            # Third-party client setup (socket.io-client, jwt-decode, axios instance)
-├── types/          # Shared TypeScript types
-├── utils/          # Small helper functions
-└── constants/      # App-wide constants
+├── api/            # HTTP calls to the gateway via axios
+│   ├── session.api.ts  restaurants.api.ts  profile.api.ts   # live modules
+│   └── mock/           # 7 mock modules (session, restaurants, profile, groupChat, chatScript, groups, events)
+├── pages/          # Full screens (navStore-driven; no react-router)
+│   ├── auth/           # AuthPage (Better Auth sign-in/up + Google)
+│   └── member/         # EmptyGroupsPage, GroupChatPage, EventsPage
+│       ├── onboarding/     # Onboarding1-3
+│       └── session/        # AgentChatPage, TopPicksPage
+├── components/     # ~47 reusable UI pieces
+│   ├── ui/             # Design-system primitives (Button, Input, Card, Modal, …) + index.ts
+│   ├── layout/         # AppSidebar, BrandPanel, OnboardingLayout
+│   ├── session/        # Group session / chat widgets (SessionCard, ChatStream, MemberRoster, …)
+│   ├── restaurant/     # Restaurant/menu cards (RankedRestaurantCard, MenuList, VoteControl, …)
+│   ├── profile/        # Profile fields (Dietary, Cuisine, Budget, Location, LikedRestaurants)
+│   ├── cart/           # Shared group cart (CartDrawer, CartItemRow, CartSummary)
+│   └── voice/          # VoiceComposer (react-speech-recognition)
+├── hooks/          # useSocket, useVoiceInput, usePlacesInput
+├── stores/         # 9 zustand stores: auth, session, groupChat, chat, cart, profile, groups, restaurant, nav
+├── lib/            # Client setup: axios, socket, authClient (Better Auth), env
+├── types/          # Shared TypeScript types (user, profile, session, group, restaurant, …)
+├── utils/          # Small helpers (cn.ts)
+└── constants/      # App-wide constants (dietary.ts)
 ```
 
 ---
@@ -249,7 +255,8 @@ src/
 | A new database table          | `backend/ai_service/app/models/`               |
 | AI agent / prompt logic       | `backend/ai_service/app/ai/`                   |
 | A real-time (WebSocket) event | `backend/gateway/src/sockets/`                 |
-| A login / proxy route (Node)  | `backend/gateway/src/routes/` + `controllers/` |
+| Auth (sign-in/up, OAuth)      | `backend/gateway/src/lib/auth.js` (Better Auth; mounted in `app.js`) |
+| An AI-proxy route (Node)      | `backend/gateway/src/routes/` + `controllers/` + `services/aiClient.js` |
 | A new screen/page (React)     | `frontend/src/pages/`                          |
 | A reusable UI element (React) | `frontend/src/components/`                     |
 | A product/planning doc        | `planning/`                                    |
