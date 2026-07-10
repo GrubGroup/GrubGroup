@@ -241,11 +241,20 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 
 ### Auth — `/api/auth`
 
+### Auth — `/api/auth`
+
+> Served by **Better Auth** (mounted as a catch-all: `app.all('/api/auth/*', toNodeHandler(auth))`), **not** hand-written controllers. Email/password + username + Google, backed by an **httpOnly session cookie** — there is no JWT/Bearer token. Sign-in/up responses set the cookie and return the user; the browser then rides `withCredentials: true`. Request/response envelopes follow the Better Auth spec; the table lists the routes this app relies on, not an exhaustive set.
+
 | CRUD | HTTP Verb | Endpoint | Description | Request Shape | Response Shape | Error Cases | User Stories |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Create | POST | `/api/auth/register` | Create an account, return a JWT | `{ username, email, password, display_name? }` | `{ token, user: { id, username, email, role, display_name, avatar_url, created_at } }` | 400 invalid field; 409 username/email taken | Account setup (prereq) |
-| Action | POST | `/api/auth/login` | Authenticate, return a JWT | `{ email, password }` | `{ token, user: {...} }` | 400 missing fields; 401 bad credentials | Account access (prereq) |
-| Read | GET | `/api/auth/me` | Current user from token | — | `{ id, username, email, role, display_name, avatar_url, created_at }` | 401 | Session bootstrap |
+| Create | POST | `/api/auth/sign-up/email` | Register with email/password; sets session cookie. A hook derives a unique `username` from the email when none is given | `{ email, password, name?, username? }` | `{ user: { id, email, name, username, role, ... } }` + `Set-Cookie` | 400 invalid field; 422 email/username taken | Account setup (prereq) |
+| Action | POST | `/api/auth/sign-in/email` | Authenticate by email; sets session cookie | `{ email, password }` | `{ user: {...}, redirect? }` + `Set-Cookie` | 400 missing fields; 401 bad credentials | Account access (prereq) |
+| Action | POST | `/api/auth/sign-in/username` | Authenticate by username (username plugin); sets session cookie | `{ username, password }` | `{ user: {...} }` + `Set-Cookie` | 400 missing fields; 401 bad credentials | Account access (prereq) |
+| Action | POST | `/api/auth/sign-in/social` | Begin Google OAuth; returns a redirect URL | `{ provider: "google", callbackURL? }` | `{ url, redirect: true }` | 400 unknown provider | Google sign-in |
+| Action | GET | `/api/auth/callback/google` | Google OAuth callback; links to an existing same-email account, then sets session cookie and redirects | — (provider query params) | `302` redirect + `Set-Cookie` | 401 OAuth failure | Google sign-in |
+| Read | GET | `/api/auth/get-session` | Current session + user from the cookie | — | `{ session, user } \| null` | — | Session bootstrap |
+| Action | POST | `/api/auth/sign-out` | Clear the session cookie | — | `{ success: true }` + cleared cookie | — | Sign out |
+| Read | GET | `/api/me` | Gateway convenience route: current user from the session cookie | — | `{ user: { id, email, username, role, display_name, avatar_url, ... } }` | 401 not authenticated | Session bootstrap |
 
 ### Profile — `/api/profile`
 
