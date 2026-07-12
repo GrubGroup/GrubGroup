@@ -1,13 +1,13 @@
-import type { CartItem } from '@/types'
+import type { EventItem } from '@/types'
 import { IconButton, Icon } from '@/components/ui'
 
-export interface CartItemRowProps {
-  item: CartItem
+export interface EventItemRowProps {
+  item: EventItem
   onInc: () => void
   onDec: () => void
 }
 
-export function CartItemRow({ item, onInc, onDec }: CartItemRowProps) {
+export function EventItemRow({ item, onInc, onDec }: EventItemRowProps) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="min-w-0">

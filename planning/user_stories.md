@@ -57,7 +57,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 - As a member, I want to see a shortlist of restaurants that work for the whole group, so that I don't have to manually check everyone's constraints myself.
 - As a member, I want to understand why a restaurant was recommended, so that I can trust the suggestion instead of guessing.
 - As a member, I want to browse a restaurant's menu within the session, so that I can decide what I'd personally order before we commit.
-- As a member, I want to add items to a shared group cart, so that our whole order is organized in one place.
+- As a member, I want to add items to a shared group event, so that our whole order is organized in one place.
 - As a member, I want the session to remember my location preference only if I gave one, so that the app doesn't ask for my location when I haven't asked for nearby results.
 - As a member, I want to end a session once we've picked a restaurant, so that the result is saved and the group chat returns to normal.
 - As a member, I want to see a short summary of how a past session was decided, so that I can recall the outcome without re-reading the whole conversation.

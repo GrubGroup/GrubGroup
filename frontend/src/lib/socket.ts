@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client'
 import { GATEWAY_URL, USE_MOCK } from './env'
 
 // Real-time lives in the gateway (Socket.IO). Under mock mode we never connect —
-// the session/chat/cart stores are driven locally instead. When going live,
+// the session/chat/event stores are driven locally instead. When going live,
 // useSocket() subscribes to gateway events and dispatches into the stores.
 let socket: Socket | null = null
 

@@ -12,8 +12,8 @@ export interface MenuItem {
   image_url?: string
 }
 
-// A line in the shared group cart (client-side for now; realtime later).
-export interface CartItem {
+// A line in the shared group event (client-side for now; realtime later).
+export interface EventItem {
   menuItemId: number
   restaurantId: number
   name: string

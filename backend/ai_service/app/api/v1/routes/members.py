@@ -1,1 +1,1 @@
-"""Member endpoints: sessions, cart, profile, history."""
+"""Member endpoints: sessions, event, profile, history."""

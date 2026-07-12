@@ -12,7 +12,7 @@ backend/
 
 The frontend-facing service. Handles:
 
-- WebSocket (Socket.IO) live group event sync — cart and session state
+- WebSocket (Socket.IO) live group event sync — event and session state
 - Frontend-facing JWT authentication (mints/verifies tokens)
 - React + Vite integration layer (REST API gateway)
 - Proxies AI / RAG requests to `ai_service`

@@ -15,7 +15,7 @@
 Problem Statement: Streamlining the process finding a restaurant between people (groups or 1:1) based on a questionnaire & constantly updated profiles.
 
 A Group Based AI Food Planner:
-A consumer-facing, "voice-first" web app where a group of friends each talk to their own AI agent about what they want to eat. A master AI orchestrator agent collects everyone's dietary preferences, budget, and location in real-time, finds restaurants that satisfy the whole group, lets each person browse and order from a shared menu, and connects everything into one group cart. This is all driven by a conversational, voice-enabled interface. Think Uber Eats but a group chat based on preference based on profile information
+A consumer-facing, "voice-first" web app where a group of friends each talk to their own AI agent about what they want to eat. A master AI orchestrator agent collects everyone's dietary preferences, budget, and location in real-time, finds restaurants that satisfy the whole group, lets each person browse and order from a shared menu, and connects everything into one group event. This is all driven by a conversational, voice-enabled interface. Think Uber Eats but a group chat based on preference based on profile information
 
 ## User Roles and Personas
 
@@ -24,7 +24,7 @@ A consumer-facing, "voice-first" web app where a group of friends each talk to t
 | Role                             | Access                 | Description                                                                                                                                                                                                               |
 | -------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Public**                       | No login               | Landing page + read-only restaurant discovery.                                                                                                                                                                            |
-| **member**                       | Login (or guest)       | Joins/creates group sessions, sets a preference profile, chats with a personal AI agent, sees group recommendations, and shares a cart. Guest mode allowed for one-off sessions (no saved profile). **Primary MVP role.** |
+| **member**                       | Login (or guest)       | Joins/creates group sessions, sets a preference profile, chats with a personal AI agent, sees group recommendations, and shares an event. Guest mode allowed for one-off sessions (no saved profile). **Primary MVP role.** |
 | **admin**                        | Internal               | Approves restaurant listings, moderates content, and monitors the AI pipeline (audit logs, session traces).                                                                                                               |
 | **restaurant_owner** _(stretch)_ | Login + admin approval | Manages a restaurant's listing, menu photos, descriptions, hours, and sees incoming group orders.                                                                                                                         |
 
@@ -82,7 +82,7 @@ reference them. **Sprint** column reflects current prioritization (see [Sprint P
 | M8  | As a member, I want a shortlist of restaurants that work for the whole group, so I don't check everyone's constraints myself. | 2      |
 | M9  | As a member, I want to understand **why** a restaurant was recommended, so I can trust the suggestion.                        | 2      |
 | M10 | As a member, I want to browse a restaurant's menu within the session, so I can decide what I'd order.                         | 3      |
-| M11 | As a member, I want to add items to a shared group cart, so our whole order is in one place.                                  | 3      |
+| M11 | As a member, I want to add items to a shared group event, so our whole order is in one place.                                 | 3      |
 | M12 | As a member, I want the session to remember my location preference only **if** I gave one, so it doesn't ask when I haven't.  | 3      |
 | M13 | As a member, I want to end a session once we've picked, so the result is saved and the chat returns to normal.                | 3      |
 | M14 | As a member, I want a short summary of how a past session was decided, so I can recall the outcome.                           | 3      |
@@ -192,18 +192,18 @@ Each user turn calls the **AI analyze** endpoint (see [AI Feature Specification]
 #### Wireframe 3 — Top Picks / Recommendations (`TopPicksPage`) — serves M8, M9, M11, M13
 
 What the user can do: see the ranked group shortlist with a match score and a plain-language
-justification, browse a pick's menu, add items to the shared cart, and (host) confirm the choice to
-close the session. Which stories: M8 (group shortlist), M9 (why), M11 (shared cart), M13 (end &
+justification, browse a pick's menu, add items to the shared event, and (host) confirm the choice to
+close the session. Which stories: M8 (group shortlist), M9 (why), M11 (shared event), M13 (end &
 save).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ TopPicksPage — "Your group's top picks"                        │
 │ ┌────────────────────────────────────────────┐  ┌───────────┐ │
-│ │ RankedRestaurantCard  #1  Nopa   [92% ▮]    │  │ CartDrawer│ │  ← MatchScoreBadge
-│ │  "Vegan-friendly, mid-range, quiet."        │  │  CartItem │ │  ← justification (M9)
-│ │  [TagRow] vegan · quiet · $$   [Vote ▲ 3]   │  │  CartItem │ │  ← M11 shared cart
-│ │  [MenuList ▸ MenuItemRow…]  (expand)         │  │ CartSummary│ │  ← M10/M11
+│ │ RankedRestaurantCard  #1  Nopa   [92% ▮]    │  │EventDrawer│ │  ← MatchScoreBadge
+│ │  "Vegan-friendly, mid-range, quiet."        │  │ EventItem │ │  ← justification (M9)
+│ │  [TagRow] vegan · quiet · $$   [Vote ▲ 3]   │  │ EventItem │ │  ← M11 shared event
+│ │  [MenuList ▸ MenuItemRow…]  (expand)         │  │EventSummary│ │  ← M10/M11
 │ ├────────────────────────────────────────────┤  │  $  total │ │
 │ │ RankedRestaurantCard  #2  …    [Vote ▲ 1]   │  └───────────┘ │
 │ │ RankedRestaurantCard  #3  …                 │  [Confirm & ▶] │  ← host: POST /close (M13)
@@ -212,7 +212,7 @@ save).
 ```
 
 Components: `TopPicksPage` → `RankedRestaurantCard[]` (`MatchScoreBadge`, `TagRow`, `VoteControl`,
-`MenuList` → `MenuItemRow[]`), `CartDrawer` (`CartItemRow[]`, `CartSummary`). Fed by
+`MenuList` → `MenuItemRow[]`), `EventDrawer` (`EventItemRow[]`, `EventSummary`). Fed by
 `POST /api/sessions/:id/recommendations` → `RecommendationItem[]`.
 
 ---
@@ -510,7 +510,7 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 
 ## State Architecture
 
-GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of state any component can read directly, so we skip prop-drilling and React Context (and use a `navStore` instead of a router). Each store owns one concern: `authStore`, `cartStore`, `sessionStore`, etc.
+GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of state any component can read directly, so we skip prop-drilling and React Context (and use a `navStore` instead of a router). Each store owns one concern: `authStore`, `eventStore`, `sessionStore`, etc.
 
 Auth is the exception: the gateway (Express) manages login with **Better Auth** and gives the browser an httpOnly cookie it can't read. The app calls **`useSession()`** to ask "who am I?" and mirrors that into `authStore`. In the **Owner** column, most rows are a _store_; a few (like `AuthPage`) are a _component_ — throwaway form fields only one screen needs.
 
@@ -538,7 +538,7 @@ Auth is the exception: the gateway (Express) manages login with **Better Auth** 
 | `votes`                    | `Record<number, number[]>`       | `{}`                               | sessionStore         | Cast / un-cast a vote                           |
 | `chosenRestaurantId`       | `number \| null`                 | `null`                             | sessionStore         | Host picks a restaurant                         |
 | `currentUserId`            | `number`                         | `1`                                | sessionStore         | Set on session load                             |
-| `items` (cart)             | `CartItem[]`                     | `[]`                               | cartStore            | Add / remove / update qty                       |
+| `items` (event)            | `EventItem[]`                    | `[]`                               | eventStore           | Add / remove / update qty                       |
 | `messages` (agent)         | `ChatMessage[]`                  | `[]`                               | chatStore            | Seed, user sends, agent reply                   |
 | `notedPreferences`         | `NotedPref[]`                    | `[]`                               | chatStore            | Seeded from agent chat                          |
 | `replyIndex`               | `number`                         | `0`                                | chatStore            | Each user message (cycles mock replies)         |
@@ -716,11 +716,11 @@ _Goal: a group starts a session, everyone shares prefs, and sees an explained sh
 - Start session / join / readiness / Q&A (`/api/sessions*`) — **M5, M7**
 - **Group recommendation orchestrator** wired to `TopPicksPage` — **M8, M9** _(pipeline exists)_
 
-### Milestone: Sprint 3 — Cart, close, history
+### Milestone: Sprint 3 — Event, close, history
 
 _Goal: pick a place, order together, save the result._
 
-- Menu browse + shared cart (`cartStore`, `MenuList`) — **M10, M11**
+- Menu browse + shared event (`eventStore`, `MenuList`) — **M10, M11**
 - Location-aware search (only when given) — **M12**
 - Close session → create `Event`; session summary — **M13, M14**
 - Group session history & events (`EventsPage`) — **M15**

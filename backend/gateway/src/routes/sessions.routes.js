@@ -1,4 +1,4 @@
-// Routes for /sessions — session and cart REST.
+// Routes for /sessions — session and event REST.
 import { Router } from 'express';
 import { getRecommendations } from '../controllers/sessions.controller.js';
 

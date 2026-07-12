@@ -1,21 +1,21 @@
-import { CartItemRow } from './CartItemRow'
-import { useCartStore } from '@/stores/cartStore'
+import { EventItemRow } from './EventItemRow'
+import { useEventStore } from '@/stores/eventStore'
 
-// Compact cart list + total. Reused in the drawer and the complete screen.
-export function CartSummary() {
-  const items = useCartStore((s) => s.items)
-  const total = useCartStore((s) => s.total())
-  const updateQty = useCartStore((s) => s.updateQty)
+// Compact event list + total. Reused in the drawer and the complete screen.
+export function EventSummary() {
+  const items = useEventStore((s) => s.items)
+  const total = useEventStore((s) => s.total())
+  const updateQty = useEventStore((s) => s.updateQty)
 
   if (items.length === 0) {
-    return <p className="text-sm text-text-muted">The group cart is empty.</p>
+    return <p className="text-sm text-text-muted">The group event is empty.</p>
   }
 
   return (
     <div className="flex flex-col gap-1">
       <div className="divide-y divide-border">
         {items.map((item) => (
-          <CartItemRow
+          <EventItemRow
             key={item.menuItemId}
             item={item}
             onInc={() => updateQty(item.menuItemId, item.quantity + 1)}

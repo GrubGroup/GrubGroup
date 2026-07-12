@@ -39,7 +39,7 @@ export function useSocket(groupId: number) {
     }
     socket.on('typing:update', handleTyping)
 
-    // TODO(live, out of scope): session:member_done, cart:update.
+    // TODO(live, out of scope): session:member_done, event:update.
 
     return () => {
       socket.emit('group:leave', { groupId })

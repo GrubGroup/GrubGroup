@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import type { CartItem, MenuItem } from '@/types'
+import type { EventItem, MenuItem } from '@/types'
 
-interface CartState {
-  items: CartItem[]
+interface EventState {
+  items: EventItem[]
   add: (item: MenuItem, userId: number) => void
   remove: (menuItemId: number) => void
   updateQty: (menuItemId: number, quantity: number) => void
@@ -10,7 +10,7 @@ interface CartState {
   clear: () => void
 }
 
-export const useCartStore = create<CartState>((set, get) => ({
+export const useEventStore = create<EventState>((set, get) => ({
   items: [],
 
   add: (item, userId) => {
@@ -23,7 +23,7 @@ export const useCartStore = create<CartState>((set, get) => ({
           ),
         }
       }
-      const line: CartItem = {
+      const line: EventItem = {
         menuItemId: item.id,
         restaurantId: item.restaurant_id,
         name: item.name,

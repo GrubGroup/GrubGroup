@@ -78,7 +78,7 @@ export const MOCK_RESTAURANTS: Restaurant[] = [
 
 // FRONTEND-ONLY menu data — there is NO MenuItem table in the seed/schema yet.
 // Keyed by real restaurant id. Provided for restaurants referenced by the mock
-// recommendation so the menu/cart screens render.
+// recommendation so the menu/event screens render.
 export const MOCK_MENUS: Record<number, MenuItem[]> = {
   // La Taqueria (id 2)
   2: [

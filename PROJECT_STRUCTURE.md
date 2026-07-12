@@ -235,10 +235,10 @@ src/
 │   ├── session/        # Group session / chat widgets (SessionCard, ChatStream, MemberRoster, …)
 │   ├── restaurant/     # Restaurant/menu cards (RankedRestaurantCard, MenuList, VoteControl, …)
 │   ├── profile/        # Profile fields (Dietary, Cuisine, Budget, Location, LikedRestaurants)
-│   ├── cart/           # Shared group cart (CartDrawer, CartItemRow, CartSummary)
+│   ├── event/          # Shared group event (EventDrawer, EventItemRow, EventSummary)
 │   └── voice/          # VoiceComposer (react-speech-recognition)
 ├── hooks/          # useSocket, useVoiceInput, usePlacesInput
-├── stores/         # 9 zustand stores: auth, session, groupChat, chat, cart, profile, groups, restaurant, nav
+├── stores/         # 9 zustand stores: auth, session, groupChat, chat, event, profile, groups, restaurant, nav
 ├── lib/            # Client setup: axios, socket, authClient (Better Auth), env
 ├── types/          # Shared TypeScript types (user, profile, session, group, restaurant, …)
 ├── utils/          # Small helpers (cn.ts)

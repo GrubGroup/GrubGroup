@@ -10,7 +10,7 @@ Pod Members: **Daniel Lam, Della Lee, Audrey Dequito, Miguel Cuevas**
 ## Description
 
 A Group Based AI Food Planner:
-A consumer-facing, "voice-first" web app where a group of friends each talk to their own AI agent about what they want to eat. A master AI orchestrator agent collects everyone's dietary preferences, budget, and location in real-time, finds restaurants that satisfy the whole group, lets each person browse and order from a shared menu, and connects everything into one group cart. This is all driven by a conversational, voice-enabled interface. Think Uber Eats but a group chat based on preference based on profile information
+A consumer-facing, "voice-first" web app where a group of friends each talk to their own AI agent about what they want to eat. A master AI orchestrator agent collects everyone's dietary preferences, budget, and location in real-time, finds restaurants that satisfy the whole group, lets each person browse and order from a shared menu, and connects everything into one group event. This is all driven by a conversational, voice-enabled interface. Think Uber Eats but a group chat based on preference based on profile information
 
 ### Main Feature:
 
@@ -25,7 +25,7 @@ A consumer-facing, "voice-first" web app where a group of friends each talk to t
 - Shares preferences, restrictions, budget, etc
 - Orchestrator Agent finds best-fit restaurants for the group
 - Everyone browses & orders from a shared menu view (or best matched restaurant)
-- Individual orders merge into one group cart
+- Individual orders merge into one group event
 - Summary sent / order placed
 
 ## Expected Features List
@@ -186,7 +186,7 @@ The AI model receives the user's full conversation history and profile — inclu
 **What the backend does:**
 1. Authenticate the request and verify the requesting user was a participant in session `:id`
 2. Check the `session_summaries` cache table — if a summary was already generated when the session closed (async), return it immediately without calling the AI model
-3. If no cached summary exists, fetch the raw session data: occasion type, aggregated group preferences, the final restaurant match and score, and each member's cart selections
+3. If no cached summary exists, fetch the raw session data: occasion type, aggregated group preferences, the final restaurant match and score, and each member's event selections
 4. Construct a prompt asking the AI to write a 2–3 sentence recap naming the occasion, the restaurant, and the key group signals that drove the match (e.g. everyone needed vegan options, budget was around $25 a head)
 5. Cache the generated summary in `session_summaries` tagged to the `sessionId`
 6. Return the summary to the frontend

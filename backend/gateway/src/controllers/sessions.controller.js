@@ -1,4 +1,4 @@
-// Session/cart request handlers.
+// Session/event request handlers.
 import { getRecommendations as fetchRecommendations } from '../services/aiClient.js';
 
 /**

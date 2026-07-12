@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { MenuItem } from '@/types'
 import { MenuItemRow } from './MenuItemRow'
 import { useRestaurantStore } from '@/stores/restaurantStore'
-import { useCartStore } from '@/stores/cartStore'
+import { useEventStore } from '@/stores/eventStore'
 import { useAuthStore } from '@/stores/authStore'
 
 export interface MenuListProps {
@@ -16,7 +16,7 @@ export function MenuList({ restaurantId }: MenuListProps) {
   // selector never returns a fresh array (which would loop forever).
   const menu: MenuItem[] = useRestaurantStore((s) => s.menus[restaurantId]) ?? EMPTY
   const loadMenu = useRestaurantStore((s) => s.loadMenu)
-  const add = useCartStore((s) => s.add)
+  const add = useEventStore((s) => s.add)
   const userId = useAuthStore((s) => s.user?.id ?? 1)
 
   useEffect(() => {
