@@ -5,33 +5,38 @@
 // (via ai_service → Postgres) is a documented follow-up, not in scope here.
 
 // Monotonic message id source. Not persisted; only needs to be unique per run.
-let messageSeq = 0
-function nextMessageId() {
-  return `m${Date.now().toString(36)}-${messageSeq++}`
-}
+let messageSeq = 0;
 
-const room = (groupId) => `group:${groupId}`
+/** Generate a unique-per-run message id (not persisted). */
+const nextMessageId = () => `m${Date.now().toString(36)}-${messageSeq++}`;
 
-// Wire the chat events for a single connected socket.
-export function registerSessionHandlers(io, socket) {
+/** Room name for a group's chat channel. */
+const room = (groupId) => `group:${groupId}`;
+
+/**
+ * Wire the chat events for a single connected socket.
+ * @param {import('socket.io').Server} io
+ * @param {import('socket.io').Socket} socket
+ */
+const registerSessionHandlers = (io, socket) => {
   // Join a group's room so this socket receives that group's messages.
   socket.on('group:join', ({ groupId }) => {
-    if (groupId == null) return
-    socket.join(room(groupId))
-  })
+    if (groupId == null) return;
+    socket.join(room(groupId));
+  });
 
   socket.on('group:leave', ({ groupId }) => {
-    if (groupId == null) return
-    socket.leave(room(groupId))
-  })
+    if (groupId == null) return;
+    socket.leave(room(groupId));
+  });
 
   // A member sent a message. Build the canonical message on the server and
   // broadcast to the WHOLE room including the sender, so every client renders
   // from the same event (single source of truth — no dupes, no optimistic drift).
   socket.on('chat:message', ({ groupId, text }) => {
-    if (groupId == null) return
-    const trimmed = typeof text === 'string' ? text.trim() : ''
-    if (!trimmed) return
+    if (groupId == null) return;
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed) return;
 
     const msg = {
       id: nextMessageId(),
@@ -42,33 +47,35 @@ export function registerSessionHandlers(io, socket) {
       name: socket.data.name ?? null,
       text: trimmed,
       at: new Date().toISOString(),
-    }
+    };
 
-    io.to(room(groupId)).emit('chat:message', msg)
-  })
+    io.to(room(groupId)).emit('chat:message', msg);
+  });
 
   // A member started a session. Broadcast to the whole room (incl. sender) so
   // every client shows the session card live, inline in their own chat.
   socket.on('session:start', ({ groupId }) => {
-    if (groupId == null) return
+    if (groupId == null) return;
     io.to(room(groupId)).emit('session:start', {
       groupId,
       startedBy: socket.data.userId ?? null,
       at: new Date().toISOString(),
-    })
-  })
+    });
+  });
 
   // Typing presence — ephemeral, never stored. Relay to OTHERS in the room
   // (socket.to excludes the sender) so you never see your own "typing…".
   const emitTyping = (groupId, isTyping) => {
-    if (groupId == null) return
+    if (groupId == null) return;
     socket.to(room(groupId)).emit('typing:update', {
       groupId,
       userId: socket.data.userId ?? null,
       name: socket.data.name ?? null,
       isTyping,
-    })
-  }
-  socket.on('typing:start', ({ groupId }) => emitTyping(groupId, true))
-  socket.on('typing:stop', ({ groupId }) => emitTyping(groupId, false))
-}
+    });
+  };
+  socket.on('typing:start', ({ groupId }) => emitTyping(groupId, true));
+  socket.on('typing:stop', ({ groupId }) => emitTyping(groupId, false));
+};
+
+export { registerSessionHandlers };
