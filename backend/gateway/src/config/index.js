@@ -12,7 +12,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const DATABASE_URL = process.env.DATABASE_URL || '';
 
-export const config = {
+const config = {
   PORT,
   // Must match the Vite dev server origin so the browser can open the socket
   // and send credentialed (cookie) requests.
@@ -38,3 +38,5 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || '',
   databaseUrl: DATABASE_URL,
 };
+
+export { config };

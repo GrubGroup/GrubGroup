@@ -5,6 +5,8 @@
 // rules); the gateway reads/writes the User table directly ONLY for the auth
 // vertical (register / login / Google linking). All other data access still
 // goes through ai_service.
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@prisma/client';
 
-export const prisma = new PrismaClient()
+const prisma = new PrismaClient();
+
+export { prisma };
