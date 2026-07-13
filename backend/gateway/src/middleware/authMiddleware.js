@@ -12,7 +12,10 @@ const requireAuth = async (req, res, next) => {
     if (!session) {
       return res.status(401).json({ error: 'Not authenticated.' });
     }
-    req.user = { id: session.user.id, role: session.user.role };
+    // Better Auth serializes the user id as a string; the domain schema uses
+    // Int PKs, so coerce it once here and every controller can use it directly
+    // in Prisma `where` clauses.
+    req.user = { id: Number(session.user.id), role: session.user.role };
     next();
   } catch {
     return res.status(401).json({ error: 'Not authenticated.' });
