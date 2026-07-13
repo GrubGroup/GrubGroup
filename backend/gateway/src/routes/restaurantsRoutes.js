@@ -1,13 +1,13 @@
 // Routes for /restaurants — browse/detail, create (with embedding), like/unlike.
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import {
   listRestaurants,
   getRestaurant,
   createRestaurant,
   likeRestaurant,
   unlikeRestaurant,
-} from '../controllers/restaurants.controller.js';
+} from '../controllers/restaurantsController.js';
 
 const router = Router();
 

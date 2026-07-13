@@ -1,6 +1,6 @@
 // Routes for /events — the caller's dining history. Requires a valid session.
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import { listEvents } from '../controllers/eventsController.js';
 
 const router = Router();

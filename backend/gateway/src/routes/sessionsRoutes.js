@@ -1,6 +1,6 @@
 // Routes for /sessions — session lifecycle, membership, Q&A, recommendations, close.
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import {
   getRecommendations,
   createSession,
@@ -12,7 +12,7 @@ import {
   getLatestRecommendation,
   closeSession,
   getSessionSummary,
-} from '../controllers/sessions.controller.js';
+} from '../controllers/sessionsController.js';
 
 const router = Router();
 

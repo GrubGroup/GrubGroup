@@ -1,6 +1,6 @@
 // Routes for /profile — read, create, and update the caller's preference profile.
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import {
   getProfile,
   createProfile,

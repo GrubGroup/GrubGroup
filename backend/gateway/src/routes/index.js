@@ -3,8 +3,8 @@
 //
 // Auth endpoints are NOT here — Better Auth owns /api/auth/* directly in app.js.
 import { Router } from 'express';
-import restaurantsRouter from './restaurants.routes.js';
-import sessionsRouter from './sessions.routes.js';
+import restaurantsRouter from './restaurantsRoutes.js';
+import sessionsRouter from './sessionsRoutes.js';
 import profileRouter from './profileRoutes.js';
 import groupsRouter from './groupsRoutes.js';
 import eventsRouter from './eventsRoutes.js';

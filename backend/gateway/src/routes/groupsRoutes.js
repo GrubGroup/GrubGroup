@@ -1,7 +1,7 @@
 // Routes for /groups — groups, membership, chat history, and group-scoped
 // sessions/events. Every route is caller-scoped and requires a valid session.
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import {
   listGroups,
   createGroup,

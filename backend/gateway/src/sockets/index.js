@@ -2,7 +2,7 @@
 import { Server } from 'socket.io'
 import { config } from '../config/index.js'
 import { auth } from '../lib/auth.js'
-import { registerSessionHandlers } from './session.handlers.js'
+import { registerSessionHandlers } from './sessionHandlers.js'
 
 /**
  * Attach a Socket.IO server to the given HTTP server and wire chat handlers.

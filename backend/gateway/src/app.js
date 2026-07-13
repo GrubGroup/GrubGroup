@@ -5,7 +5,7 @@ import { toNodeHandler, fromNodeHeaders } from 'better-auth/node'
 import { config } from './config/index.js'
 import { auth } from './lib/auth.js'
 import routes from './routes/index.js'
-import { errorMiddleware } from './middleware/error.middleware.js'
+import { errorMiddleware } from './middleware/errorMiddleware.js'
 
 const app = express()
 
