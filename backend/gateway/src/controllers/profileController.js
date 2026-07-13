@@ -1,5 +1,5 @@
 // Profile request handlers: read, create, and update the caller's preference profile.
-import { prisma } from '../services/prisma.js';
+import { prisma } from '../lib/prisma.js';
 
 /**
  * Validate the shared profile body. Returns an error message string when invalid,

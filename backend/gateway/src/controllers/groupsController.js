@@ -1,6 +1,6 @@
 // Group request handlers: groups, membership, chat history, and group-scoped
 // sessions/events. All handlers are caller-scoped and assume requireAuth ran.
-import { prisma } from '../services/prisma.js';
+import { prisma } from '../lib/prisma.js';
 
 // Valid GroupMessage.message_type values (mirrors the Prisma MessageType enum).
 const MESSAGE_TYPES = ['TEXT', 'IMG', 'SYSTEM', 'SESSION_BLOCK'];

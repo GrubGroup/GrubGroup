@@ -1,5 +1,5 @@
 // Restaurant request handlers: browse/detail, create-then-embed, and like/unlike.
-import { prisma } from '../services/prisma.js';
+import { prisma } from '../lib/prisma.js';
 import { embed } from '../services/aiClient.js';
 import { logger } from '../utils/logger.js';
 

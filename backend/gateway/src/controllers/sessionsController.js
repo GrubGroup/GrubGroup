@@ -1,5 +1,5 @@
 // Session/event request handlers.
-import { prisma } from '../services/prisma.js';
+import { prisma } from '../lib/prisma.js';
 import { getRecommendations as fetchRecommendations } from '../services/aiClient.js';
 
 /** Parse a route param to a positive integer, or null when invalid. */

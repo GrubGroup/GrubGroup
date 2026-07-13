@@ -1,5 +1,5 @@
 // Event request handlers: the caller's dining history.
-import { prisma } from '../services/prisma.js';
+import { prisma } from '../lib/prisma.js';
 
 /**
  * GET /api/events — past outings the caller attended (Event.attendees M:N).
