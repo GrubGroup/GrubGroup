@@ -9,26 +9,30 @@
 //   - `role` is a read-only mirror; authorization stays Prisma/gateway-owned
 //   - username plugin (we rely on User.username @unique); since it isn't required
 //     at signup, a create-hook derives a unique username from the email
-import { betterAuth } from 'better-auth'
-import { prismaAdapter } from 'better-auth/adapters/prisma'
-import { username } from 'better-auth/plugins'
-import { prisma } from './prisma.js'
-import { config } from '../config/index.js'
+import { betterAuth } from 'better-auth';
+import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { username } from 'better-auth/plugins';
+import { prisma } from './prisma.js';
+import { config } from '../config/index.js';
 
-// Derive a unique, valid username from an email, appending a numeric suffix on
-// collision (User.username is NOT NULL + unique). Runs for password AND social
-// signups (Google users have no username otherwise).
-async function uniqueUsernameFromEmail(email) {
-  const base = (email?.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '') || 'user'
-  let candidate = base
-  let n = 1
+/**
+ * Derive a unique, valid username from an email, appending a numeric suffix on
+ * collision (User.username is NOT NULL + unique). Runs for password AND social
+ * signups (Google users have no username otherwise).
+ * @param {string} email
+ * @returns {Promise<string>}
+ */
+const uniqueUsernameFromEmail = async (email) => {
+  const base = (email?.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '') || 'user';
+  let candidate = base;
+  let n = 1;
   while (await prisma.user.findUnique({ where: { username: candidate } })) {
-    candidate = `${base}${n++}`
+    candidate = `${base}${n++}`;
   }
-  return candidate
-}
+  return candidate;
+};
 
-export const auth = betterAuth({
+const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   secret: config.BETTER_AUTH_SECRET,
   baseURL: config.BETTER_AUTH_URL,
@@ -82,11 +86,13 @@ export const auth = betterAuth({
         before: async (user) => {
           // Fill the NOT-NULL unique username the domain schema requires.
           if (!user.username) {
-            return { data: { ...user, username: await uniqueUsernameFromEmail(user.email) } }
+            return { data: { ...user, username: await uniqueUsernameFromEmail(user.email) } };
           }
-          return { data: user }
+          return { data: user };
         },
       },
     },
   },
-})
+});
+
+export { auth };
