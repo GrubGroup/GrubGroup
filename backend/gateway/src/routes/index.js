@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import restaurantsRouter from './restaurants.routes.js';
 import sessionsRouter from './sessions.routes.js';
+import profileRouter from './profileRoutes.js';
 
 const router = Router();
 
@@ -14,6 +15,7 @@ router.get('/health', (req, res) => {
 
 router.use('/restaurants', restaurantsRouter);
 router.use('/sessions', sessionsRouter);
+router.use('/profile', profileRouter);
 
 // TODO: mount the ai router here once implemented.
 
