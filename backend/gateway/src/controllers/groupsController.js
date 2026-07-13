@@ -1,0 +1,358 @@
+// Group request handlers: groups, membership, chat history, and group-scoped
+// sessions/events. All handlers are caller-scoped and assume requireAuth ran.
+import { prisma } from '../services/prisma.js';
+
+// Valid GroupMessage.message_type values (mirrors the Prisma MessageType enum).
+const MESSAGE_TYPES = ['TEXT', 'IMG', 'SYSTEM', 'SESSION_BLOCK'];
+
+const DEFAULT_MESSAGE_LIMIT = 50;
+const MAX_MESSAGE_LIMIT = 100;
+
+/** Parse a route/query param to a positive integer, or null when invalid. */
+const toPositiveInt = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+/**
+ * Resolve membership: returns true when `userId` belongs to `groupId`.
+ * Used to guard every group-scoped read/write with a 403.
+ */
+const isGroupMember = async (groupId, userId) => {
+  const membership = await prisma.groupMember.findUnique({
+    where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+  });
+  return Boolean(membership);
+};
+
+/**
+ * GET /api/groups — list groups the caller belongs to, with a member count.
+ */
+const listGroups = async (req, res, next) => {
+  try {
+    const groups = await prisma.group.findMany({
+      where: { members: { some: { user_id: req.user.id } } },
+      include: { _count: { select: { members: true } } },
+      orderBy: { created_at: 'desc' },
+    });
+    const shaped = groups.map(({ _count, ...group }) => ({
+      ...group,
+      member_count: _count.members,
+    }));
+    return res.status(200).json(shaped);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /api/groups — create a group; the caller is added as the first member.
+ * Optional member_ids seeds additional members at creation.
+ */
+const createGroup = async (req, res, next) => {
+  const { name, member_ids } = req.body ?? {};
+
+  if (typeof name !== 'string' || name.trim() === '') {
+    return res.status(400).json({ error: 'name is required.' });
+  }
+  if (member_ids !== undefined) {
+    if (!Array.isArray(member_ids) || member_ids.some((id) => !Number.isInteger(id))) {
+      return res.status(400).json({ error: 'member_ids must be an array of integers.' });
+    }
+  }
+
+  // De-duplicate and always include the caller as a member.
+  const memberIds = [...new Set([req.user.id, ...(member_ids ?? [])])];
+
+  try {
+    const group = await prisma.group.create({
+      data: {
+        name: name.trim(),
+        members: {
+          create: memberIds.map((user_id) => ({ user_id })),
+        },
+      },
+      include: { members: { select: { user_id: true, joined_at: true } } },
+    });
+    return res.status(201).json(group);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/groups/:group_id — group detail with members (joined to User).
+ * 403 for non-members, 404 when the group does not exist.
+ */
+const getGroup = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  try {
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: {
+        members: {
+          select: {
+            user_id: true,
+            joined_at: true,
+            user: { select: { display_name: true, avatar_url: true } },
+          },
+        },
+      },
+    });
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found.' });
+    }
+    if (!group.members.some((m) => m.user_id === req.user.id)) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const members = group.members.map(({ user, user_id, joined_at }) => ({
+      user_id,
+      display_name: user?.display_name ?? null,
+      avatar_url: user?.avatar_url ?? null,
+      joined_at,
+    }));
+    return res.status(200).json({ ...group, members });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /api/groups/:group_id/members — add a member by user_id or username.
+ * 403 non-member caller, 404 missing group/user, 409 already a member.
+ */
+const addMember = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  const { user_id, username } = req.body ?? {};
+  if (user_id === undefined && username === undefined) {
+    return res.status(400).json({ error: 'Provide either user_id or username.' });
+  }
+  if (user_id !== undefined && !Number.isInteger(user_id)) {
+    return res.status(400).json({ error: 'user_id must be an integer.' });
+  }
+
+  try {
+    const group = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found.' });
+    }
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    // Resolve the target user from either id or username.
+    const target = user_id !== undefined
+      ? await prisma.user.findUnique({ where: { id: user_id } })
+      : await prisma.user.findUnique({ where: { username } });
+    if (!target) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const existing = await prisma.groupMember.findUnique({
+      where: { group_id_user_id: { group_id: groupId, user_id: target.id } },
+    });
+    if (existing) {
+      return res.status(409).json({ error: 'User is already a group member.' });
+    }
+
+    const member = await prisma.groupMember.create({
+      data: { group_id: groupId, user_id: target.id },
+    });
+    return res.status(201).json(member);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * DELETE /api/groups/:group_id/members/:user_id — remove a member.
+ * Callers may remove themselves (leave); otherwise membership is required.
+ * 403 non-member caller, 404 when the target is not a member. Returns 204.
+ */
+const removeMember = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  const targetId = toPositiveInt(req.params.user_id);
+  if (!groupId || !targetId) {
+    return res
+      .status(400)
+      .json({ error: 'group_id and user_id must be positive integers.' });
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const target = await prisma.groupMember.findUnique({
+      where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
+    });
+    if (!target) {
+      return res.status(404).json({ error: 'Member not found.' });
+    }
+
+    await prisma.groupMember.delete({
+      where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
+    });
+    return res.status(204).send();
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/groups/:group_id/messages?limit=&before= — paginated chat history,
+ * newest-first. `before` is a message id cursor (returns messages older than it).
+ * 403 for non-members.
+ */
+const listMessages = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  const { limit, before } = req.query;
+  let take = DEFAULT_MESSAGE_LIMIT;
+  if (limit !== undefined) {
+    const parsed = Number(limit);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return res.status(400).json({ error: 'limit must be a positive integer.' });
+    }
+    take = Math.min(parsed, MAX_MESSAGE_LIMIT);
+  }
+  let beforeId;
+  if (before !== undefined) {
+    beforeId = Number(before);
+    if (!Number.isInteger(beforeId) || beforeId <= 0) {
+      return res.status(400).json({ error: 'before must be a positive integer id.' });
+    }
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const messages = await prisma.groupMessage.findMany({
+      where: {
+        group_id: groupId,
+        ...(beforeId ? { id: { lt: beforeId } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take,
+    });
+    return res.status(200).json(messages);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /api/groups/:group_id/messages — persist a chat message.
+ * 400 empty content / invalid message_type, 403 for non-members.
+ */
+const postMessage = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  const { content, message_type } = req.body ?? {};
+  if (typeof content !== 'string' || content.trim() === '') {
+    return res.status(400).json({ error: 'content is required.' });
+  }
+  const type = message_type ?? 'TEXT';
+  if (!MESSAGE_TYPES.includes(type)) {
+    return res
+      .status(400)
+      .json({ error: `message_type must be one of: ${MESSAGE_TYPES.join(', ')}.` });
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const message = await prisma.groupMessage.create({
+      data: {
+        group_id: groupId,
+        user_id: req.user.id,
+        content,
+        message_type: type,
+      },
+    });
+    return res.status(201).json(message);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/groups/:group_id/sessions — sessions started from this group.
+ * 403 for non-members.
+ */
+const listGroupSessions = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const sessions = await prisma.session.findMany({
+      where: { group_id: groupId },
+      orderBy: { created_at: 'desc' },
+    });
+    return res.status(200).json(sessions);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/groups/:group_id/events — finalized outings for this group.
+ * 403 for non-members.
+ */
+const listGroupEvents = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const events = await prisma.event.findMany({
+      where: { group_id: groupId },
+      orderBy: { date: 'desc' },
+    });
+    return res.status(200).json(events);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+export {
+  listGroups,
+  createGroup,
+  getGroup,
+  addMember,
+  removeMember,
+  listMessages,
+  postMessage,
+  listGroupSessions,
+  listGroupEvents,
+};
