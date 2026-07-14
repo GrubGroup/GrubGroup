@@ -14,7 +14,7 @@ export function SessionInviteCard({ session, memberIds }: SessionInviteCardProps
     <Card padding="lg" className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <Badge tone="primary">Active session</Badge>
-        <span className="text-sm text-text-muted">~${session.avg_budget}pp</span>
+        <span className="text-sm text-text-muted">{session.time_limit} min</span>
       </div>
       <div>
         <h2 className="font-display text-xl font-bold text-text">
