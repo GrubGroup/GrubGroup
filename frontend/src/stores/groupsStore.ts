@@ -1,20 +1,31 @@
 import { create } from 'zustand'
 import type { Group } from '@/types'
 import { MOCK_GROUPS } from '@/api/mock/groups.mock'
+import { fetchGroups } from '@/api/groups.api'
 
-// The user's group list. Seeded from the mock groups; new groups are added
-// locally (no backend yet). Local-only + ephemeral — created groups live only in
-// this browser and reset to MOCK_GROUPS on reload. Real shared/invited groups
-// need the users/GroupMember DB + auth (the WhatsApp-style flow), which is future
-// work.
+// The user's group list. In live mode it's loaded from the gateway (each group
+// carries its latest DB message as last_message, for the sidebar preview); in
+// mock mode it's seeded from MOCK_GROUPS. New groups are still added locally
+// (the create-group backend flow is future work).
 
 interface GroupsState {
   groups: Group[]
+  load: () => Promise<void>
   addGroup: (name: string) => Group
 }
 
 export const useGroupsStore = create<GroupsState>((set, get) => ({
   groups: MOCK_GROUPS,
+
+  // Refresh the list from the backend (no-op-safe: falls back to current list
+  // on failure so the sidebar never blanks out).
+  load: async () => {
+    try {
+      set({ groups: await fetchGroups() })
+    } catch {
+      // Keep whatever's already shown.
+    }
+  },
 
   addGroup: (name) => {
     const trimmed = name.trim()

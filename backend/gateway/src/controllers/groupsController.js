@@ -32,13 +32,32 @@ const listGroups = async (req, res, next) => {
   try {
     const groups = await prisma.group.findMany({
       where: { members: { some: { user_id: req.user.id } } },
-      include: { _count: { select: { members: true } } },
+      include: {
+        _count: { select: { members: true } },
+        // The single most recent message, for the sidebar preview line.
+        messages: {
+          orderBy: { id: 'desc' },
+          take: 1,
+          include: { user: { select: { display_name: true, username: true } } },
+        },
+      },
       orderBy: { created_at: 'desc' },
     });
-    const shaped = groups.map(({ _count, ...group }) => ({
-      ...group,
-      member_count: _count.members,
-    }));
+    const shaped = groups.map(({ _count, messages, ...group }) => {
+      const last = messages[0];
+      return {
+        ...group,
+        member_count: _count.members,
+        last_message: last
+          ? {
+              text: last.content,
+              name: last.user?.display_name ?? last.user?.username ?? null,
+              user_id: last.user_id,
+              at: last.created_at.toISOString(),
+            }
+          : null,
+      };
+    });
     return res.status(200).json(shaped);
   } catch (err) {
     return next(err);
