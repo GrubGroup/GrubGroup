@@ -7,7 +7,6 @@ export const MOCK_SESSION: Session = {
   host_user_id: 2,
   group_id: 7,
   time_limit: 15,
-  avg_budget: 20,
   created_at: now,
   closed_at: null,
 }

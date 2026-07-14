@@ -8,7 +8,6 @@ export interface Session {
   host_user_id: number
   group_id?: number | null
   time_limit: number
-  avg_budget: number
   created_at: string
   closed_at?: string | null
 }

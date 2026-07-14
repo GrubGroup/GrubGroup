@@ -191,13 +191,12 @@ async def _create_throwaway_session() -> tuple[int, list[int], int]:
         db.add(group)
         await db.flush()
 
-        # Session (host = first user). avg_budget = mean of members' budget_max.
-        avg_budget = sum(m["budget_max"] for m in _MEMBERS) / len(_MEMBERS)
+        # Session (host = first user). No avg_budget column — the orchestrator
+        # computes the averaged group budget on demand from member budgets.
         session = Session(
             host_user_id=user_ids[0],
             group_id=group.id,
             time_limit=15,
-            avg_budget=avg_budget,
         )
         db.add(session)
         await db.flush()
@@ -208,20 +207,26 @@ async def _create_throwaway_session() -> tuple[int, list[int], int]:
             for uid in user_ids
         )
 
-        # Qa: group signals. Center on the seed cluster (downtown SF) with a
-        # generous radius so the geo bounding box does not exclude everything.
-        db.add(
+        # Qa: one row per member (session-scoped overrides). The HOST's row
+        # carries the event's occasion + time_slot and the shared search location
+        # (host-only); members carry only their own overrides. Carol's row shows
+        # a QA cuisine override (she wants ramen today) that should outrank her
+        # profile cuisines for this session while still counting them.
+        host_uid = user_ids[0]
+        db.add_all(
             Qa(
                 session_id=session.id,
-                occasion="casual group dinner",
-                location_mode="manual",
-                location_lat=37.7749,
-                location_lon=-122.4194,
-                radius_miles=10.0,
-                time_slot="dinner",
-                budget_min=8,
-                budget_max=45,
+                user_id=uid,
+                occasion="casual group dinner" if uid == host_uid else None,
+                time_slot="dinner" if uid == host_uid else None,
+                location_mode="manual" if uid == host_uid else None,
+                location_lat=37.7749 if uid == host_uid else None,
+                location_lon=-122.4194 if uid == host_uid else None,
+                radius_miles=10.0 if uid == host_uid else None,
+                preferred_cuisines=["ramen"] if uid == user_ids[-1] else [],
+                budget_max=45 if uid == host_uid else None,
             )
+            for uid in user_ids
         )
 
         await db.commit()

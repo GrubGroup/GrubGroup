@@ -41,13 +41,10 @@ const getRecommendations = async (req, res, next) => {
  * the host and is seeded as a member; group sessions seed all group members.
  */
 const createSession = async (req, res, next) => {
-  const { group_id, time_limit, avg_budget } = req.body ?? {};
+  const { group_id, time_limit } = req.body ?? {};
 
   if (!Number.isInteger(time_limit) || time_limit <= 0) {
     return res.status(400).json({ error: 'time_limit must be a positive integer.' });
-  }
-  if (typeof avg_budget !== 'number' || avg_budget < 0) {
-    return res.status(400).json({ error: 'avg_budget must be a non-negative number.' });
   }
   if (group_id !== undefined && group_id !== null && !Number.isInteger(group_id)) {
     return res.status(400).json({ error: 'group_id must be an integer.' });
@@ -76,7 +73,6 @@ const createSession = async (req, res, next) => {
         host_user_id: req.user.id,
         group_id: group_id ?? null,
         time_limit,
-        avg_budget,
         members: {
           create: memberIds.map((user_id) => ({ user_id })),
         },
@@ -238,8 +234,14 @@ const setReady = async (req, res, next) => {
 };
 
 /**
- * POST /api/sessions/:session_id/qa — submit occasion/location/time/budget answers.
- * 400 on invalid ranges, 403 for non-members.
+ * POST /api/sessions/:session_id/qa — submit this member's session preferences.
+ *
+ * Qa is one row per (session, member): this UPSERTS the caller's own row (their
+ * temporary, session-scoped overrides — cuisines/budget/location). occasion and
+ * time_slot describe the shared EVENT and are HOST-ONLY: a non-host's values are
+ * silently dropped and the response flags `host_only_ignored` so the client can
+ * tell the user only the host sets those. 400 on invalid ranges, 403 for
+ * non-members.
  */
 const submitQa = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -248,6 +250,8 @@ const submitQa = async (req, res, next) => {
   }
 
   const {
+    preferred_cuisines,
+    disliked_cuisines,
     occasion,
     location_mode,
     location_lat,
@@ -272,6 +276,14 @@ const submitQa = async (req, res, next) => {
   }
 
   try {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { host_user_id: true },
+    });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found.' });
+    }
+
     const member = await prisma.sessionMember.findUnique({
       where: { session_id_user_id: { session_id: sessionId, user_id: req.user.id } },
     });
@@ -279,20 +291,36 @@ const submitQa = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a session member.' });
     }
 
-    const qa = await prisma.qa.create({
-      data: {
-        session_id: sessionId,
-        occasion: occasion ?? null,
-        location_mode: location_mode ?? null,
-        location_lat: location_lat ?? null,
-        location_lon: location_lon ?? null,
-        radius_miles: radius_miles ?? null,
-        time_slot: time_slot ?? null,
-        budget_min: budget_min ?? null,
-        budget_max: budget_max ?? null,
-      },
+    // occasion + time_slot are the host's to set. For a non-host, drop them and
+    // flag it so the client can explain why (silent drop, not a hard failure).
+    const isHost = session.host_user_id === req.user.id;
+    const hostOnlyIgnored =
+      !isHost &&
+      ((occasion !== undefined && occasion !== null) ||
+        (time_slot !== undefined && time_slot !== null));
+    const occasionValue = isHost ? (occasion ?? null) : null;
+    const timeSlotValue = isHost ? (time_slot ?? null) : null;
+
+    // Shared fields for both create and update (per-member overrides).
+    const fields = {
+      preferred_cuisines: preferred_cuisines ?? [],
+      disliked_cuisines: disliked_cuisines ?? [],
+      occasion: occasionValue,
+      location_mode: location_mode ?? null,
+      location_lat: location_lat ?? null,
+      location_lon: location_lon ?? null,
+      radius_miles: radius_miles ?? null,
+      time_slot: timeSlotValue,
+      budget_min: budget_min ?? null,
+      budget_max: budget_max ?? null,
+    };
+
+    const qa = await prisma.qa.upsert({
+      where: { session_id_user_id: { session_id: sessionId, user_id: req.user.id } },
+      create: { session_id: sessionId, user_id: req.user.id, ...fields },
+      update: fields,
     });
-    return res.status(201).json(qa);
+    return res.status(201).json({ ...qa, host_only_ignored: hostOnlyIgnored });
   } catch (err) {
     return next(err);
   }
@@ -385,7 +413,10 @@ const closeSession = async (req, res, next) => {
       return res.status(400).json({ error: 'restaurant_id does not exist.' });
     }
 
-    // Close the session and create the Event atomically.
+    // Close the session, create the Event, and clear the session's Qa rows
+    // atomically. Qa holds each member's TEMPORARY, session-scoped overrides;
+    // once the event is created they've served their purpose and are deleted
+    // (they never mutate the durable Profile, so nothing is lost).
     const [closedSession, event] = await prisma.$transaction([
       prisma.session.update({
         where: { id: sessionId },
@@ -404,6 +435,7 @@ const closeSession = async (req, res, next) => {
           },
         },
       }),
+      prisma.qa.deleteMany({ where: { session_id: sessionId } }),
     ]);
     return res.status(200).json({ session: closedSession, event });
   } catch (err) {
