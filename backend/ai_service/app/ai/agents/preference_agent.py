@@ -33,6 +33,12 @@ async def normalize_member(
         budget_min=_get(profile, "budget_min", 0) or 0,
         budget_max=_get(profile, "budget_max", 0) or 0,
         liked_restaurant_ids=list(_get(profile, "liked_restaurant_ids", []) or []),
+        # Session-scoped Qa overrides the pipeline merged onto this payload
+        # (None/[] when the member did not override the field in QA).
+        qa_preferred_cuisines=list(_get(profile, "qa_preferred_cuisines", []) or []),
+        qa_disliked_cuisines=list(_get(profile, "qa_disliked_cuisines", []) or []),
+        qa_budget_min=_get(profile, "qa_budget_min", None),
+        qa_budget_max=_get(profile, "qa_budget_max", None),
     )
 
     if enrich:

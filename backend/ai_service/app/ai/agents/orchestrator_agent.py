@@ -19,14 +19,27 @@ from app.ai.rag.retriever import similarity_search
 _CANDIDATE_LIMIT = 20
 
 
+# How much a session-scoped Qa cuisine outweighs a durable Profile cuisine. A
+# Profile like/dislike is +/-1; a QA override is +/-QA_CUISINE_WEIGHT. Additive
+# (not replacing) so the Profile signal still counts — e.g. profile "japanese"
+# (+1) plus QA "mexican" (+2) ranks mexican first while japanese stays in play.
+_QA_CUISINE_WEIGHT = 2.0
+
+
 def _reconcile(state: PipelineState) -> ReconciledConstraints:
     """Merge member prefs + Qa signals into hard/soft group constraints.
 
     required_dietary is the UNION of every member's dietary_restrictions and is
-    treated as HARD downstream. price_max is the most constraining budget cap —
-    the min of members' budget_max, further tightened by qa.budget_max if lower.
-    cuisine_weights reward preferred cuisines (+1 each) and penalize disliked
-    ones (-1 each), summed across members. center/radius come from Qa.
+    treated as HARD downstream. Budget uses each member's EFFECTIVE cap (their
+    QA budget override this session, else their Profile budget): price_max is the
+    min of those caps (the most-constrained member gates the group), and
+    avg_budget is their mean (the group's spend sweet-spot, handed to the re-rank
+    so top picks land near it — there is no Session.avg_budget column). Cuisine
+    weights reward preferred cuisines and penalize disliked ones, summed across
+    members: durable Profile cuisines score +/-1 and session QA cuisines add
+    +/-_QA_CUISINE_WEIGHT on top, so a QA override outranks the Profile for this
+    session while still counting the Profile taste. occasion / time_slot /
+    center / radius come from the host-authored session signals.
     """
     required_dietary: list[str] = []
     seen_dietary: set[str] = set()
@@ -38,22 +51,36 @@ def _reconcile(state: PipelineState) -> ReconciledConstraints:
             if tag and tag not in seen_dietary:
                 seen_dietary.add(tag)
                 required_dietary.append(tag)
-        if member.budget_max:
-            budget_caps.append(member.budget_max)
+        # Skip a 0 effective cap on purpose: budget_max is a required positive
+        # Int on Profile, so 0 is the "no budget data" sentinel (MemberPref's
+        # default), NOT "this diner can spend $0". Including it would set
+        # price_max=0 and filter out every restaurant. Do not "fix" this to
+        # `is not None` — that reintroduces the empty-candidates bug.
+        if member.effective_budget_max:
+            budget_caps.append(member.effective_budget_max)
+        # Durable Profile cuisines (+/-1).
         for cuisine in member.preferred_cuisines:
             if cuisine:
                 cuisine_weights[cuisine] = cuisine_weights.get(cuisine, 0.0) + 1.0
         for cuisine in member.disliked_cuisines:
             if cuisine:
                 cuisine_weights[cuisine] = cuisine_weights.get(cuisine, 0.0) - 1.0
+        # Session QA overrides, weighted heavier so they dominate this session.
+        for cuisine in member.qa_preferred_cuisines:
+            if cuisine:
+                cuisine_weights[cuisine] = (
+                    cuisine_weights.get(cuisine, 0.0) + _QA_CUISINE_WEIGHT
+                )
+        for cuisine in member.qa_disliked_cuisines:
+            if cuisine:
+                cuisine_weights[cuisine] = (
+                    cuisine_weights.get(cuisine, 0.0) - _QA_CUISINE_WEIGHT
+                )
 
     price_max: float | None = min(budget_caps) if budget_caps else None
-    if state.qa.budget_max is not None:
-        price_max = (
-            float(state.qa.budget_max)
-            if price_max is None
-            else min(price_max, float(state.qa.budget_max))
-        )
+    avg_budget: float | None = (
+        sum(budget_caps) / len(budget_caps) if budget_caps else None
+    )
 
     center: tuple[float, float] | None = None
     if state.qa.location_lat is not None and state.qa.location_lon is not None:
@@ -62,6 +89,7 @@ def _reconcile(state: PipelineState) -> ReconciledConstraints:
     return ReconciledConstraints(
         required_dietary=required_dietary,
         price_max=price_max,
+        avg_budget=avg_budget,
         center=center,
         radius_miles=state.qa.radius_miles,
         cuisine_weights=cuisine_weights,
@@ -90,6 +118,8 @@ def _build_query_text(
         )
     if reconciled.price_max is not None:
         parts.append(f"Budget per person up to {reconciled.price_max:.0f}.")
+    if reconciled.avg_budget is not None:
+        parts.append(f"Group typically spends around {reconciled.avg_budget:.0f} per person.")
     return " ".join(parts)
 
 

@@ -18,4 +18,5 @@ class Session(SQLModel, table=True):
     time_limit: int
     created_at: datetime = Field(default_factory=utcnow)
     closed_at: datetime | None = None
-    avg_budget: float
+    # No avg_budget column: the averaged group budget is computed on demand from
+    # members' effective budget_max by the orchestrator, never persisted.
