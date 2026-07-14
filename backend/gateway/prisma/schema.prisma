@@ -119,6 +119,8 @@ model Event {
   address         String
   restaurant_id   Int
   restaurant_name String
+  occasion        String? // host-only; snapshot from the host's Qa row at close
+  time_slot       String? // host-only; snapshot from the host's Qa row at close
   group_id        Int?
   group_name      String? // snapshot of Group.name at creation; persists after group deletion
 

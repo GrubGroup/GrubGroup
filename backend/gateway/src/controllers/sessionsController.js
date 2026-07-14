@@ -413,10 +413,20 @@ const closeSession = async (req, res, next) => {
       return res.status(400).json({ error: 'restaurant_id does not exist.' });
     }
 
+    // occasion + time_slot are host-only, so they live on the HOST's Qa row.
+    // Snapshot them onto the durable Event before the Qa rows are deleted below.
+    const hostQa = await prisma.qa.findUnique({
+      where: {
+        session_id_user_id: { session_id: sessionId, user_id: session.host_user_id },
+      },
+      select: { occasion: true, time_slot: true },
+    });
+
     // Close the session, create the Event, and clear the session's Qa rows
     // atomically. Qa holds each member's TEMPORARY, session-scoped overrides;
     // once the event is created they've served their purpose and are deleted
-    // (they never mutate the durable Profile, so nothing is lost).
+    // (they never mutate the durable Profile, so nothing is lost — occasion and
+    // time_slot are preserved on the Event above).
     const [closedSession, event] = await prisma.$transaction([
       prisma.session.update({
         where: { id: sessionId },
@@ -428,6 +438,8 @@ const closeSession = async (req, res, next) => {
           address,
           restaurant_id,
           restaurant_name: restaurant.name,
+          occasion: hostQa?.occasion ?? null,
+          time_slot: hostQa?.time_slot ?? null,
           group_id: session.group_id ?? null,
           group_name: session.group?.name ?? null,
           attendees: {
