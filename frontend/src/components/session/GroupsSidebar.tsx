@@ -26,6 +26,15 @@ function usePreview(group: Group): { preview: string; time: string } {
   return { preview: group.preview ?? 'No messages yet', time: group.time ?? '' }
 }
 
+// A group's last-activity time (epoch ms), matching usePreview's precedence:
+// newest live message → DB last_message → 0 (message-less groups sink last).
+function lastActivity(group: Group, messagesByGroup: Record<number, { at: string }[]>): number {
+  const live = messagesByGroup[group.id]
+  const at = live?.[live.length - 1]?.at ?? group.last_message?.at
+  const ms = at ? new Date(at).getTime() : 0
+  return Number.isNaN(ms) ? 0 : ms
+}
+
 // One sidebar row. Split out so usePreview can subscribe per-group to live chat.
 function GroupRow({ group }: { group: Group }) {
   const go = useNavStore((s) => s.go)
@@ -67,8 +76,15 @@ export function GroupsSidebar() {
   const groups = useGroupsStore((s) => s.groups)
   const addGroup = useGroupsStore((s) => s.addGroup)
   const load = useGroupsStore((s) => s.load)
+  // Subscribe at this level so the list re-sorts live as new messages arrive.
+  const messagesByGroup = useGroupChatStore((s) => s.messagesByGroup)
 
   const [modalOpen, setModalOpen] = useState(false)
+
+  // Newest activity first (WhatsApp-style); sort a copy, never the store array.
+  const sortedGroups = [...groups].sort(
+    (a, b) => lastActivity(b, messagesByGroup) - lastActivity(a, messagesByGroup),
+  )
 
   // Load the real group list (with last messages) on mount. No-op in mock mode.
   useEffect(() => {
@@ -93,7 +109,7 @@ export function GroupsSidebar() {
         </span>
         <span className="text-xs font-medium text-text-muted">New group</span>
       </button>
-      {groups.map((g) => (
+      {sortedGroups.map((g) => (
         <GroupRow key={g.id} group={g} />
       ))}
 
