@@ -25,6 +25,7 @@ erDiagram
   User ||--o{ GroupMember : "joins as"
   Group ||--o{ GroupMessage : "has"
   User ||--o{ GroupMessage : "sends"
+  User ||--o{ Qa : "answers"
 
   User {
     int id PK
@@ -57,7 +58,6 @@ erDiagram
     int time_limit
     datetime created_at
     datetime closed_at
-    float avg_budget
   }
 
   SessionMember {
@@ -70,12 +70,15 @@ erDiagram
   Qa {
     int id PK
     int session_id FK
-    string occasion
+    int user_id FK
+    string[] preferred_cuisines "session override"
+    string[] disliked_cuisines "session override"
+    string occasion "host-only"
     string location_mode
     float location_lat
     float location_lon
     float radius_miles
-    string time_slot
+    string time_slot "host-only"
     int budget_min
     int budget_max
     string member_status
@@ -152,7 +155,8 @@ erDiagram
 | User | Session | 1 : n | `Session.host_user_id` | A user hosts many sessions (`"SessionHost"`). |
 | User | SessionMember | 1 : n | `SessionMember.user_id` | Join model — sessions a user belongs to. Cascade delete. |
 | Session | SessionMember | 1 : n | `SessionMember.session_id` | Join model — members of a session. Cascade delete. |
-| Session | Qa | 1 : n | `Qa.session_id` | A session has many Q&A entries (`"SessionQas"`). Cascade delete. |
+| Session | Qa | 1 : n | `Qa.session_id` | One Qa row **per member** (`@@unique([session_id, user_id])`) — each member's session-scoped overrides (`"SessionQas"`). Cascade delete. |
+| User | Qa | 1 : n | `Qa.user_id` | The member whose session overrides this Qa row holds. Cascade delete. |
 | Session | Recommendation | 1 : n | `Recommendation.session_id` | Recommendation sets generated for a session. Cascade delete. |
 | Recommendation | RecommendationItem | 1 : n | `RecommendationItem.recommendation_id` | Join model — one row per recommended restaurant. Cascade delete. |
 | Restaurant | RecommendationItem | 1 : n | `RecommendationItem.restaurant_id` | Restaurant referenced by many recommendation items. |
@@ -195,8 +199,17 @@ Access in code via `include`, e.g. `session.members[].user`, `recommendation.ite
   uses **SetNull**: the event survives with `group_id` null but keeps `group_name` — a snapshot of
   `Group.name` copied at creation. Frontend shows `group_name` and, when `group_id` is null,
   emphasizes that the group has been deleted.
+- **`Qa` is per-member and session-scoped.** Each member's QA sub-agent writes exactly one Qa row
+  (`@@unique([session_id, user_id])`) holding that member's **temporary** overrides for this session
+  only — `preferred_cuisines` / `disliked_cuisines` / `budget_*` / `location_*`. These **outrank the
+  durable `Profile`** for the session (e.g. profile likes Japanese but Qa says Mexican → Mexican
+  weighted higher, Japanese still counted). `occasion` and `time_slot` are **host-only**: only the
+  `Session.host_user_id` member's row carries them; a non-host's row leaves them null. There is **no
+  `Session.avg_budget`** — the averaged group budget is computed on demand from members' effective
+  `budget_max` by the ai_service orchestrator.
 - **Event creation flow:** all members fill the Q&A (or the session times out) → AI agent produces
   recommendations → the host confirms one option → an Event is created, reading `session.group_id`
-  to stamp `group_id` and copy the group's current `name` into `group_name`.
+  to stamp `group_id` and copy the group's current `name` into `group_name`, and the session's `Qa`
+  rows are **deleted** (temporary session data — see `closeSession`).
 - `Restaurant`'s `owner_user_id` / `is_published` (whiteboard "stretch" fields) are intentionally
   omitted for now.

@@ -1,6 +1,7 @@
 """Data access for sessions and session members."""
 
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -49,15 +50,27 @@ async def get_profiles_for_users(
     return list(result.scalars().all())
 
 
-async def get_qa(db: AsyncSession, session_id: int) -> Qa | None:
-    """Return the earliest Qa row for a session, or None."""
+async def get_qa_for_user(
+    db: AsyncSession, session_id: int, user_id: int
+) -> Qa | None:
+    """Return this member's Qa row for a session, or None.
+
+    Qa is one row per (session, member) — keyed by the Prisma
+    ``@@unique([session_id, user_id])`` — so this is the get-or-create key used
+    by the per-member analyze flow.
+    """
     result = await db.execute(
-        select(Qa)
-        .where(Qa.session_id == session_id)
-        .order_by(Qa.id)
-        .limit(1)
+        select(Qa).where(Qa.session_id == session_id, Qa.user_id == user_id)
     )
     return result.scalars().first()
+
+
+async def list_qa(db: AsyncSession, session_id: int) -> list[Qa]:
+    """Return every member's Qa row for a session (one per member)."""
+    result = await db.execute(
+        select(Qa).where(Qa.session_id == session_id).order_by(Qa.user_id)
+    )
+    return list(result.scalars().all())
 
 
 async def all_members_confirmed(db: AsyncSession, session_id: int) -> bool:
@@ -66,3 +79,57 @@ async def all_members_confirmed(db: AsyncSession, session_id: int) -> bool:
     if not members:
         return False
     return all(member.status for member in members)
+
+
+# Session-scoped Qa columns the conversational analyze flow may update.
+_QA_UPDATABLE_FIELDS = (
+    "preferred_cuisines",
+    "disliked_cuisines",
+    "occasion",
+    "location_mode",
+    "location_lat",
+    "location_lon",
+    "radius_miles",
+    "time_slot",
+    "budget_min",
+    "budget_max",
+)
+
+# Qa columns only the session host may set (the event's occasion + timing). A
+# non-host member's turn never writes these, even if the LLM extracted them.
+_QA_HOST_ONLY_FIELDS = ("occasion", "time_slot")
+
+
+async def upsert_qa_signals(
+    db: AsyncSession,
+    session_id: int,
+    user_id: int,
+    signals: dict[str, Any],
+    *,
+    is_host: bool = False,
+) -> Qa:
+    """Write one member's session-scoped signals onto their Qa row (get-or-create).
+
+    Qa is one row per (session, member): this reuses get_qa_for_user to find the
+    caller's row and creates one (session_id + user_id) when absent — every
+    signal column is nullable. Only keys present in `signals` with a non-None
+    value are written, so a partial turn never clears a previously-captured Qa
+    field. `occasion` / `time_slot` are HOST-ONLY: when `is_host` is False they
+    are dropped here as a data-layer backstop, even if an earlier layer let them
+    through. Mirrors the commit/refresh pattern in crud/recommendation.py — no
+    DDL, just inserts/updates a Prisma-owned table like the Recommendation writes.
+    """
+    qa = await get_qa_for_user(db, session_id, user_id)
+    if qa is None:
+        qa = Qa(session_id=session_id, user_id=user_id)
+
+    for field in _QA_UPDATABLE_FIELDS:
+        if not is_host and field in _QA_HOST_ONLY_FIELDS:
+            continue
+        if field in signals and signals[field] is not None:
+            setattr(qa, field, signals[field])
+
+    db.add(qa)
+    await db.commit()
+    await db.refresh(qa)
+    return qa

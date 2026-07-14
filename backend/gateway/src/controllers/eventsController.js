@@ -16,6 +16,8 @@ const listEvents = async (req, res, next) => {
         address: true,
         restaurant_id: true,
         restaurant_name: true,
+        occasion: true,
+        time_slot: true,
         group_id: true,
         group_name: true,
       },

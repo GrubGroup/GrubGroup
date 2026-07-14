@@ -56,6 +56,7 @@ model User {
   group_messages      GroupMessage[]
   auth_sessions       AuthSession[]
   accounts            Account[]
+  qas                 Qa[]
 }
 
 model Profile {
@@ -83,7 +84,9 @@ model Session {
   time_limit   Int
   created_at   DateTime  @default(now())
   closed_at    DateTime?
-  avg_budget   Float
+  // NOTE: no avg_budget column. The averaged group budget is computed on demand
+  // (mean of members' effective budget_max) by the ai_service orchestrator and
+  // is never persisted — see orchestrator_agent._reconcile.
 
   // -- Relations (virtual, no columns) --
   host            User             @relation("SessionHost", fields: [host_user_id], references: [id])
@@ -116,6 +119,8 @@ model Event {
   address         String
   restaurant_id   Int
   restaurant_name String
+  occasion        String? // host-only; snapshot from the host's Qa row at close
+  time_slot       String? // host-only; snapshot from the host's Qa row at close
   group_id        Int?
   group_name      String? // snapshot of Group.name at creation; persists after group deletion
 
@@ -149,20 +154,32 @@ model Restaurant {
 
 model Qa {
   // -- Fields (columns) --
-  id            Int     @id @default(autoincrement())
-  session_id    Int
-  occasion      String?
-  location_mode String?
-  location_lat  Float?
-  location_lon  Float?
-  radius_miles  Float?
-  time_slot     String?
-  budget_min    Int?
-  budget_max    Int?
-  member_status String?
+  // One row per (session, member): each member's TEMPORARY, session-scoped
+  // preference overrides captured by their QA sub-agent. These outrank the
+  // durable Profile for this session only and are deleted when the Event is
+  // created. occasion / time_slot are HOST-ONLY (the host_user_id row) — a
+  // non-host's row leaves them null.
+  id                 Int      @id @default(autoincrement())
+  session_id         Int
+  user_id            Int
+  preferred_cuisines String[]
+  disliked_cuisines  String[]
+  occasion           String? // host-only
+  location_mode      String?
+  location_lat       Float?
+  location_lon       Float?
+  radius_miles       Float?
+  time_slot          String? // host-only
+  budget_min         Int?
+  budget_max         Int?
+  member_status      String?
 
   // -- Relations (virtual, no columns) --
   session Session @relation("SessionQas", fields: [session_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // One Qa row per member per session (get-or-create keys on this).
+  @@unique([session_id, user_id])
 }
 
 model Group {

@@ -406,12 +406,12 @@ async def _create_session(members: list[dict], label: str) -> tuple[int, list[in
         db.add(group)
         await db.flush()
 
-        avg_budget = sum(m["budget_max"] for m in members) / len(members)
+        # No avg_budget column — the orchestrator computes the averaged group
+        # budget on demand from member budgets.
         session = Session(
             host_user_id=user_ids[0],
             group_id=group.id,
             time_limit=15,
-            avg_budget=avg_budget,
         )
         db.add(session)
         await db.flush()
@@ -422,20 +422,23 @@ async def _create_session(members: list[dict], label: str) -> tuple[int, list[in
             for uid, m in zip(user_ids, members, strict=True)
         )
 
-        # Qa: group signals. Center on the seed cluster (downtown SF) with a generous
-        # radius so the geo bounding box does not exclude every seeded restaurant.
-        db.add(
+        # Qa: one row per member (session-scoped overrides). The HOST's row holds
+        # the event occasion + time_slot and the shared search location (host-
+        # only); other members carry only their own overrides.
+        host_uid = user_ids[0]
+        db.add_all(
             Qa(
                 session_id=session.id,
-                occasion="casual group dinner",
-                location_mode="manual",
-                location_lat=37.7749,
-                location_lon=-122.4194,
-                radius_miles=10.0,
-                time_slot="dinner",
-                budget_min=8,
-                budget_max=45,
+                user_id=uid,
+                occasion="casual group dinner" if uid == host_uid else None,
+                time_slot="dinner" if uid == host_uid else None,
+                location_mode="manual" if uid == host_uid else None,
+                location_lat=37.7749 if uid == host_uid else None,
+                location_lon=-122.4194 if uid == host_uid else None,
+                radius_miles=10.0 if uid == host_uid else None,
+                budget_max=45 if uid == host_uid else None,
             )
+            for uid in user_ids
         )
 
         await db.commit()

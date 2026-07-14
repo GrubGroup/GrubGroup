@@ -9,11 +9,15 @@ from pydantic import BaseModel, Field
 
 
 class MemberPref(BaseModel):
-    """Normalized per-member preferences drawn straight from the Profile row.
+    """Normalized per-member preferences: durable Profile + session Qa overrides.
 
-    Carries only real Prisma `Profile` columns — there is no noise_tolerance or
-    allergies signal in the schema, so none is modeled here. (A soft "noise"
-    preference would be an unsourced future signal; deliberately left out.)
+    The `*` fields (no prefix) are the durable Prisma `Profile` columns. The
+    `qa_*` fields are this member's TEMPORARY, session-scoped overrides from
+    their Qa row — they OUTRANK the Profile for this session only (e.g. profile
+    likes japanese but qa says mexican -> mexican wins this session, japanese
+    still counted). A `qa_*` value of None/[] means "the member didn't override
+    it in QA", so the durable Profile value stands. (There is no noise_tolerance
+    or allergies signal in the schema, so none is modeled here.)
     """
 
     user_id: int
@@ -23,10 +27,25 @@ class MemberPref(BaseModel):
     budget_min: int = 0
     budget_max: int = 0
     liked_restaurant_ids: list[int] = Field(default_factory=list)
+    # Session-scoped Qa overrides (None/[] => fall back to the Profile value).
+    qa_preferred_cuisines: list[str] = Field(default_factory=list)
+    qa_disliked_cuisines: list[str] = Field(default_factory=list)
+    qa_budget_min: int | None = None
+    qa_budget_max: int | None = None
+
+    @property
+    def effective_budget_max(self) -> int:
+        """QA budget cap if the member set one this session, else the Profile's."""
+        return self.qa_budget_max if self.qa_budget_max is not None else self.budget_max
 
 
 class QaSignals(BaseModel):
-    """Session-level Q&A signals; mirrors the optional `Qa` columns we use."""
+    """Session-level (host-authored) Q&A signals; the shared event context.
+
+    Per-member overrides (budget, cuisines) live on MemberPref, not here — this
+    carries only the signals that are one-per-session: occasion / time_slot
+    (HOST-ONLY) and the resolved group search location.
+    """
 
     occasion: str | None = None
     location_mode: str | None = None
@@ -34,8 +53,6 @@ class QaSignals(BaseModel):
     location_lon: float | None = None
     radius_miles: float | None = None
     time_slot: str | None = None
-    budget_min: int | None = None
-    budget_max: int | None = None
 
 
 class ReconciledConstraints(BaseModel):
@@ -43,6 +60,10 @@ class ReconciledConstraints(BaseModel):
 
     required_dietary: list[str] = Field(default_factory=list)
     price_max: float | None = None
+    # Mean of members' effective budget_max — the group's budget "sweet spot",
+    # computed in code (there is no Session.avg_budget column) and handed to the
+    # re-rank step so top picks land near what the group typically spends.
+    avg_budget: float | None = None
     center: tuple[float, float] | None = None
     radius_miles: float | None = None
     # cuisine -> weight; preferred cuisines score positive, disliked negative.
