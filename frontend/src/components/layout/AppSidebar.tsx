@@ -35,6 +35,7 @@ export function AppSidebar({
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const go = useNavStore((s) => s.go)
+  const openProfile = useNavStore((s) => s.openProfile)
   const [menuOpen, setMenuOpen] = useState(false)
 
   // Clear the Better Auth session (cookie) + local state, then return to sign-in.
@@ -81,7 +82,7 @@ export function AppSidebar({
             displayName={displayName}
             username={user?.username ?? 'you'}
             avatarUrl={user?.avatar_url}
-            onViewProfile={() => go('profile')}
+            onViewProfile={() => openProfile()}
             onSignOut={handleSignOut}
           />
           <button

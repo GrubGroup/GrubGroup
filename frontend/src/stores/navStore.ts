@@ -35,13 +35,20 @@ export type Screen =
 interface NavState {
   screen: Screen
   groupId: number // currently-selected group (chat room)
+  // Where the profile was opened from, so its Back returns to origin (the
+  // account menu opens from many screens). Stamped by openProfile.
+  returnTo: Screen
   go: (screen: Screen) => void
+  // Open the profile view, remembering the current screen as the return target.
+  openProfile: () => void
   setGroup: (id: number) => void
 }
 
-export const useNavStore = create<NavState>((set) => ({
+export const useNavStore = create<NavState>((set, get) => ({
   screen: 'sign-in',
   groupId: 7, // default matches the seeded session/messages
+  returnTo: 'group-chat',
   go: (screen) => set({ screen }),
+  openProfile: () => set({ returnTo: get().screen, screen: 'profile' }),
   setGroup: (id) => set({ groupId: id }),
 }))
