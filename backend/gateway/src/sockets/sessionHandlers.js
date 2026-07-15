@@ -30,6 +30,9 @@ const toWireMessage = (row, fallbackName = null) => ({
   name: row.user?.display_name ?? row.user?.username ?? fallbackName,
   text: row.content,
   at: row.created_at.toISOString(),
+  // Tag SYSTEM rows (e.g. "X has left the group") so the client renders them as
+  // a centered divider rather than a chat bubble. Everything else is text.
+  type: row.message_type === 'SYSTEM' ? 'system' : 'text',
 });
 
 /**

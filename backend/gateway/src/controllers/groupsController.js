@@ -211,8 +211,10 @@ const removeMember = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a group member.' });
     }
 
+    // Include the user so we can name them in the "X has left the group" line.
     const target = await prisma.groupMember.findUnique({
       where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
+      include: { user: { select: { display_name: true, username: true } } },
     });
     if (!target) {
       return res.status(404).json({ error: 'Member not found.' });
@@ -221,6 +223,34 @@ const removeMember = async (req, res, next) => {
     await prisma.groupMember.delete({
       where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
     });
+
+    // Announce the departure to the remaining members: persist a SYSTEM message
+    // and broadcast it over the existing chat pipeline so live clients append it
+    // and reloads replay it in history. Best-effort — never block the leave.
+    try {
+      const name = target.user?.display_name ?? target.user?.username ?? 'Someone';
+      const row = await prisma.groupMessage.create({
+        data: {
+          group_id: groupId,
+          user_id: targetId,
+          content: `${name} has left the group`,
+          message_type: 'SYSTEM',
+        },
+      });
+      const io = req.app.get('io');
+      io?.to(`group:${groupId}`).emit('chat:message', {
+        id: String(row.id),
+        groupId,
+        userId: targetId,
+        name,
+        text: row.content,
+        at: row.created_at.toISOString(),
+        type: 'system',
+      });
+    } catch (broadcastErr) {
+      console.error('leave-group system message failed', broadcastErr);
+    }
+
     return res.status(204).send();
   } catch (err) {
     return next(err);
