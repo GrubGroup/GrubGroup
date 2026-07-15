@@ -6,6 +6,7 @@ import { Router } from 'express';
 import restaurantsRouter from './restaurantsRoutes.js';
 import sessionsRouter from './sessionsRoutes.js';
 import profileRouter from './profileRoutes.js';
+import userRouter from './userRoutes.js';
 import groupsRouter from './groupsRoutes.js';
 import eventsRouter from './eventsRoutes.js';
 
@@ -19,6 +20,7 @@ router.get('/health', (req, res) => {
 router.use('/restaurants', restaurantsRouter);
 router.use('/sessions', sessionsRouter);
 router.use('/profile', profileRouter);
+router.use('/user', userRouter);
 router.use('/groups', groupsRouter);
 router.use('/events', eventsRouter);
 

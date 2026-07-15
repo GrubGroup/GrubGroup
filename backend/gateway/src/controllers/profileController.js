@@ -12,6 +12,9 @@ const validateProfileBody = (body) => {
     preferred_cuisines,
     budget_min,
     budget_max,
+    default_location,
+    default_lat,
+    default_lon,
   } = body;
 
   if (typeof budget_min !== 'number' || typeof budget_max !== 'number') {
@@ -29,7 +32,31 @@ const validateProfileBody = (body) => {
       return `${key} must be an array.`;
     }
   }
+  // Location is optional. When present, the label must be a string and the
+  // coordinates (if given) must be numbers.
+  if (
+    default_location !== undefined &&
+    default_location !== null &&
+    typeof default_location !== 'string'
+  ) {
+    return 'default_location must be a string.';
+  }
+  for (const [key, value] of Object.entries({ default_lat, default_lon })) {
+    if (value !== undefined && value !== null && typeof value !== 'number') {
+      return `${key} must be a number.`;
+    }
+  }
   return null;
+};
+
+// Normalize the persistable location fields from a request body. Absent keys
+// stay undefined (so an upsert can omit them); explicit null clears them.
+const locationFields = (body) => {
+  const fields = {};
+  if (body.default_location !== undefined) fields.default_location = body.default_location;
+  if (body.default_lat !== undefined) fields.default_lat = body.default_lat;
+  if (body.default_lon !== undefined) fields.default_lon = body.default_lon;
+  return fields;
 };
 
 /**
@@ -86,6 +113,7 @@ const createProfile = async (req, res, next) => {
         budget_min,
         budget_max,
         liked_restaurant_ids: [],
+        ...locationFields(req.body),
       },
     });
     return res.status(201).json(profile);
@@ -95,9 +123,10 @@ const createProfile = async (req, res, next) => {
 };
 
 /**
- * PUT /api/profile — update the caller's existing profile.
- * 404 when no profile exists yet (use POST to create). Leaves
- * liked_restaurant_ids untouched — it is owned by the like/unlike endpoints.
+ * PUT /api/profile — upsert the caller's profile.
+ * Creates the row on first save (onboarding) and updates it thereafter, so the
+ * frontend has a single idempotent save path. Leaves liked_restaurant_ids
+ * untouched on update — it is owned by the like/unlike endpoints.
  */
 const updateProfile = async (req, res, next) => {
   const message = validateProfileBody(req.body ?? {});
@@ -113,22 +142,28 @@ const updateProfile = async (req, res, next) => {
     budget_max,
   } = req.body;
 
-  try {
-    const existing = await prisma.profile.findUnique({
-      where: { user_id: req.user.id },
-    });
-    if (!existing) {
-      return res.status(404).json({ error: 'No profile found.' });
-    }
+  const lists = {
+    dietary_restrictions: dietary_restrictions ?? [],
+    disliked_cuisines: disliked_cuisines ?? [],
+    preferred_cuisines: preferred_cuisines ?? [],
+  };
 
-    const profile = await prisma.profile.update({
+  try {
+    const profile = await prisma.profile.upsert({
       where: { user_id: req.user.id },
-      data: {
-        dietary_restrictions: dietary_restrictions ?? [],
-        disliked_cuisines: disliked_cuisines ?? [],
-        preferred_cuisines: preferred_cuisines ?? [],
+      update: {
+        ...lists,
         budget_min,
         budget_max,
+        ...locationFields(req.body),
+      },
+      create: {
+        user_id: req.user.id,
+        ...lists,
+        budget_min,
+        budget_max,
+        liked_restaurant_ids: [],
+        ...locationFields(req.body),
       },
     });
     return res.status(200).json(profile);
