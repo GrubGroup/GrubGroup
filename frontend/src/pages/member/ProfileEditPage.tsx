@@ -37,10 +37,11 @@ export function ProfileEditPage() {
   const customAllergies = useProfileStore((s) => s.customAllergies)
   const setCustomAllergies = useProfileStore((s) => s.setCustomAllergies)
 
-  // Local identity draft (User fields aren't in the profile store).
-  const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
-  const [location, setLocationDraft] = useState('')
+  // Local identity draft for User fields (not in the profile store). Lazy-init
+  // from the session user, which is available synchronously by the time this
+  // page is reached (always navigated to from the authenticated profile view).
+  const [displayName, setDisplayName] = useState(() => user?.display_name ?? '')
+  const [username, setUsername] = useState(() => user?.username ?? '')
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [savingUser, setSavingUser] = useState(false)
@@ -49,16 +50,8 @@ export function ProfileEditPage() {
     if (!profile) void load()
   }, [profile, load])
 
-  // Seed local drafts once user/profile are available.
-  useEffect(() => {
-    if (user) {
-      setDisplayName(user.display_name ?? '')
-      setUsername(user.username ?? '')
-    }
-  }, [user])
-  useEffect(() => {
-    if (profile) setLocationDraft(profile.default_location ?? '')
-  }, [profile])
+  // Location lives on the profile store; edit it live like budget/chips do.
+  const location = profile?.default_location ?? ''
 
   const dietary = profile?.dietary_restrictions ?? []
   const preferred = profile?.preferred_cuisines ?? []
@@ -95,8 +88,7 @@ export function ProfileEditPage() {
       setSavingUser(false)
     }
 
-    // 2) Persist preferences (Profile). Fold the location draft in first.
-    setLocation(location)
+    // 2) Persist preferences (Profile). Location was written live via setLocation.
     await save()
     go('profile')
   }
@@ -166,7 +158,7 @@ export function ProfileEditPage() {
           <Field label="Default location">
             <Input
               value={location}
-              onChange={(e) => setLocationDraft(e.target.value)}
+              onChange={(e) => setLocation(e.target.value)}
               leftIcon={<Icon name="map-pin" size={16} />}
               placeholder="e.g. Market Street, San Francisco"
             />
