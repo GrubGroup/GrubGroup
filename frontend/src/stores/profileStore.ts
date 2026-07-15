@@ -14,7 +14,9 @@ interface ProfileState {
   // 'avoid' → disliked, 'neutral' → removed from both. Always mutually exclusive.
   setCuisineState: (value: string, state: 'neutral' | 'like' | 'avoid') => void
   setBudget: (min: number, max: number) => void
-  setLocation: (label: string, coords?: { lat: number; lon: number }) => void
+  setLocation: (address: string, coords?: { lat: number; lon: number }) => void
+  // Preferred search radius (miles) around the default address.
+  setRadius: (miles: number) => void
   toggleLikedRestaurant: (id: number) => void
   setPreferredLocation: (loc: LocationPref | undefined) => void
   save: () => Promise<void>
@@ -37,9 +39,10 @@ function emptyProfile(): Profile {
     preferred_cuisines: [],
     budget_min: 15,
     budget_max: 25,
-    default_location: null,
+    default_address: null,
     default_lat: null,
     default_lon: null,
+    default_radius: null,
     liked_restaurant_ids: [],
     created_at: now,
     updated_at: now,
@@ -57,12 +60,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const profile = await fetchProfile()
     // New user (gateway 404 → null): seed a blank profile so onboarding's
     // mutators have a base to edit; save() upserts it. Also seed the picker
-    // value from a persisted default_location so the location field prefills.
+    // value from a persisted default_address so the location field prefills.
     const seeded = profile ?? emptyProfile()
     set({
       profile: seeded,
-      preferredLocation: seeded.default_location
-        ? { mode: 'named', label: seeded.default_location }
+      preferredLocation: seeded.default_address
+        ? { mode: 'named', label: seeded.default_address }
         : get().preferredLocation,
       loading: false,
     })
@@ -115,20 +118,26 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ profile: { ...p, budget_min: min, budget_max: max } })
   },
 
-  // Persist the default dining location onto the profile. Label is required;
+  // Persist the default dining address onto the profile. Address is required;
   // coords are optional (cleared when omitted, since a plain text edit has none).
-  setLocation: (label, coords) => {
+  setLocation: (address, coords) => {
     const p = get().profile
     if (!p) return
     set({
       profile: {
         ...p,
-        default_location: label || null,
+        default_address: address || null,
         default_lat: coords?.lat ?? null,
         default_lon: coords?.lon ?? null,
       },
-      preferredLocation: label ? { mode: 'named', label } : undefined,
+      preferredLocation: address ? { mode: 'named', label: address } : undefined,
     })
+  },
+
+  setRadius: (miles) => {
+    const p = get().profile
+    if (!p) return
+    set({ profile: { ...p, default_radius: miles } })
   },
 
   toggleLikedRestaurant: (id) => {
@@ -148,11 +157,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ saving: true })
     // Fold any in-flight picker label onto the profile before persisting, so the
     // LocationField path (which only sets preferredLocation) still saves the
-    // default_location. An explicit default_location on the profile wins.
+    // default_address. An explicit default_address on the profile wins.
     const loc = get().preferredLocation
     const toSave: Profile =
-      loc?.label && !p.default_location
-        ? { ...p, default_location: loc.label, default_lat: loc.lat ?? null, default_lon: loc.lon ?? null }
+      loc?.label && !p.default_address
+        ? { ...p, default_address: loc.label, default_lat: loc.lat ?? null, default_lon: loc.lon ?? null }
         : p
     const saved = await saveProfile(toSave)
     set({ profile: saved, saving: false })
