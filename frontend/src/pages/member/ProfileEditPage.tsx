@@ -17,6 +17,9 @@ const BUDGET_BANDS = [
   { label: '$40+', min: 40, max: 200 },
 ]
 
+// Preferred search radius options (miles) — mirrors the onboarding choices.
+const RADIUS_OPTIONS = [0.5, 1, 2, 5]
+
 // Edit form for identity (User: display_name, username) + preferences (Profile).
 // Mirrors the "[Orange] Edit Profile" wireframe. Saves User via PATCH /user
 // (with username-uniqueness error surfacing) and Profile via the profile store.
@@ -33,6 +36,7 @@ export function ProfileEditPage() {
   const toggleCuisine = useProfileStore((s) => s.toggleCuisine)
   const setBudget = useProfileStore((s) => s.setBudget)
   const setLocation = useProfileStore((s) => s.setLocation)
+  const setRadius = useProfileStore((s) => s.setRadius)
 
   // Local identity draft for User fields (not in the profile store). Lazy-init
   // from the session user, which is available synchronously by the time this
@@ -48,7 +52,8 @@ export function ProfileEditPage() {
   }, [profile, load])
 
   // Location lives on the profile store; edit it live like budget/chips do.
-  const location = profile?.default_location ?? ''
+  const address = profile?.default_address ?? ''
+  const radius = profile?.default_radius ?? 1
 
   const dietary = profile?.dietary_restrictions ?? []
   const preferred = profile?.preferred_cuisines ?? []
@@ -148,13 +153,26 @@ export function ProfileEditPage() {
             </Field>
           </div>
 
-          <Field label="Default location">
+          <Field label="Default address">
             <Input
-              value={location}
+              value={address}
               onChange={(e) => setLocation(e.target.value)}
               leftIcon={<Icon name="map-pin" size={16} />}
               placeholder="e.g. Market Street, San Francisco"
             />
+          </Field>
+
+          <Field label="Max distance">
+            <div className="flex flex-wrap gap-2">
+              {RADIUS_OPTIONS.map((mi) => (
+                <Chip
+                  key={mi}
+                  label={`${mi} mi`}
+                  selected={mi === radius}
+                  onToggle={() => setRadius(mi)}
+                />
+              ))}
+            </div>
           </Field>
 
           {/* Budget */}

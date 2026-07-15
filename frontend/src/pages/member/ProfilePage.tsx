@@ -113,7 +113,13 @@ export function ProfilePage() {
             <InfoRow
               icon="map-pin"
               title="Default location"
-              value={profile?.default_location ?? 'Not set'}
+              value={
+                profile?.default_address
+                  ? profile.default_radius
+                    ? `${profile.default_address} · within ${profile.default_radius} mi`
+                    : profile.default_address
+                  : 'Not set'
+              }
             />
           </div>
 

@@ -6,23 +6,29 @@ import { useProfileStore } from '@/stores/profileStore'
 import { useNavStore } from '@/stores/navStore'
 import { cn } from '@/utils/cn'
 
-const DISTANCES = ['0.5 mi', '1 mi', '2 mi', '5 mi']
+// Radius options in miles; label is derived. 1 mi is the default.
+const DISTANCES = [0.5, 1, 2, 5]
+const DEFAULT_RADIUS = 1
 
 export function Onboarding3() {
   const go = useNavStore((s) => s.go)
   const profile = useProfileStore((s) => s.profile)
   const save = useProfileStore((s) => s.save)
   const setLocation = useProfileStore((s) => s.setLocation)
-  // Prefill from any already-set default location, else a sensible placeholder.
-  const { value, setValue } = usePlacesInput(profile?.default_location ?? 'San Francisco, CA')
+  const setRadius = useProfileStore((s) => s.setRadius)
+  // Prefill from any already-set default address, else a sensible placeholder.
+  const { value, setValue } = usePlacesInput(profile?.default_address ?? 'San Francisco, CA')
 
   const dietary = profile?.dietary_restrictions ?? []
+  const radius = profile?.default_radius ?? DEFAULT_RADIUS
 
   const handleDone = async () => {
-    // Persist the typed location onto the profile before saving. (No geocoding
+    // Persist the typed address onto the profile before saving. (No geocoding
     // wired yet, so we store the label only; lat/lon stay null — see
-    // usePlacesInput.) save() upserts the whole profile via the gateway.
+    // usePlacesInput.) Also lock in the selected radius. save() upserts the
+    // whole profile via the gateway.
     setLocation(value)
+    setRadius(radius)
     await save()
     go('empty-groups')
   }
@@ -34,24 +40,25 @@ export function Onboarding3() {
       title="Where do you usually eat?"
       subtitle="Helps us prioritise nearby restaurants. You can change this per session."
     >
-      <Input label="DEFAULT LOCATION" value={value} onChange={(e) => setValue(e.target.value)} />
+      <Input label="DEFAULT ADDRESS" value={value} onChange={(e) => setValue(e.target.value)} />
 
       <div className="flex flex-col gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
           Max distance
         </span>
         <div className="flex gap-2">
-          {DISTANCES.map((d, i) => (
+          {DISTANCES.map((d) => (
             <button
               key={d}
+              onClick={() => setRadius(d)}
               className={cn(
                 'flex-1 rounded-input border px-3 py-2 text-sm font-medium transition-colors',
-                i === 1
+                d === radius
                   ? 'border-text bg-surface-inverse text-white'
                   : 'border-border bg-surface-sunken text-text hover:border-border-strong',
               )}
             >
-              {d}
+              {d} mi
             </button>
           ))}
         </div>
@@ -72,7 +79,7 @@ export function Onboarding3() {
           person
         </span>
         <span className="flex items-center gap-1.5">
-          <Icon name="map-pin" size={13} /> {value} · within 1 mi
+          <Icon name="map-pin" size={13} /> {value} · within {radius} mi
         </span>
       </div>
 
