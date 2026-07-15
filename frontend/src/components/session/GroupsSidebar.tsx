@@ -80,6 +80,7 @@ export function GroupsSidebar() {
   const messagesByGroup = useGroupChatStore((s) => s.messagesByGroup)
 
   const [modalOpen, setModalOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   // Newest activity first (WhatsApp-style); sort a copy, never the store array.
   const sortedGroups = [...groups].sort(
@@ -91,11 +92,16 @@ export function GroupsSidebar() {
     void load()
   }, [load])
 
-  const handleCreate = (name: string) => {
-    const group = addGroup(name)
-    setGroup(group.id)
-    go('group-chat')
-    setModalOpen(false)
+  const handleCreate = async (name: string, memberIds: number[]) => {
+    setCreating(true)
+    try {
+      const group = await addGroup(name, memberIds)
+      setGroup(group.id)
+      go('group-chat')
+      setModalOpen(false)
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -117,6 +123,7 @@ export function GroupsSidebar() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSubmit={handleCreate}
+        pending={creating}
       />
     </AppSidebar>
   )

@@ -10,6 +10,7 @@ import { TopPicksPage } from '@/pages/member/session/TopPicksPage'
 import { useEffect } from 'react'
 import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useSession } from '@/lib/authClient'
 import { USE_MOCK } from '@/lib/env'
 import type { SessionUser } from '@/stores/authStore'
@@ -19,6 +20,7 @@ import type { SessionUser } from '@/stores/authStore'
 function App() {
   const screen = useNavStore((s) => s.screen)
   const go = useNavStore((s) => s.go)
+  const setGroup = useNavStore((s) => s.setGroup)
   const user = useAuthStore((s) => s.user)
   const setSessionUser = useAuthStore((s) => s.setSessionUser)
 
@@ -35,11 +37,23 @@ function App() {
 
   // After Google OAuth the browser reloads fresh at the app origin with the
   // nav store defaulted to 'sign-in'. Once the session resolves, move an
-  // authenticated user off the auth screens into the app.
+  // authenticated user off the auth screens into the app: an existing user with
+  // groups lands in their most recent group chat; one with none (a new sign-up)
+  // sees the empty-groups landing page.
   useEffect(() => {
     if (USE_MOCK) return
-    if (session?.user && isAuthScreen) go('empty-groups')
-  }, [session, isAuthScreen, go])
+    if (!session?.user || !isAuthScreen) return
+    void (async () => {
+      await useGroupsStore.getState().load()
+      const latest = mostRecentGroup(useGroupsStore.getState().groups)
+      if (latest) {
+        setGroup(latest.id)
+        go('group-chat')
+      } else {
+        go('empty-groups')
+      }
+    })()
+  }, [session, isAuthScreen, go, setGroup])
 
   // Auth guard (live mode only): every screen except the auth pages requires a
   // signed-in user. Wait for the initial session check before bouncing.

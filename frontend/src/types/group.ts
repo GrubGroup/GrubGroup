@@ -13,8 +13,25 @@ export interface Group {
   id: number
   name: string
   emoji: string
+  // When the group was created (ISO). From GET /api/groups[/:id]; absent in mock.
+  created_at?: string
   // Latest message from the DB (null when the group has no messages yet).
   last_message?: GroupLastMessage | null
+  // Member count from GET /api/groups (UI only; absent in mock).
+  member_count?: number
   preview?: string // last-message preview (UI only; mock fallback)
   time?: string // relative time label, e.g. "2m" (UI only; mock fallback)
+}
+
+// A group member, as returned by GET /api/groups/:id (joined to User).
+export interface GroupMember {
+  user_id: number
+  display_name: string | null
+  avatar_url?: string | null
+  joined_at: string
+}
+
+// Full group detail (group + its members), from GET /api/groups/:id.
+export interface GroupDetail extends Group {
+  members: GroupMember[]
 }

@@ -1,4 +1,4 @@
-export type { Role, User } from './user'
+export type { Role, User, UserSearchResult } from './user'
 export type { Profile, ProfilePreferencesClient } from './profile'
 export type { Qa, LocationMode, LocationPref } from './qa'
 export type { Session, SessionMember, SessionPhase } from './session'
@@ -7,4 +7,4 @@ export type { Recommendation, RecommendationItem, RankedPick } from './recommend
 export type { MenuItem, EventItem } from './menu'
 export type { ChatRole, ChatMessage, NotedPref } from './chat'
 export type { GroupMessage } from './groupChat'
-export type { Group } from './group'
+export type { Group, GroupMember, GroupDetail } from './group'

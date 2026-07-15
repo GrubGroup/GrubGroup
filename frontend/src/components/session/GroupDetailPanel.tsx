@@ -1,0 +1,307 @@
+import { useEffect, useRef, useState } from 'react'
+import { Avatar, Icon, IconButton, Input, Spinner } from '@/components/ui'
+import { fetchGroup, addGroupMember } from '@/api/groups.api'
+import { searchUsers } from '@/api/users.api'
+import { useGroupsStore } from '@/stores/groupsStore'
+import { cn } from '@/utils/cn'
+import type { GroupDetail, UserSearchResult } from '@/types'
+import { isAxiosError } from 'axios'
+
+export interface GroupDetailPanelProps {
+  open: boolean
+  groupId: number
+  currentUserId: number
+  onClose: () => void
+  // Called after a member is successfully added, so the parent can refresh
+  // sidebar previews / header counts.
+  onMembersChanged?: () => void
+  // Called after the current user leaves the group, so the parent can navigate
+  // away from the now-inaccessible chat.
+  onLeft?: () => void
+}
+
+const SEARCH_DEBOUNCE_MS = 250
+const MIN_QUERY_LENGTH = 2
+
+// Format an ISO date as e.g. "Jul 2". Deterministic given the input.
+function formatCreated(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Right-side slide-in panel showing a group's members, with an "Add people" row
+// that expands into a username search, and a "Leave group" action. Members are
+// loaded fresh from the gateway each time the panel opens; adds/leaves are
+// immediate (the group already exists).
+export function GroupDetailPanel({
+  open,
+  groupId,
+  currentUserId,
+  onClose,
+  onMembersChanged,
+  onLeft,
+}: GroupDetailPanelProps) {
+  const leaveGroup = useGroupsStore((s) => s.leaveGroup)
+
+  const [detail, setDetail] = useState<GroupDetail | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Add-people search state (the row expands into these).
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<UserSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Fetch detail when the panel opens. setState lives in the async .then
+  // callback (not synchronously in the effect body), and detail === null renders
+  // the loading spinner. The parent keys this component by groupId, so switching
+  // groups remounts with fresh (null) state.
+  useEffect(() => {
+    if (!open) return
+    fetchGroup(groupId)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+  }, [open, groupId])
+
+  // Reload the member list after an add.
+  const refresh = async () => {
+    const next = await fetchGroup(groupId).catch(() => null)
+    setDetail(next)
+  }
+
+  // Escape-to-close.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  const resetSearch = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setSearchOpen(false)
+    setQuery('')
+    setResults([])
+    setSearching(false)
+    setError(null)
+  }
+
+  const handleClose = () => {
+    resetSearch()
+    onClose()
+  }
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value)
+    setError(null)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = value.trim()
+    if (q.length < MIN_QUERY_LENGTH) {
+      setResults([])
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    debounceRef.current = setTimeout(async () => {
+      try {
+        setResults(await searchUsers(q))
+      } catch {
+        setResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, SEARCH_DEBOUNCE_MS)
+  }
+
+  const memberIds = new Set(detail?.members.map((m) => m.user_id) ?? [])
+  const visibleResults = results.filter((u) => !memberIds.has(u.id))
+
+  const handleAdd = async (user: UserSearchResult) => {
+    setAdding(true)
+    setError(null)
+    try {
+      await addGroupMember(groupId, { user_id: user.id })
+      setQuery('')
+      setResults([])
+      await refresh()
+      onMembersChanged?.()
+    } catch (err) {
+      const status = isAxiosError(err) ? err.response?.status : undefined
+      if (status === 409) setError('That user is already a member.')
+      else if (status === 404) setError('No user found.')
+      else if (status === 403) setError("You're not a member of this group.")
+      else setError('Could not add member. Try again.')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const handleLeave = async () => {
+    setLeaving(true)
+    setError(null)
+    try {
+      await leaveGroup(groupId, currentUserId)
+      onLeft?.()
+    } catch {
+      setError('Could not leave the group. Try again.')
+      setLeaving(false)
+    }
+  }
+
+  if (!open) return null
+
+  const members = detail?.members ?? []
+  const created = formatCreated(detail?.created_at)
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-overlay" onClick={handleClose}>
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Group details"
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-80 flex-col bg-surface-raised shadow-xl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="font-display text-lg font-semibold text-text">Group details</h2>
+          <IconButton label="Close" size="sm" icon={<Icon name="x" size={14} />} onClick={handleClose} />
+        </div>
+
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          {/* Group identity: emoji avatar, name, count + created date */}
+          <div className="flex flex-col items-center gap-2 border-b border-border px-5 py-6 text-center">
+            <span className="flex h-20 w-20 items-center justify-center rounded-pill bg-surface-raised text-4xl shadow-sm">
+              {detail?.emoji ?? '💬'}
+            </span>
+            <p className="font-display text-xl font-bold text-text">{detail?.name ?? 'Group'}</p>
+            <p className="text-sm text-text-muted">
+              {members.length} members{created && ` · Created ${created}`}
+            </p>
+          </div>
+
+          {/* Members */}
+          <div className="flex flex-col px-5 py-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Members</p>
+              <span className="text-xs text-text-muted">{members.length}</span>
+            </div>
+
+            {/* Add people row → expands into search */}
+            {!searchOpen ? (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="mt-3 flex items-center gap-3 text-left"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-pill border border-dashed border-border-strong text-text-muted">
+                  <Icon name="plus" size={16} />
+                </span>
+                <span className="text-sm font-medium text-text">Add people</span>
+              </button>
+            ) : (
+              <div className="mt-3 flex flex-col gap-2">
+                <Input
+                  placeholder="Search by username"
+                  value={query}
+                  onChange={(e) => handleQueryChange(e.target.value)}
+                  leftIcon={<Icon name="search" size={16} />}
+                  error={error ?? undefined}
+                  autoFocus
+                />
+                {query.trim().length >= MIN_QUERY_LENGTH && (
+                  <div className="max-h-52 overflow-y-auto rounded-input border border-border">
+                    {searching ? (
+                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-text-muted">
+                        <Spinner size="sm" /> Searching…
+                      </div>
+                    ) : visibleResults.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-text-muted">No users found.</p>
+                    ) : (
+                      visibleResults.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          disabled={adding}
+                          onClick={() => handleAdd(u)}
+                          className={cn(
+                            'flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0',
+                            'hover:bg-surface-sunken disabled:opacity-50',
+                          )}
+                        >
+                          <Avatar name={u.display_name ?? u.username} src={u.avatar_url} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            {u.display_name && (
+                              <p className="truncate text-sm font-medium text-text">{u.display_name}</p>
+                            )}
+                            <p className="truncate text-xs text-text-muted">@{u.username}</p>
+                          </div>
+                          <Icon name="plus" size={14} />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={resetSearch}
+                  className="self-start text-xs text-text-muted hover:text-text"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
+            {/* Member rows */}
+            <div className="mt-1 flex flex-col">
+              {detail === null ? (
+                <div className="flex items-center justify-center py-6 text-text-muted">
+                  <Spinner size="sm" />
+                </div>
+              ) : members.length === 0 ? (
+                <p className="py-4 text-sm text-text-muted">No members yet.</p>
+              ) : (
+                members.map((m) => {
+                  const name = m.display_name ?? `User ${m.user_id}`
+                  const isYou = m.user_id === currentUserId
+                  return (
+                    <div key={m.user_id} className="flex items-center gap-3 py-2.5">
+                      <Avatar name={name} src={m.avatar_url} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-text">{name}</p>
+                        <p className="text-xs text-text-muted">{isYou ? 'You' : 'Member'}</p>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Leave group */}
+        <div className="border-t border-border p-4">
+          <button
+            type="button"
+            disabled={leaving}
+            onClick={handleLeave}
+            className={cn(
+              'flex w-full items-center justify-center gap-2 rounded-input bg-error/10 py-2.5',
+              'text-sm font-semibold text-error hover:bg-error/15 disabled:opacity-50',
+            )}
+          >
+            {leaving ? <Spinner size="sm" /> : <Icon name="logout" size={16} />}
+            Leave group
+          </button>
+        </div>
+      </aside>
+    </div>
+  )
+}

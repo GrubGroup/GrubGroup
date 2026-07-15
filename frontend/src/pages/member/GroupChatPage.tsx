@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
+import { GroupDetailPanel } from '@/components/session/GroupDetailPanel'
 import { Avatar, Icon } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
@@ -12,7 +13,7 @@ import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { useGroupsStore } from '@/stores/groupsStore'
+import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import {
   useGroupChatStore,
   selectGroupMessages,
@@ -32,6 +33,7 @@ const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'comple
 export function GroupChatPage() {
   const screen = useNavStore((s) => s.screen)
   const go = useNavStore((s) => s.go)
+  const setGroup = useNavStore((s) => s.setGroup)
   const groupId = useNavStore((s) => s.groupId)
   const members = useSessionStore((s) => s.members)
   const doneCount = useSessionStore((s) => s.doneCount())
@@ -53,7 +55,12 @@ export function GroupChatPage() {
   const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
 
   const groups = useGroupsStore((s) => s.groups)
-  const groupName = groups.find((g) => g.id === groupId)?.name ?? 'Group'
+  const loadGroups = useGroupsStore((s) => s.load)
+  const group = groups.find((g) => g.id === groupId)
+  const groupName = group?.name ?? 'Group'
+
+  // Group-detail (edit) panel visibility.
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (members.length === 0) void loadSession(42, currentUserId)
@@ -62,12 +69,29 @@ export function GroupChatPage() {
   const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
   const total = members.length || 6
+  // Header "X members" reflects the real group membership from GET /api/groups
+  // (member_count); falls back to the session total in mock mode, where
+  // MOCK_GROUPS carry no member_count.
+  const memberCount = group?.member_count ?? total
 
   const handleStartSession = () => startSession(groupId)
 
   const handleJoin = () => {
     join()
     go('agent-chat')
+  }
+
+  // After leaving, the group is gone from the (refreshed) list. Jump to the next
+  // most-recent group, or the empty-groups screen when none remain.
+  const handleLeft = () => {
+    setEditing(false)
+    const next = mostRecentGroup(useGroupsStore.getState().groups)
+    if (next) {
+      setGroup(next.id)
+      go('group-chat')
+    } else {
+      go('empty-groups')
+    }
   }
 
   return (
@@ -94,17 +118,25 @@ export function GroupChatPage() {
               </div>
             </div>
             <p className="text-xs text-text-muted">
-              {total} members · <span className="text-primary">session active</span>
+              {memberCount} members · <span className="text-primary">session active</span>
             </p>
           </div>
-          {sessionStartIndex === null && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleStartSession}
-              className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken"
             >
-              <Icon name="sparkles" size={12} /> Start session
+              <Icon name="users" size={12} /> Edit group
             </button>
-          )}
+            {sessionStartIndex === null && (
+              <button
+                onClick={handleStartSession}
+                className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
+              >
+                <Icon name="sparkles" size={12} /> Start session
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Messages */}
@@ -150,6 +182,17 @@ export function GroupChatPage() {
           placeholder="Message"
         />
       </div>
+
+      {/* Group detail / edit panel (slides in from the right) */}
+      <GroupDetailPanel
+        key={groupId}
+        open={editing}
+        groupId={groupId}
+        currentUserId={currentUserId}
+        onClose={() => setEditing(false)}
+        onMembersChanged={() => void loadGroups()}
+        onLeft={handleLeft}
+      />
     </div>
   )
 }

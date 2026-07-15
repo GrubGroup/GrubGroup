@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Avatar, Icon } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { useGroupsStore } from '@/stores/groupsStore'
 import { signOut } from '@/lib/authClient'
 import { cn } from '@/utils/cn'
 
@@ -32,12 +33,14 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const resetGroups = useGroupsStore((s) => s.reset)
   const go = useNavStore((s) => s.go)
 
   // Clear the Better Auth session (cookie) + local state, then return to sign-in.
   const handleSignOut = async () => {
     await signOut()
     logout()
+    resetGroups()
     go('sign-in')
   }
 

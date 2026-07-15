@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button, Input } from '@/components/ui'
 import { BrandPanel } from '@/components/layout/BrandPanel'
 import { useNavStore } from '@/stores/navStore'
+import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { signIn, signUp } from '@/lib/authClient'
 
 export interface AuthPageProps {
@@ -19,6 +20,8 @@ const GoogleMark = () => (
 
 export function AuthPage({ mode }: AuthPageProps) {
   const go = useNavStore((s) => s.go)
+  const setGroup = useNavStore((s) => s.setGroup)
+  const loadGroups = useGroupsStore((s) => s.load)
   const isSignup = mode === 'signup'
 
   const [fullName, setFullName] = useState('')
@@ -33,7 +36,24 @@ export function AuthPage({ mode }: AuthPageProps) {
   // After a successful email/password auth, route per mode. The session cookie
   // is already set; App's useSession picks up the user. (Google redirects away
   // and returns to the app, so it doesn't reach here.)
-  const onAuthed = () => go(isSignup ? 'onboarding-1' : 'empty-groups')
+  //
+  // Sign-up → onboarding. Sign-in → load the user's groups first: an existing
+  // user with groups lands directly in their most recent group chat; a user
+  // with none falls back to the empty-groups landing page.
+  const onAuthed = async () => {
+    if (isSignup) {
+      go('onboarding-1')
+      return
+    }
+    await loadGroups()
+    const latest = mostRecentGroup(useGroupsStore.getState().groups)
+    if (latest) {
+      setGroup(latest.id)
+      go('group-chat')
+    } else {
+      go('empty-groups')
+    }
+  }
 
   const handleSubmit = async () => {
     setError(null)
@@ -70,7 +90,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       setError(authError.message ?? 'Something went wrong. Please try again.')
       return
     }
-    onAuthed()
+    await onAuthed()
   }
 
   // Google: full server-side OAuth redirect. On return, App routes based on the
