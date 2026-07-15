@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Button, Chip, Icon, Input } from '@/components/ui'
-import { CuisineGroupPicker } from '@/components/profile/CuisineGroupPicker'
+import { CuisineTriStatePicker } from '@/components/profile/CuisineTriStatePicker'
 import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { updateMe, UserUpdateError } from '@/api/user.api'
 import { useAuthStore } from '@/stores/authStore'
@@ -33,7 +33,7 @@ export function ProfileEditPage() {
   const save = useProfileStore((s) => s.save)
   const saving = useProfileStore((s) => s.saving)
   const toggleDietary = useProfileStore((s) => s.toggleDietary)
-  const toggleCuisine = useProfileStore((s) => s.toggleCuisine)
+  const setCuisineState = useProfileStore((s) => s.setCuisineState)
   const setBudget = useProfileStore((s) => s.setBudget)
   const setLocation = useProfileStore((s) => s.setLocation)
   const setRadius = useProfileStore((s) => s.setRadius)
@@ -217,19 +217,13 @@ export function ProfileEditPage() {
             </div>
           </Field>
 
-          {/* Preferred cuisines */}
-          <Field label="Preferred cuisines">
-            <CuisineGroupPicker
-              selected={preferred}
-              onToggle={(v) => toggleCuisine(v, 'preferred')}
-            />
-          </Field>
-
-          {/* Disliked cuisines */}
-          <Field label="Disliked cuisines">
-            <CuisineGroupPicker
-              selected={disliked}
-              onToggle={(v) => toggleCuisine(v, 'disliked')}
+          {/* Cuisines — one tri-state grid (like / avoid / neutral) instead of
+              two full grids, matching the onboarding step. */}
+          <Field label="Cuisines">
+            <CuisineTriStatePicker
+              liked={preferred}
+              disliked={disliked}
+              onCycle={setCuisineState}
             />
           </Field>
 
