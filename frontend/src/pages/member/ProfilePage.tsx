@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { Avatar, Badge, Button, Icon } from '@/components/ui'
-import { AppSidebar } from '@/components/layout/AppSidebar'
 import { PreferenceTag } from '@/components/profile/PreferenceTag'
 import { CUISINES, DIETARY_RESTRICTIONS, isAllergen, labelFor } from '@/constants/dietary'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,6 +11,7 @@ import { useRestaurantStore } from '@/stores/restaurantStore'
 // Profile (dining preferences). Mirrors the "[Orange] Profile" wireframe.
 export function ProfilePage() {
   const go = useNavStore((s) => s.go)
+  const returnTo = useNavStore((s) => s.returnTo)
   const user = useAuthStore((s) => s.user)
   const profile = useProfileStore((s) => s.profile)
   const load = useProfileStore((s) => s.load)
@@ -36,17 +36,13 @@ export function ProfilePage() {
   const displayName = user?.display_name ?? user?.username ?? 'You'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-raised">
-      <AppSidebar showFooter>
-        <div className="p-4 text-sm text-text-muted">Your account</div>
-      </AppSidebar>
-
-      <div className="flex flex-1 flex-col overflow-y-auto">
+    <div className="h-screen overflow-y-auto bg-surface-raised">
+      <div className="mx-auto max-w-3xl">
         {/* Header bar */}
         <div className="flex items-start justify-between gap-4 border-b border-border px-8 py-6">
           <div>
             <button
-              onClick={() => go('empty-groups')}
+              onClick={() => go(returnTo)}
               className="mb-2 flex items-center gap-1 text-sm text-text-muted hover:text-text"
             >
               <Icon name="chevron-left" size={14} /> Back
