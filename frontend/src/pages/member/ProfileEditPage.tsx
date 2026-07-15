@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Button, Chip, Icon, Input } from '@/components/ui'
-import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CuisineGroupPicker } from '@/components/profile/CuisineGroupPicker'
 import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { updateMe, UserUpdateError } from '@/api/user.api'
@@ -94,12 +93,8 @@ export function ProfileEditPage() {
   const displayNameLabel = displayName || user?.username || 'You'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-raised">
-      <AppSidebar showFooter>
-        <div className="p-4 text-sm text-text-muted">Your account</div>
-      </AppSidebar>
-
-      <div className="flex flex-1 flex-col overflow-y-auto">
+    <div className="h-screen overflow-y-auto bg-surface-raised">
+      <div className="mx-auto max-w-3xl">
         {/* Header bar */}
         <div className="flex items-start justify-between gap-4 border-b border-border px-8 py-6">
           <div>
@@ -119,7 +114,7 @@ export function ProfileEditPage() {
           </Button>
         </div>
 
-        <div className="flex max-w-3xl flex-col gap-7 px-8 py-6">
+        <div className="flex flex-col gap-7 px-8 py-6">
           {/* Profile photo */}
           <Field label="Profile photo">
             <div className="flex items-center gap-4 rounded-card border border-border p-4">
