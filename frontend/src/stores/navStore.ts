@@ -26,6 +26,9 @@ export type Screen =
   | 'session-complete'
   | 'top-picks'
   | 'events'
+  // Profile
+  | 'profile'
+  | 'profile-edit'
 
 interface NavState {
   screen: Screen

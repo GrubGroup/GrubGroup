@@ -4,13 +4,21 @@ import { fetchProfile, saveProfile } from '@/api/profile.api'
 
 interface ProfileState {
   profile: Profile | null
-  preferredLocation?: LocationPref // CLIENT-ONLY (see types/profile.ts)
+  preferredLocation?: LocationPref // in-flight picker value (see types/profile.ts)
+  // CLIENT-ONLY, NOT PERSISTED (by decision): free-text allergies from the
+  // onboarding "Other" field. The orchestrator matches the controlled
+  // dietary_restrictions vocabulary against restaurant tags; free-text tokens
+  // have no matchable tag yet, so they live here for the session only and are
+  // never sent to the gateway. Revisit once normalization is designed.
+  customAllergies: string[]
   loading: boolean
   saving: boolean
   load: () => Promise<void>
   toggleDietary: (value: string) => void
   toggleCuisine: (value: string, list: 'preferred' | 'disliked') => void
   setBudget: (min: number, max: number) => void
+  setLocation: (label: string, coords?: { lat: number; lon: number }) => void
+  setCustomAllergies: (list: string[]) => void
   toggleLikedRestaurant: (id: number) => void
   setPreferredLocation: (loc: LocationPref | undefined) => void
   save: () => Promise<void>
@@ -21,16 +29,48 @@ function toggleIn(arr: string[], value: string): string[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]
 }
 
+// A blank profile for a brand-new user (no row yet). Mutators need a base
+// object to spread onto; the gateway upserts it on the first save().
+function emptyProfile(): Profile {
+  const now = new Date().toISOString()
+  return {
+    id: 0,
+    user_id: 0,
+    dietary_restrictions: [],
+    disliked_cuisines: [],
+    preferred_cuisines: [],
+    budget_min: 15,
+    budget_max: 25,
+    default_location: null,
+    default_lat: null,
+    default_lon: null,
+    liked_restaurant_ids: [],
+    created_at: now,
+    updated_at: now,
+  }
+}
+
 export const useProfileStore = create<ProfileState>((set, get) => ({
   profile: null,
   preferredLocation: undefined,
+  customAllergies: [],
   loading: false,
   saving: false,
 
   load: async () => {
     set({ loading: true })
     const profile = await fetchProfile()
-    set({ profile, loading: false })
+    // New user (gateway 404 → null): seed a blank profile so onboarding's
+    // mutators have a base to edit; save() upserts it. Also seed the picker
+    // value from a persisted default_location so the location field prefills.
+    const seeded = profile ?? emptyProfile()
+    set({
+      profile: seeded,
+      preferredLocation: seeded.default_location
+        ? { mode: 'named', label: seeded.default_location }
+        : get().preferredLocation,
+      loading: false,
+    })
   },
 
   toggleDietary: (value) => {
@@ -68,6 +108,22 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ profile: { ...p, budget_min: min, budget_max: max } })
   },
 
+  // Persist the default dining location onto the profile. Label is required;
+  // coords are optional (cleared when omitted, since a plain text edit has none).
+  setLocation: (label, coords) => {
+    const p = get().profile
+    if (!p) return
+    set({
+      profile: {
+        ...p,
+        default_location: label || null,
+        default_lat: coords?.lat ?? null,
+        default_lon: coords?.lon ?? null,
+      },
+      preferredLocation: label ? { mode: 'named', label } : undefined,
+    })
+  },
+
   toggleLikedRestaurant: (id) => {
     const p = get().profile
     if (!p) return
@@ -77,13 +133,23 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ profile: { ...p, liked_restaurant_ids: liked } })
   },
 
+  setCustomAllergies: (list) => set({ customAllergies: list }),
+
   setPreferredLocation: (loc) => set({ preferredLocation: loc }),
 
   save: async () => {
     const p = get().profile
     if (!p) return
     set({ saving: true })
-    const saved = await saveProfile(p)
+    // Fold any in-flight picker label onto the profile before persisting, so the
+    // LocationField path (which only sets preferredLocation) still saves the
+    // default_location. An explicit default_location on the profile wins.
+    const loc = get().preferredLocation
+    const toSave: Profile =
+      loc?.label && !p.default_location
+        ? { ...p, default_location: loc.label, default_lat: loc.lat ?? null, default_lon: loc.lon ?? null }
+        : p
+    const saved = await saveProfile(toSave)
     set({ profile: saved, saving: false })
   },
 }))
