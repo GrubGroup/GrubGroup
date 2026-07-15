@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Avatar, Icon, IconButton, Input, Spinner } from '@/components/ui'
+import { Avatar, Button, Icon, IconButton, Input, Modal, Spinner } from '@/components/ui'
 import { fetchGroup, addGroupMember } from '@/api/groups.api'
 import { searchUsers } from '@/api/users.api'
 import { useGroupsStore } from '@/stores/groupsStore'
@@ -48,6 +48,7 @@ export function GroupDetailPanel({
   const [detail, setDetail] = useState<GroupDetail | null>(null)
   const [adding, setAdding] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [confirmingLeave, setConfirmingLeave] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Add-people search state (the row expands into these).
@@ -148,10 +149,12 @@ export function GroupDetailPanel({
     setError(null)
     try {
       await leaveGroup(groupId, currentUserId)
+      setConfirmingLeave(false)
       onLeft?.()
     } catch {
       setError('Could not leave the group. Try again.')
       setLeaving(false)
+      setConfirmingLeave(false)
     }
   }
 
@@ -161,6 +164,7 @@ export function GroupDetailPanel({
   const created = formatCreated(detail?.created_at)
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex justify-end bg-overlay" onClick={handleClose}>
       <aside
         role="dialog"
@@ -290,18 +294,42 @@ export function GroupDetailPanel({
         <div className="border-t border-border p-4">
           <button
             type="button"
-            disabled={leaving}
-            onClick={handleLeave}
+            onClick={() => setConfirmingLeave(true)}
             className={cn(
               'flex w-full items-center justify-center gap-2 rounded-input bg-error/10 py-2.5',
-              'text-sm font-semibold text-error hover:bg-error/15 disabled:opacity-50',
+              'text-sm font-semibold text-error hover:bg-error/15',
             )}
           >
-            {leaving ? <Spinner size="sm" /> : <Icon name="logout" size={16} />}
+            <Icon name="logout" size={16} />
             Leave group
           </button>
         </div>
       </aside>
     </div>
+
+    {/* Leave confirmation — sibling of the panel backdrop so its clicks don't
+        bubble into handleClose. */}
+    <Modal
+      open={confirmingLeave}
+      onClose={() => (leaving ? undefined : setConfirmingLeave(false))}
+      title="Leave group?"
+      size="sm"
+    >
+      <div className="flex flex-col gap-5">
+        <p className="text-sm text-text-muted">
+          You'll be removed from <span className="font-semibold text-text">{detail?.name ?? 'this group'}</span>{' '}
+          and stop receiving its messages. You can be added back by another member.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmingLeave(false)} disabled={leaving}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleLeave} isLoading={leaving}>
+            Leave group
+          </Button>
+        </div>
+      </div>
+    </Modal>
+    </>
   )
 }
