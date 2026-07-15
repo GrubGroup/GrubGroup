@@ -25,7 +25,7 @@ export function Onboarding1() {
   return (
     <OnboardingLayout
       step={1}
-      total={5}
+      total={4}
       title="Any dietary needs?"
       subtitle="Set once — the AI remembers for every session. You'll never be asked again."
     >

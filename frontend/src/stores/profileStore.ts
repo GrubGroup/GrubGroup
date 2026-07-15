@@ -10,6 +10,9 @@ interface ProfileState {
   load: () => Promise<void>
   toggleDietary: (value: string) => void
   toggleCuisine: (value: string, list: 'preferred' | 'disliked') => void
+  // Set a cuisine's explicit state (tri-state picker): 'like' → preferred,
+  // 'avoid' → disliked, 'neutral' → removed from both. Always mutually exclusive.
+  setCuisineState: (value: string, state: 'neutral' | 'like' | 'avoid') => void
   setBudget: (min: number, max: number) => void
   setLocation: (label: string, coords?: { lat: number; lon: number }) => void
   toggleLikedRestaurant: (id: number) => void
@@ -92,6 +95,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       })
     }
+  },
+
+  setCuisineState: (value, state) => {
+    const p = get().profile
+    if (!p) return
+    // Drop from both lists, then add to the one the target state names — keeps
+    // preferred/disliked mutually exclusive by construction.
+    const preferred = p.preferred_cuisines.filter((v) => v !== value)
+    const disliked = p.disliked_cuisines.filter((v) => v !== value)
+    if (state === 'like') preferred.push(value)
+    else if (state === 'avoid') disliked.push(value)
+    set({ profile: { ...p, preferred_cuisines: preferred, disliked_cuisines: disliked } })
   },
 
   setBudget: (min, max) => {

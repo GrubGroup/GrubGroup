@@ -29,8 +29,8 @@ export function Onboarding3() {
 
   return (
     <OnboardingLayout
-      step={5}
-      total={5}
+      step={4}
+      total={4}
       title="Where do you usually eat?"
       subtitle="Helps us prioritise nearby restaurants. You can change this per session."
     >
@@ -77,7 +77,7 @@ export function Onboarding3() {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" leftIcon={<Icon name="arrow-left" size={14} />} onClick={() => go('onboarding-4')}>
+        <Button variant="ghost" leftIcon={<Icon name="arrow-left" size={14} />} onClick={() => go('onboarding-3')}>
           Back
         </Button>
         <Button variant="primary" fullWidth onClick={handleDone}>
