@@ -5,12 +5,6 @@ import { fetchProfile, saveProfile } from '@/api/profile.api'
 interface ProfileState {
   profile: Profile | null
   preferredLocation?: LocationPref // in-flight picker value (see types/profile.ts)
-  // CLIENT-ONLY, NOT PERSISTED (by decision): free-text allergies from the
-  // onboarding "Other" field. The orchestrator matches the controlled
-  // dietary_restrictions vocabulary against restaurant tags; free-text tokens
-  // have no matchable tag yet, so they live here for the session only and are
-  // never sent to the gateway. Revisit once normalization is designed.
-  customAllergies: string[]
   loading: boolean
   saving: boolean
   load: () => Promise<void>
@@ -18,7 +12,6 @@ interface ProfileState {
   toggleCuisine: (value: string, list: 'preferred' | 'disliked') => void
   setBudget: (min: number, max: number) => void
   setLocation: (label: string, coords?: { lat: number; lon: number }) => void
-  setCustomAllergies: (list: string[]) => void
   toggleLikedRestaurant: (id: number) => void
   setPreferredLocation: (loc: LocationPref | undefined) => void
   save: () => Promise<void>
@@ -53,7 +46,6 @@ function emptyProfile(): Profile {
 export const useProfileStore = create<ProfileState>((set, get) => ({
   profile: null,
   preferredLocation: undefined,
-  customAllergies: [],
   loading: false,
   saving: false,
 
@@ -132,8 +124,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       : [...p.liked_restaurant_ids, id]
     set({ profile: { ...p, liked_restaurant_ids: liked } })
   },
-
-  setCustomAllergies: (list) => set({ customAllergies: list }),
 
   setPreferredLocation: (loc) => set({ preferredLocation: loc }),
 

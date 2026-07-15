@@ -15,7 +15,6 @@ export function ProfilePage() {
   const user = useAuthStore((s) => s.user)
   const profile = useProfileStore((s) => s.profile)
   const load = useProfileStore((s) => s.load)
-  const customAllergies = useProfileStore((s) => s.customAllergies)
   const restaurantsById = useRestaurantStore((s) => s.byId)
   const restaurantsLoaded = useRestaurantStore((s) => s.loaded)
   const loadRestaurants = useRestaurantStore((s) => s.load)
@@ -89,19 +88,13 @@ export function ProfilePage() {
 
           {/* Dietary needs */}
           <Section label="Dietary needs">
-            {allergyValues.length + dietValues.length + customAllergies.length === 0 ? (
+            {allergyValues.length + dietValues.length === 0 ? (
               <Empty>No dietary needs set.</Empty>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {allergyValues.map((v) => (
                   <PreferenceTag key={v} tone="allergy">
                     {labelFor(DIETARY_RESTRICTIONS, v)}
-                  </PreferenceTag>
-                ))}
-                {/* Client-only free-text allergies (session scope, not persisted). */}
-                {customAllergies.map((v) => (
-                  <PreferenceTag key={`custom-${v}`} tone="allergy">
-                    {v}
                   </PreferenceTag>
                 ))}
                 {dietValues.map((v) => (
