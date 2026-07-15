@@ -3,6 +3,8 @@ import { Button, Input } from '@/components/ui'
 import { BrandPanel } from '@/components/layout/BrandPanel'
 import { useNavStore } from '@/stores/navStore'
 import { signIn, signUp } from '@/lib/authClient'
+import { fetchProfile } from '@/api/profile.api'
+import { fetchAuthMethods } from '@/api/auth.api'
 
 export interface AuthPageProps {
   mode: 'signin' | 'signup'
@@ -29,15 +31,40 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Set when the entered email belongs to a Google-only account — we stop the
+  // password attempt and emphasize the Google button instead.
+  const [googleHint, setGoogleHint] = useState(false)
 
   // After a successful email/password auth, route per mode. The session cookie
   // is already set; App's useSession picks up the user. (Google redirects away
   // and returns to the app, so it doesn't reach here.)
-  const onAuthed = () => go(isSignup ? 'onboarding-1' : 'empty-groups')
+  // Route by whether the user has onboarded (a saved profile). A brand-new
+  // signup 404s → onboarding-1; a returning user with a profile → empty-groups.
+  // This also finishes a returning user who abandoned onboarding earlier.
+  const onAuthed = async () => {
+    const profile = await fetchProfile()
+    go(profile ? 'empty-groups' : 'onboarding-1')
+  }
 
   const handleSubmit = async () => {
     setError(null)
+    setGoogleHint(false)
     setLoading(true)
+
+    // The email being authenticated (signup uses `email`; signin uses
+    // `identifier` only when it looks like an email).
+    const emailForCheck = isSignup ? email : identifier.includes('@') ? identifier : ''
+    if (emailForCheck) {
+      // If this email is a Google-only account, a password attempt would just
+      // fail/confuse — send them to "Continue with Google" instead.
+      const methods = await fetchAuthMethods(emailForCheck)
+      if (methods.google && !methods.password) {
+        setLoading(false)
+        setGoogleHint(true)
+        setError('This email is registered with Google. Use "Continue with Google" below.')
+        return
+      }
+    }
 
     let authError
     if (isSignup) {
@@ -70,7 +97,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       setError(authError.message ?? 'Something went wrong. Please try again.')
       return
     }
-    onAuthed()
+    await onAuthed()
   }
 
   // Google: full server-side OAuth redirect. On return, App routes based on the
@@ -106,7 +133,9 @@ export function AuthPage({ mode }: AuthPageProps) {
               type="button"
               onClick={handleGoogle}
               disabled={loading}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-input border border-border bg-surface-raised text-sm font-medium text-text hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50"
+              className={`flex h-11 w-full items-center justify-center gap-2 rounded-input border bg-surface-raised text-sm font-medium text-text hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50 ${
+                googleHint ? 'border-text ring-2 ring-focus-ring' : 'border-border'
+              }`}
             >
               <GoogleMark /> Continue with Google
             </button>

@@ -10,10 +10,11 @@ import { AgentChatPage } from '@/pages/member/session/AgentChatPage'
 import { TopPicksPage } from '@/pages/member/session/TopPicksPage'
 import { ProfilePage } from '@/pages/member/ProfilePage'
 import { ProfileEditPage } from '@/pages/member/ProfileEditPage'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSession } from '@/lib/authClient'
+import { fetchProfile } from '@/api/profile.api'
 import { USE_MOCK } from '@/lib/env'
 import type { SessionUser } from '@/stores/authStore'
 
@@ -36,12 +37,20 @@ function App() {
 
   const isAuthScreen = screen === 'sign-in' || screen === 'sign-up'
 
-  // After Google OAuth the browser reloads fresh at the app origin with the
-  // nav store defaulted to 'sign-in'. Once the session resolves, move an
-  // authenticated user off the auth screens into the app.
+  // After Google OAuth the browser reloads fresh at the app origin with the nav
+  // store defaulted to 'sign-in'. Once the session resolves, move an
+  // authenticated user off the auth screens: to onboarding if they have no
+  // profile yet (brand-new — Google never hits AuthPage.onAuthed), else into the
+  // app. The ref guards against the async fetch firing more than once.
+  const routedRef = useRef(false)
   useEffect(() => {
     if (USE_MOCK) return
-    if (session?.user && isAuthScreen) go('empty-groups')
+    if (!session?.user || !isAuthScreen || routedRef.current) return
+    routedRef.current = true
+    void (async () => {
+      const profile = await fetchProfile()
+      go(profile ? 'empty-groups' : 'onboarding-1')
+    })()
   }, [session, isAuthScreen, go])
 
   // Auth guard (live mode only): every screen except the auth pages requires a
