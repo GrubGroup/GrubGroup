@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { Avatar, Icon } from '@/components/ui'
+import { AccountMenu } from './AccountMenu'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { signOut } from '@/lib/authClient'
@@ -33,6 +35,8 @@ export function AppSidebar({
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const go = useNavStore((s) => s.go)
+  const openProfile = useNavStore((s) => s.openProfile)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Clear the Better Auth session (cookie) + local state, then return to sign-in.
   const handleSignOut = async () => {
@@ -40,6 +44,8 @@ export function AppSidebar({
     logout()
     go('sign-in')
   }
+
+  const displayName = user?.display_name ?? user?.username ?? 'You'
 
   return (
     <aside
@@ -67,26 +73,30 @@ export function AppSidebar({
       {/* Body */}
       <div className="flex flex-1 flex-col overflow-y-auto">{children}</div>
 
-      {/* Footer: current user + sign out */}
+      {/* Footer: current user — opens the account menu popover */}
       {showFooter && (
-        <div className="flex items-center gap-1 border-t border-border px-3 py-3">
+        <div className="relative border-t border-border px-3 py-3">
+          <AccountMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            displayName={displayName}
+            username={user?.username ?? 'you'}
+            avatarUrl={user?.avatar_url}
+            onViewProfile={() => openProfile()}
+            onSignOut={handleSignOut}
+          />
           <button
-            onClick={() => go('empty-groups')}
-            className="flex flex-1 items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-surface-raised/60"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-surface-raised/60"
           >
-            <Avatar name={user?.display_name ?? 'Dev'} size="sm" colorClass="member-purple" />
-            <div>
-              <p className="text-[13px] font-semibold text-text">{user?.display_name ?? 'Dev'}</p>
-              <p className="text-[10px] text-text-muted">Allergies saved</p>
+            <Avatar name={displayName} src={user?.avatar_url} size="sm" colorClass="member-purple" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-text">{displayName}</p>
+              <p className="truncate text-[10px] text-text-muted">Preferences saved</p>
             </div>
-          </button>
-          <button
-            onClick={handleSignOut}
-            title="Sign out"
-            aria-label="Sign out"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-surface-raised/60 hover:text-text"
-          >
-            <Icon name="logout" size={16} />
+            <Icon name="chevron-left" size={14} className="rotate-90 text-text-muted" />
           </button>
         </div>
       )}

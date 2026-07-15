@@ -8,10 +8,12 @@ export type Screen =
   // Auth
   | 'sign-in'
   | 'sign-up'
-  // Onboarding (profile/preferences)
+  // Onboarding (profile/preferences): 1 dietary → 2 cuisines (like/avoid) →
+  // 3 budget → 4 location
   | 'onboarding-1'
   | 'onboarding-2'
   | 'onboarding-3'
+  | 'onboarding-4'
   // Group-chat context
   | 'empty-groups'
   | 'group-chat' // Group Food Planning App (session card: not joined)
@@ -26,17 +28,27 @@ export type Screen =
   | 'session-complete'
   | 'top-picks'
   | 'events'
+  // Profile
+  | 'profile'
+  | 'profile-edit'
 
 interface NavState {
   screen: Screen
   groupId: number // currently-selected group (chat room)
+  // Where the profile was opened from, so its Back returns to origin (the
+  // account menu opens from many screens). Stamped by openProfile.
+  returnTo: Screen
   go: (screen: Screen) => void
+  // Open the profile view, remembering the current screen as the return target.
+  openProfile: () => void
   setGroup: (id: number) => void
 }
 
-export const useNavStore = create<NavState>((set) => ({
+export const useNavStore = create<NavState>((set, get) => ({
   screen: 'sign-in',
   groupId: 7, // default matches the seeded session/messages
+  returnTo: 'group-chat',
   go: (screen) => set({ screen }),
+  openProfile: () => set({ returnTo: get().screen, screen: 'profile' }),
   setGroup: (id) => set({ groupId: id }),
 }))

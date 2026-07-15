@@ -6,8 +6,10 @@ import { Router } from 'express';
 import restaurantsRouter from './restaurantsRoutes.js';
 import sessionsRouter from './sessionsRoutes.js';
 import profileRouter from './profileRoutes.js';
+import userRouter from './userRoutes.js';
 import groupsRouter from './groupsRoutes.js';
 import eventsRouter from './eventsRoutes.js';
+import { getAuthMethods } from '../controllers/authMethodsController.js';
 
 const router = Router();
 
@@ -16,9 +18,13 @@ router.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// Public: which auth providers an email has (used pre-login by the sign-in form).
+router.get('/auth-methods', getAuthMethods);
+
 router.use('/restaurants', restaurantsRouter);
 router.use('/sessions', sessionsRouter);
 router.use('/profile', profileRouter);
+router.use('/user', userRouter);
 router.use('/groups', groupsRouter);
 router.use('/events', eventsRouter);
 
