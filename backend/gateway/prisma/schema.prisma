@@ -68,12 +68,14 @@ model Profile {
   preferred_cuisines   String[]
   budget_min           Int
   budget_max           Int
-  // Durable default dining location. The label is what the profile UI shows;
-  // lat/lon (optional) let a session's Qa inherit precise coordinates without
-  // re-geocoding when the member doesn't override location for that session.
-  default_location     String?
+  // Durable default dining location. `default_address` is the address label the
+  // profile UI shows; lat/lon (optional) let a session's Qa inherit precise
+  // coordinates without re-geocoding when the member doesn't override location.
+  // `default_radius` is the preferred search radius in miles around the address.
+  default_address      String?
   default_lat          Float?
   default_lon          Float?
+  default_radius       Float?
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
   liked_restaurant_ids Int[]

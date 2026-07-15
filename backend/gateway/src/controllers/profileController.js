@@ -12,9 +12,10 @@ const validateProfileBody = (body) => {
     preferred_cuisines,
     budget_min,
     budget_max,
-    default_location,
+    default_address,
     default_lat,
     default_lon,
+    default_radius,
   } = body;
 
   if (typeof budget_min !== 'number' || typeof budget_max !== 'number') {
@@ -32,19 +33,22 @@ const validateProfileBody = (body) => {
       return `${key} must be an array.`;
     }
   }
-  // Location is optional. When present, the label must be a string and the
-  // coordinates (if given) must be numbers.
+  // Location is optional. When present, the address must be a string and the
+  // coordinates / radius (if given) must be numbers.
   if (
-    default_location !== undefined &&
-    default_location !== null &&
-    typeof default_location !== 'string'
+    default_address !== undefined &&
+    default_address !== null &&
+    typeof default_address !== 'string'
   ) {
-    return 'default_location must be a string.';
+    return 'default_address must be a string.';
   }
-  for (const [key, value] of Object.entries({ default_lat, default_lon })) {
+  for (const [key, value] of Object.entries({ default_lat, default_lon, default_radius })) {
     if (value !== undefined && value !== null && typeof value !== 'number') {
       return `${key} must be a number.`;
     }
+  }
+  if (default_radius !== undefined && default_radius !== null && default_radius <= 0) {
+    return 'default_radius must be a positive number of miles.';
   }
   return null;
 };
@@ -53,9 +57,10 @@ const validateProfileBody = (body) => {
 // stay undefined (so an upsert can omit them); explicit null clears them.
 const locationFields = (body) => {
   const fields = {};
-  if (body.default_location !== undefined) fields.default_location = body.default_location;
+  if (body.default_address !== undefined) fields.default_address = body.default_address;
   if (body.default_lat !== undefined) fields.default_lat = body.default_lat;
   if (body.default_lon !== undefined) fields.default_lon = body.default_lon;
+  if (body.default_radius !== undefined) fields.default_radius = body.default_radius;
   return fields;
 };
 

@@ -26,11 +26,13 @@ class Profile(SQLModel, table=True):
     )
     budget_min: int
     budget_max: int
-    # Durable default dining location (mirrors Prisma Profile). label for display;
-    # lat/lon optionally seed a session's Qa coordinates. All nullable.
-    default_location: str | None = None
+    # Durable default dining location (mirrors Prisma Profile). address label for
+    # display; lat/lon optionally seed a session's Qa coordinates; radius is the
+    # preferred search radius in miles. All nullable.
+    default_address: str | None = None
     default_lat: float | None = None
     default_lon: float | None = None
+    default_radius: float | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     liked_restaurant_ids: list[int] = Field(
