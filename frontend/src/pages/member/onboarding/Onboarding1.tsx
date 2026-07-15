@@ -1,6 +1,5 @@
 import { Button, Chip } from '@/components/ui'
 import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
-import { CustomAllergyInput } from '@/components/profile/CustomAllergyInput'
 import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { useProfileStore } from '@/stores/profileStore'
 import { useNavStore } from '@/stores/navStore'
@@ -8,7 +7,7 @@ import { useEffect } from 'react'
 
 // Split the controlled dietary vocabulary into the wireframe's two groups:
 // lifestyle/religious diets vs. allergen "free-from" presets. Both persist to
-// profile.dietary_restrictions; only free-text "Other" allergies are client-only.
+// profile.dietary_restrictions.
 const DIET_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => !isAllergen(o.value))
 const ALLERGEN_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => isAllergen(o.value))
 
@@ -18,8 +17,6 @@ export function Onboarding1() {
   const load = useProfileStore((s) => s.load)
   const dietary = profile?.dietary_restrictions ?? []
   const toggleDietary = useProfileStore((s) => s.toggleDietary)
-  const customAllergies = useProfileStore((s) => s.customAllergies)
-  const setCustomAllergies = useProfileStore((s) => s.setCustomAllergies)
 
   useEffect(() => {
     if (!profile) void load()
@@ -28,7 +25,7 @@ export function Onboarding1() {
   return (
     <OnboardingLayout
       step={1}
-      total={3}
+      total={5}
       title="Any dietary needs?"
       subtitle="Set once — the AI remembers for every session. You'll never be asked again."
     >
@@ -57,7 +54,6 @@ export function Onboarding1() {
             />
           ))}
         </div>
-        <CustomAllergyInput value={customAllergies} onChange={setCustomAllergies} />
       </div>
 
       <div className="flex items-center gap-2">

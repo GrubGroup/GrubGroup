@@ -8,10 +8,13 @@ export type Screen =
   // Auth
   | 'sign-in'
   | 'sign-up'
-  // Onboarding (profile/preferences)
+  // Onboarding (profile/preferences): 1 dietary → 2 liked cuisines →
+  // 3 disliked cuisines → 4 budget → 5 location
   | 'onboarding-1'
   | 'onboarding-2'
   | 'onboarding-3'
+  | 'onboarding-4'
+  | 'onboarding-5'
   // Group-chat context
   | 'empty-groups'
   | 'group-chat' // Group Food Planning App (session card: not joined)

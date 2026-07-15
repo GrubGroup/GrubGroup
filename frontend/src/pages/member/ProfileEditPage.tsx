@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Button, Chip, Icon, Input } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
-import { CustomAllergyInput } from '@/components/profile/CustomAllergyInput'
-import { CUISINES, DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
+import { CuisineGroupPicker } from '@/components/profile/CuisineGroupPicker'
+import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { updateMe, UserUpdateError } from '@/api/user.api'
 import { useAuthStore } from '@/stores/authStore'
 import { useProfileStore } from '@/stores/profileStore'
@@ -34,8 +34,6 @@ export function ProfileEditPage() {
   const toggleCuisine = useProfileStore((s) => s.toggleCuisine)
   const setBudget = useProfileStore((s) => s.setBudget)
   const setLocation = useProfileStore((s) => s.setLocation)
-  const customAllergies = useProfileStore((s) => s.customAllergies)
-  const setCustomAllergies = useProfileStore((s) => s.setCustomAllergies)
 
   // Local identity draft for User fields (not in the profile store). Lazy-init
   // from the session user, which is available synchronously by the time this
@@ -204,35 +202,22 @@ export function ProfileEditPage() {
                 />
               ))}
             </div>
-            <CustomAllergyInput value={customAllergies} onChange={setCustomAllergies} className="mt-2" />
           </Field>
 
           {/* Preferred cuisines */}
           <Field label="Preferred cuisines">
-            <div className="flex flex-wrap gap-2">
-              {CUISINES.map((opt) => (
-                <Chip
-                  key={opt.value}
-                  label={opt.label}
-                  selected={preferred.includes(opt.value)}
-                  onToggle={() => toggleCuisine(opt.value, 'preferred')}
-                />
-              ))}
-            </div>
+            <CuisineGroupPicker
+              selected={preferred}
+              onToggle={(v) => toggleCuisine(v, 'preferred')}
+            />
           </Field>
 
           {/* Disliked cuisines */}
           <Field label="Disliked cuisines">
-            <div className="flex flex-wrap gap-2">
-              {CUISINES.map((opt) => (
-                <Chip
-                  key={opt.value}
-                  label={opt.label}
-                  selected={disliked.includes(opt.value)}
-                  onToggle={() => toggleCuisine(opt.value, 'disliked')}
-                />
-              ))}
-            </div>
+            <CuisineGroupPicker
+              selected={disliked}
+              onToggle={(v) => toggleCuisine(v, 'disliked')}
+            />
           </Field>
 
           {formError && <p className="text-sm text-error">{formError}</p>}

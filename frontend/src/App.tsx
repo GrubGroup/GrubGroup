@@ -1,5 +1,7 @@
 import { AuthPage } from '@/pages/auth/AuthPage'
 import { Onboarding1 } from '@/pages/member/onboarding/Onboarding1'
+import { OnboardingCuisinesLiked } from '@/pages/member/onboarding/OnboardingCuisinesLiked'
+import { OnboardingCuisinesDisliked } from '@/pages/member/onboarding/OnboardingCuisinesDisliked'
 import { Onboarding2 } from '@/pages/member/onboarding/Onboarding2'
 import { Onboarding3 } from '@/pages/member/onboarding/Onboarding3'
 import { EmptyGroupsPage } from '@/pages/member/EmptyGroupsPage'
@@ -57,8 +59,12 @@ function App() {
     case 'onboarding-1':
       return <Onboarding1 />
     case 'onboarding-2':
-      return <Onboarding2 />
+      return <OnboardingCuisinesLiked />
     case 'onboarding-3':
+      return <OnboardingCuisinesDisliked />
+    case 'onboarding-4':
+      return <Onboarding2 />
+    case 'onboarding-5':
       return <Onboarding3 />
     case 'empty-groups':
       return <EmptyGroupsPage />

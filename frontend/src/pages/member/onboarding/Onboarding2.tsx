@@ -20,8 +20,8 @@ export function Onboarding2() {
 
   return (
     <OnboardingLayout
-      step={2}
-      total={3}
+      step={4}
+      total={5}
       title="What's your usual budget?"
       subtitle="Per person, per meal. You can always adjust for specific sessions."
     >
@@ -46,10 +46,10 @@ export function Onboarding2() {
         })}
       </div>
       <div className="flex items-center gap-2">
-        <Button variant="ghost" leftIcon={<Icon name="arrow-left" size={14} />} onClick={() => go('onboarding-1')}>
+        <Button variant="ghost" leftIcon={<Icon name="arrow-left" size={14} />} onClick={() => go('onboarding-3')}>
           Back
         </Button>
-        <Button variant="primary" fullWidth onClick={() => go('onboarding-3')}>
+        <Button variant="primary" fullWidth onClick={() => go('onboarding-5')}>
           Continue
         </Button>
       </div>
