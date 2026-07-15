@@ -12,11 +12,17 @@ export function Onboarding3() {
   const go = useNavStore((s) => s.go)
   const profile = useProfileStore((s) => s.profile)
   const save = useProfileStore((s) => s.save)
-  const { value, setValue } = usePlacesInput('San Francisco, CA')
+  const setLocation = useProfileStore((s) => s.setLocation)
+  // Prefill from any already-set default location, else a sensible placeholder.
+  const { value, setValue } = usePlacesInput(profile?.default_location ?? 'San Francisco, CA')
 
   const dietary = profile?.dietary_restrictions ?? []
 
   const handleDone = async () => {
+    // Persist the typed location onto the profile before saving. (No geocoding
+    // wired yet, so we store the label only; lat/lon stay null — see
+    // usePlacesInput.) save() upserts the whole profile via the gateway.
+    setLocation(value)
     await save()
     go('empty-groups')
   }
