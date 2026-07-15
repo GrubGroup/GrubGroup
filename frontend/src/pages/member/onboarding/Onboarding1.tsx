@@ -1,7 +1,7 @@
 import { Button, Chip } from '@/components/ui'
 import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
 import { CustomAllergyInput } from '@/components/profile/CustomAllergyInput'
-import { DIETARY_RESTRICTIONS } from '@/constants/dietary'
+import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { useProfileStore } from '@/stores/profileStore'
 import { useNavStore } from '@/stores/navStore'
 import { useEffect } from 'react'
@@ -9,9 +9,8 @@ import { useEffect } from 'react'
 // Split the controlled dietary vocabulary into the wireframe's two groups:
 // lifestyle/religious diets vs. allergen "free-from" presets. Both persist to
 // profile.dietary_restrictions; only free-text "Other" allergies are client-only.
-const ALLERGEN_VALUES = new Set(['nut-free', 'shellfish-free', 'dairy-free', 'gluten-free'])
-const DIET_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => !ALLERGEN_VALUES.has(o.value))
-const ALLERGEN_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => ALLERGEN_VALUES.has(o.value))
+const DIET_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => !isAllergen(o.value))
+const ALLERGEN_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => isAllergen(o.value))
 
 export function Onboarding1() {
   const go = useNavStore((s) => s.go)

@@ -7,6 +7,8 @@ import { GroupChatPage } from '@/pages/member/GroupChatPage'
 import { EventsPage } from '@/pages/member/EventsPage'
 import { AgentChatPage } from '@/pages/member/session/AgentChatPage'
 import { TopPicksPage } from '@/pages/member/session/TopPicksPage'
+import { ProfilePage } from '@/pages/member/ProfilePage'
+import { ProfileEditPage } from '@/pages/member/ProfileEditPage'
 import { useEffect } from 'react'
 import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -76,6 +78,10 @@ function App() {
       return <TopPicksPage />
     case 'events':
       return <EventsPage />
+    case 'profile':
+      return <ProfilePage />
+    case 'profile-edit':
+      return <ProfileEditPage />
     default:
       return <AuthPage mode="signin" />
   }

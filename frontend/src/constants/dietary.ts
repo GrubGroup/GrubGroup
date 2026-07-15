@@ -42,3 +42,13 @@ export const CUISINES: Option[] = [
 export function labelFor(options: Option[], value: string): string {
   return options.find((o) => o.value === value)?.label ?? value
 }
+
+// Which controlled dietary values are allergen "free-from" presets (safety-
+// critical) vs. lifestyle/religious diets. Used to split the Dietary Needs UI
+// into two color groups (allergy = purple, diet = blue) consistently across the
+// onboarding step and the profile pages.
+export const ALLERGEN_VALUES = new Set(['nut-free', 'shellfish-free', 'dairy-free', 'gluten-free'])
+
+export function isAllergen(value: string): boolean {
+  return ALLERGEN_VALUES.has(value)
+}
