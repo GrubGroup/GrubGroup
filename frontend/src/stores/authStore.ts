@@ -51,11 +51,14 @@ interface AuthState {
   isGuest: boolean
   // Sync the store from Better Auth's session (called by App on session change).
   setSessionUser: (su: SessionUser | null) => void
+  // Merge edited identity fields (display_name/username) after a saved update,
+  // so the header/sidebar reflect the change without a full session refresh.
+  patchUser: (patch: Partial<User>) => void
   loginAsGuest: (name: string) => void
   logout: () => void
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: INITIAL_USER,
   role: INITIAL_USER?.role ?? null,
   isGuest: false,
@@ -69,6 +72,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     const user = toDomainUser(su)
     set({ user, role: user.role, isGuest: false })
+  },
+
+  patchUser: (patch) => {
+    const current = get().user
+    if (!current) return
+    set({ user: { ...current, ...patch } })
   },
 
   loginAsGuest: (name) => {
