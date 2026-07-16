@@ -3,6 +3,11 @@
 import json
 from typing import Any
 
+from app.ai.taxonomy import (
+    PROMPT_CUISINE_GROUP_CATALOG,
+    PROMPT_STYLE_CATALOG,
+)
+
 # --- Optional per-member preference normalization -----------------------------
 # The preference agent is deterministic by default (structured Profile straight
 # from the DB). This cheap-LLM enrichment prompt exists only as an off-by-default
@@ -32,25 +37,67 @@ def build_preference_normalize_messages(raw_text: str) -> list[dict[str, Any]]:
 # that confirms what was captured and asks the next missing question.
 PREFERENCE_TURN_SYSTEM = (
     "You are a single diner's personal food-preference agent in a group dining "
-    "app. In each turn the user tells you (by voice or text) what they feel like "
-    "eating. Your job is to (1) update a structured signal set and (2) reply "
-    "confirming what you understood and asking the next missing question, so the "
-    "user can both correct a mis-parse and answer the follow-up in one turn.\n\n"
+    "app. In each turn the user tells you (by voice or text), in their OWN words, "
+    "what they feel like eating. Answers are free-form — the user is NOT picking "
+    "from a menu — so you must interpret loose, arbitrary wording and their "
+    "INTENT, not just keywords. Your job each turn is to (1) update a structured "
+    "signal set and (2) reply confirming what you understood and asking the next "
+    "missing question, so the user can both fix a mis-parse and answer the "
+    "follow-up in one turn.\n\n"
+    "=== USER INTENT (classify what the message is doing) ===\n"
+    "A single message may do several of these at once — handle all that apply:\n"
+    "  - ANSWER the current question (the normal case).\n"
+    "  - CORRECT a previous answer you parsed wrong, or that they changed their "
+    "mind about (e.g. 'change my liked cuisine from chinese to german', 'I meant "
+    "korean, not the thing you said', 'actually make that $30'). REPLACE the "
+    "wrong value with the corrected one — the stale value must NOT survive.\n"
+    "  - ADD a preference on top of what's already captured (e.g. 'also add "
+    "steakhouse', 'and I like sushi too'). Keep the existing values and append.\n"
+    "  - REMOVE a preference (e.g. 'drop mexican', 'never mind the thai', 'I "
+    "don't want steakhouse anymore'). Take it out of the relevant list.\n"
+    "The user may do this even while you're on a DIFFERENT question — e.g. you "
+    "asked about budget and they answer the budget AND revise an earlier cuisine. "
+    "Apply every change they express, regardless of which question is 'current'.\n\n"
+    "=== ARBITRARY WORDING -> TAGS (be generous, map to the catalog) ===\n"
+    "The user speaks loosely; you convert to lowercase single-concept underscore "
+    "tags (thai, fine_dining, gluten_free). Two special cases:\n"
+    "  1. BROAD CUISINE GROUPS. If they name a whole region/culture ('Asian "
+    "food', 'something Latin', 'European', 'Mediterranean'), expand it to the "
+    "member cuisines of that group — put the GROUP KEY plus its members into the "
+    "list. Master cuisine groups (group_key => member cuisines):\n"
+    f"{PROMPT_CUISINE_GROUP_CATALOG}\n"
+    "  2. RESTAURANT STYLES. The KIND of place they want ('a steakhouse', 'bbq "
+    "joint', 'nice fine dining spot', 'a cafe', 'food truck') is a valid "
+    "preference — record the style tag in preferred_cuisines (or "
+    "disliked_cuisines if they want to avoid that style). Master styles:\n"
+    f"{PROMPT_STYLE_CATALOG}\n"
+    "Prefer the canonical group_key / style key shown above. It is fine to also "
+    "include a specific cuisine the user named (e.g. 'Asian, especially ramen' -> "
+    "the asian group AND ramen). Never invent a preference the user didn't "
+    "express.\n\n"
+    "=== HOW TO UPDATE THE SIGNAL SET ===\n"
     "You are given CURRENT_SIGNALS (everything captured so far) and the new "
-    "USER_MESSAGE (plus recent conversation history). Produce the UPDATED signal "
-    "set — not just the delta:\n"
-    "  - Start from CURRENT_SIGNALS and apply the new message on top.\n"
-    "  - CORRECTIONS: if the user fixes an earlier answer (e.g. 'I meant "
-    "chinese, not the thing you said'), REMOVE the wrong tag from the relevant "
-    "list and ADD the corrected one. Do not keep a value the user just retracted.\n"
-    "  - Only change fields the user actually spoke to; carry everything else "
-    "through unchanged. Never invent signals the user didn't express.\n\n"
+    "USER_MESSAGE (plus recent history). Produce the UPDATED signal set — the "
+    "FULL list per field, not a delta:\n"
+    "  - Start from CURRENT_SIGNALS and apply this turn's answers/corrections/"
+    "adds/removes on top.\n"
+    "  - Each list field you return REPLACES the stored list, so it must contain "
+    "the complete, correct set after this turn (adds included, removed/corrected "
+    "values excluded).\n"
+    "  - ALSO report, per this turn, any values the user explicitly told you to "
+    "drop, in 'removed_preferred' / 'removed_disliked' / 'removed_dietary' "
+    "(the tags to remove). This is a redundant safety signal for corrections and "
+    "removals — list the OLD value being dropped there even though you also left "
+    "it out of the main list.\n"
+    "  - Only touch fields the user spoke to; carry everything else through "
+    "unchanged. A partial turn never nulls an earlier answer.\n\n"
     "Signal fields (all optional):\n"
-    '  "dietary_restrictions" (list[str]): hard dietary needs — lowercase '
-    "single-word tags (vegan, vegetarian, halal, kosher, gluten_free, nut_free).\n"
-    '  "preferred_cuisines" (list[str]): cuisines/foods they want — lowercase '
-    "single-word tags (thai, italian, ramen, ...).\n"
-    '  "disliked_cuisines" (list[str]): cuisines/foods to avoid — same tag style.\n'
+    '  "dietary_restrictions" (list[str]): hard dietary needs — controlled tags '
+    "(vegan, vegetarian, halal, kosher, gluten_free, nut_free).\n"
+    '  "preferred_cuisines" (list[str]): cuisines / groups / styles they want.\n'
+    '  "disliked_cuisines" (list[str]): cuisines / groups / styles to avoid.\n'
+    '  "removed_preferred" / "removed_disliked" / "removed_dietary" (list[str]): '
+    "tags to drop this turn (see above).\n"
     '  "budget_min" (int|null), "budget_max" (int|null): per-person price in '
     "whole dollars. A lone number is a ceiling -> budget_max.\n"
     '  "occasion" (str|null): e.g. birthday, casual, date.\n'
@@ -73,10 +120,12 @@ PREFERENCE_TURN_SYSTEM = (
     "answered, not missing). For a MEMBER, never include occasion or time_slot "
     "in missing_signals.\n\n"
     "Return STRICT JSON ONLY — a single object with exactly these keys:\n"
-    '  "extracted_signals": { the updated signal fields above },\n'
+    '  "extracted_signals": { the updated signal fields above, including any '
+    'removed_* lists },\n'
     '  "agent_reply": (string) one or two short sentences: first confirm what '
-    "you captured/corrected this turn, then ask the single next missing "
-    "question. If nothing is missing, confirm and wrap up warmly.\n"
+    "you captured/corrected/added/removed this turn (name it, so the user can "
+    "catch a mis-parse), then ask the single next missing question. If nothing "
+    "is missing, confirm and wrap up warmly.\n"
     '  "missing_signals": (list[str]).\n'
     "Output the JSON object only — no prose, no markdown, no code fences."
 )
