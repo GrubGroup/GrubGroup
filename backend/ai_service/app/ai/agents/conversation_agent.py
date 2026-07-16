@@ -20,6 +20,12 @@ from typing import Any
 
 from app.ai.llm.client import chat_completion
 from app.ai.llm.prompts import build_preference_turn_messages
+from app.ai.taxonomy import (
+    expand_cuisine_terms,
+    expand_group_terms_only,
+    normalize_dietary_terms,
+    normalize_tag,
+)
 from app.schemas.ai import ConversationTurn, ExtractedSignals
 
 # The signal names the reply logic can ask about, in the order we prefer to ask.
@@ -92,21 +98,98 @@ def _strip_json_fence(raw: str) -> str:
 
 
 def _clean_tags(value: Any) -> list[str] | None:
-    """Coerce a value into a deduped list of lowercase single-word tags, or None.
+    """Coerce a value into a deduped list of lowercase single-concept tags, or None.
 
     Returns None when the model omitted the field (so we carry the prior value
-    through); returns [] when the model explicitly cleared it.
+    through); returns [] when the model explicitly cleared it. Normalizes to the
+    catalog's lowercase underscore tag style via ``taxonomy.normalize_tag`` (e.g.
+    "gluten free" / "gluten-free" -> "gluten_free"), so tags line up with the
+    retriever's superset-filter vocabulary. Expansion of broad group / style
+    terms happens later in ``_reconcile`` — this stays a pure normalizer.
     """
-    if value is None:
-        return None
     if not isinstance(value, list):
         return None
     out: list[str] = []
     for item in value:
-        # Normalize to the catalog's lowercase underscore tag style (e.g.
-        # "gluten free" / "gluten-free" -> "gluten_free"), collapsing spaces and
-        # hyphens so tags line up with the retriever's superset filter vocabulary.
-        tag = "_".join(str(item).strip().lower().replace("-", " ").split())
+        tag = normalize_tag(item)
+        if tag and tag not in out:
+            out.append(tag)
+    return out
+
+
+def _clean_removals(value: Any) -> list[str]:
+    """Normalize a removed_* list into plain tags (never None — defaults to []).
+
+    These are the values the user explicitly told us to drop this turn. Unlike
+    _clean_tags, an absent/garbage value yields [] (nothing to remove) rather
+    than None, since "no removals" and "field omitted" mean the same thing here.
+    """
+    return _clean_tags(value) or []
+
+
+def _merge_cuisine_field(
+    prior: list[str],
+    parsed_list: list[str] | None,
+    removals: list[str],
+) -> list[str]:
+    """Merge one cuisine list: expand group/style terms, then apply removals.
+
+    Handles the four USER-INTENT shapes the prompt promises (answer / correct /
+    add / remove) with one rule set:
+
+      * ANSWER / ADD / CORRECT: when the model returns a list, it is the FULL
+        intended set (the prompt asks for the complete corrected list), so it
+        REPLACES the prior list. We expand broad terms ("asian" -> its member
+        cuisines, "bbq" -> barbecue/bbq/grill) so the stored tags actually match
+        restaurants. A correction therefore drops the stale tag simply because
+        the model left it out of the returned list.
+      * REMOVE: the model also reports dropped values in a removed_* list. When
+        it returned a replacement list, the removal is applied LITERALLY as a
+        backstop (the model already excluded it; we just enforce it) — this is
+        safe even when a kept cuisine overlaps a removed group. When the model
+        OMITTED the list (a pure "drop X" turn), we carry the prior list and
+        expand the removal at the GROUP level only (expand_group_terms_only), so
+        dropping a whole group ("no asian") removes every member, while dropping
+        a STYLE ("no seafood") stays literal and never deletes a standalone tag
+        that merely shares that style's alias (e.g. a separately-liked "sushi").
+    """
+    if parsed_list is not None:
+        base = expand_cuisine_terms(parsed_list)
+        drop = set(_dedupe_lower(removals))  # literal backstop, no expansion
+    else:
+        base = list(prior)
+        # Group-only expansion: whole cuisine groups cascade; styles/specifics
+        # remove only themselves (see expand_group_terms_only).
+        drop = set(expand_group_terms_only(removals))
+
+    return [tag for tag in base if tag not in drop]
+
+
+def _merge_dietary_field(
+    prior: list[str],
+    parsed_list: list[str] | None,
+    removals: list[str],
+) -> list[str]:
+    """Merge dietary_restrictions: map synonyms to controlled tags, apply removals.
+
+    Dietary needs are never "grouped" the way cuisines are, so this uses the
+    controlled-vocabulary synonym map (veggie -> vegetarian, no_gluten ->
+    gluten_free) instead of cuisine expansion. Same replace-then-remove shape as
+    the cuisine merge.
+    """
+    if parsed_list is not None:
+        base = normalize_dietary_terms(parsed_list)
+    else:
+        base = list(prior)
+    drop = set(normalize_dietary_terms(removals))
+    return [tag for tag in base if tag not in drop]
+
+
+def _dedupe_lower(tags: Any) -> list[str]:
+    """Normalize a term list to canonical tags without any group/style expansion."""
+    out: list[str] = []
+    for item in tags or []:
+        tag = normalize_tag(item)
         if tag and tag not in out:
             out.append(tag)
     return out
@@ -135,13 +218,50 @@ def _reconcile(
     occasion / time_slot are HOST-ONLY: for a non-host they are never taken from
     the parse (defense-in-depth on top of the prompt not asking), so a defiant
     non-host still cannot set the event's occasion or timing.
+
+    Cuisine lists are additionally EXPANDED through the taxonomy (broad group
+    terms like "asian" -> their member cuisines; style terms like "bbq" ->
+    barbecue/bbq/grill) so the stored signals hold concrete, retrieval-matchable
+    tags. The model's per-turn `removed_*` lists are applied as an explicit
+    drop, which makes add/remove and mid-conversation corrections deterministic
+    even against a large expanded list.
     """
     signals = prior.model_copy(deep=True)
 
-    for field in ("dietary_restrictions", "preferred_cuisines", "disliked_cuisines"):
-        cleaned = _clean_tags(parsed.get(field))
-        if cleaned is not None:
-            setattr(signals, field, cleaned)
+    # Cuisine fields: expand group/style terms + honor explicit removals.
+    signals.preferred_cuisines = _merge_cuisine_field(
+        prior.preferred_cuisines,
+        _clean_tags(parsed.get("preferred_cuisines")),
+        _clean_removals(parsed.get("removed_preferred")),
+    )
+    signals.disliked_cuisines = _merge_cuisine_field(
+        prior.disliked_cuisines,
+        _clean_tags(parsed.get("disliked_cuisines")),
+        _clean_removals(parsed.get("removed_disliked")),
+    )
+    # Resolve a like/dislike FLIP deterministically. If this turn newly ADDED a
+    # cuisine to one side (e.g. "actually I like chinese" after a prior dislike),
+    # drop it from the OTHER side — the list the user just spoke to wins. Keyed on
+    # the newly-added set (not a blanket overlap purge) so an intentional
+    # both-lists state from earlier turns is left alone. Without this, the model
+    # omitting the opposite list leaves a tag in both, and the orchestrator's
+    # +2/-2 QA weights cancel to 0.0, silently neutralizing the fresh preference.
+    added_pref = set(signals.preferred_cuisines) - set(prior.preferred_cuisines)
+    added_dis = set(signals.disliked_cuisines) - set(prior.disliked_cuisines)
+    if added_pref:
+        signals.disliked_cuisines = [
+            t for t in signals.disliked_cuisines if t not in added_pref
+        ]
+    if added_dis:
+        signals.preferred_cuisines = [
+            t for t in signals.preferred_cuisines if t not in added_dis
+        ]
+    # Dietary: controlled-vocabulary synonyms, no group expansion.
+    signals.dietary_restrictions = _merge_dietary_field(
+        prior.dietary_restrictions,
+        _clean_tags(parsed.get("dietary_restrictions")),
+        _clean_removals(parsed.get("removed_dietary")),
+    )
 
     bmin = _coerce_int(parsed.get("budget_min"))
     if bmin is not None:
@@ -229,6 +349,20 @@ def _non_host_touched_host_field(parsed: dict[str, Any]) -> bool:
     return False
 
 
+def _summarize_tags(tags: list[str], *, limit: int = 4) -> str:
+    """Human-readable join of a tag list, capped so an expanded group stays short.
+
+    A broad "asian" answer expands to ~20 concrete tags; listing them all in the
+    degraded reply would be unreadable, so we show the first few and count the
+    rest ("thai, ramen, sushi, chinese, +16 more").
+    """
+    pretty = [t.replace("_", " ") for t in tags]
+    if len(pretty) <= limit:
+        return ", ".join(pretty)
+    shown = ", ".join(pretty[:limit])
+    return f"{shown}, +{len(pretty) - limit} more"
+
+
 def _fallback_reply(signals: ExtractedSignals, missing: list[str]) -> str:
     """Deterministic reply used only when the LLM's own reply is unusable.
 
@@ -238,9 +372,9 @@ def _fallback_reply(signals: ExtractedSignals, missing: list[str]) -> str:
     """
     bits: list[str] = []
     if signals.disliked_cuisines:
-        bits.append(f"you don't like {', '.join(signals.disliked_cuisines)} food")
+        bits.append(f"you don't like {_summarize_tags(signals.disliked_cuisines)}")
     if signals.preferred_cuisines:
-        bits.append(f"you're into {', '.join(signals.preferred_cuisines)}")
+        bits.append(f"you're into {_summarize_tags(signals.preferred_cuisines)}")
     if signals.dietary_restrictions:
         bits.append(f"dietary: {', '.join(signals.dietary_restrictions)}")
     if signals.budget_max is not None:
