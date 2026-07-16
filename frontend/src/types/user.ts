@@ -13,3 +13,7 @@ export interface User {
   created_at: string
   updated_at: string
 }
+
+// Lightweight user shape returned by GET /api/users/search — just what the
+// group member-picker needs to render a result row / selected chip.
+export type UserSearchResult = Pick<User, 'id' | 'username' | 'display_name' | 'avatar_url'>

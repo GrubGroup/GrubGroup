@@ -91,7 +91,13 @@ export function ProfileEditPage() {
     }
 
     // 2) Persist preferences (Profile). Location was written live via setLocation.
-    await save()
+    //    Only leave the form once the save succeeded, so a failure shows an error
+    //    instead of silently discarding the edit.
+    const ok = await save()
+    if (!ok) {
+      setFormError('Could not save your preferences. Please try again.')
+      return
+    }
     go('profile')
   }
 

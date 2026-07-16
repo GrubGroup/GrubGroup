@@ -35,6 +35,8 @@ interface GroupChatState {
   // Per group: who is currently typing (ephemeral presence, never persisted).
   typingByGroup: Record<number, Typer[]>
   receiveMessage: (msg: GroupMessage) => void
+  // Replay of persisted backlog for a group, sent by the gateway on join.
+  receiveHistory: (groupId: number, messages: GroupMessage[]) => void
   sendMessage: (groupId: number, text: string) => void
   startSession: (groupId: number) => void
   receiveSessionStart: (groupId: number) => void
@@ -58,6 +60,14 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
         ...s.messagesByGroup,
         [msg.groupId]: [...(s.messagesByGroup[msg.groupId] ?? EMPTY), msg],
       },
+    })),
+
+  // Seed a group's messages from the persisted backlog. Replaces the list
+  // (set, not append) so a reload/late-join starts from the stored history;
+  // subsequent live receiveMessage calls append after it.
+  receiveHistory: (groupId, messages) =>
+    set((s) => ({
+      messagesByGroup: { ...s.messagesByGroup, [groupId]: messages },
     })),
 
   sendMessage: (groupId, text) => {

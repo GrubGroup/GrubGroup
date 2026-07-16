@@ -52,6 +52,11 @@ const auth = betterAuth({
       // Auto-link Google to an existing same-email account (incl. accounts that
       // already have a password). Safe because Google verifies email ownership.
       trustedProviders: ['google'],
+      // Don't require the EXISTING local account's email to be verified before
+      // linking. Our email/password signups never set emailVerified, so without
+      // this Better Auth returns `account_not_linked`. The Google side still
+      // proves ownership of the address (that's what trustedProviders is for).
+      requireLocalEmailVerified: false,
     },
   },
 

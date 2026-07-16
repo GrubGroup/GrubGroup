@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Button, Input, Icon } from '@/components/ui'
 import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
 import { DIETARY_RESTRICTIONS, labelFor } from '@/constants/dietary'
@@ -14,10 +15,13 @@ export function Onboarding3() {
   const go = useNavStore((s) => s.go)
   const profile = useProfileStore((s) => s.profile)
   const save = useProfileStore((s) => s.save)
+  const saving = useProfileStore((s) => s.saving)
   const setLocation = useProfileStore((s) => s.setLocation)
   const setRadius = useProfileStore((s) => s.setRadius)
   // Prefill from any already-set default address, else a sensible placeholder.
   const { value, setValue } = usePlacesInput(profile?.default_address ?? 'San Francisco, CA')
+
+  const [error, setError] = useState<string | null>(null)
 
   const dietary = profile?.dietary_restrictions ?? []
   const radius = profile?.default_radius ?? DEFAULT_RADIUS
@@ -27,10 +31,17 @@ export function Onboarding3() {
     // wired yet, so we store the label only; lat/lon stay null — see
     // usePlacesInput.) Also lock in the selected radius. save() upserts the
     // whole profile via the gateway.
+    setError(null)
     setLocation(value)
     setRadius(radius)
-    await save()
-    go('empty-groups')
+    // Only advance once the save actually succeeded — otherwise surface an error
+    // instead of silently trapping the user on this step.
+    const ok = await save()
+    if (ok) {
+      go('empty-groups')
+    } else {
+      setError('Could not save your profile. Please try again.')
+    }
   }
 
   return (
@@ -83,11 +94,18 @@ export function Onboarding3() {
         </span>
       </div>
 
+      {error && <p className="text-sm text-error">{error}</p>}
+
       <div className="flex items-center gap-2">
-        <Button variant="ghost" leftIcon={<Icon name="arrow-left" size={14} />} onClick={() => go('onboarding-3')}>
+        <Button
+          variant="ghost"
+          leftIcon={<Icon name="arrow-left" size={14} />}
+          onClick={() => go('onboarding-3')}
+          disabled={saving}
+        >
           Back
         </Button>
-        <Button variant="primary" fullWidth onClick={handleDone}>
+        <Button variant="primary" fullWidth onClick={handleDone} isLoading={saving}>
           Done — let's eat
         </Button>
       </div>

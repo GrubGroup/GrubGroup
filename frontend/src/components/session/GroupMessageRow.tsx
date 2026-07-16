@@ -15,6 +15,18 @@ function formatTime(iso: string): string {
 }
 
 export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps) {
+  // System lines (e.g. "Sofia has left the group") render as a centered divider,
+  // matching the "… started a session" style.
+  if (message.type === 'system') {
+    return (
+      <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
+        <span className="h-px flex-1 bg-border" />
+        {message.text}
+        <span className="h-px flex-1 bg-border" />
+      </div>
+    )
+  }
+
   const isOwn = message.userId === currentUserId
   const name =
     message.name ?? MOCK_MEMBER_NAMES[message.userId ?? -1] ?? `User ${message.userId}`

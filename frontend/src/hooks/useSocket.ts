@@ -24,6 +24,12 @@ export function useSocket(groupId: number) {
     }
     socket.on('chat:message', handleMessage)
 
+    // Persisted backlog replayed by the gateway right after we join the room.
+    const handleHistory = (payload: { groupId: number; messages: GroupMessage[] }) => {
+      useGroupChatStore.getState().receiveHistory(payload.groupId, payload.messages)
+    }
+    socket.on('chat:history', handleHistory)
+
     const handleSessionStart = (payload: { groupId: number }) => {
       useGroupChatStore.getState().receiveSessionStart(payload.groupId)
     }
@@ -44,6 +50,7 @@ export function useSocket(groupId: number) {
     return () => {
       socket.emit('group:leave', { groupId })
       socket.off('chat:message', handleMessage)
+      socket.off('chat:history', handleHistory)
       socket.off('session:start', handleSessionStart)
       socket.off('typing:update', handleTyping)
     }

@@ -13,6 +13,7 @@ import { ProfileEditPage } from '@/pages/member/ProfileEditPage'
 import { useEffect, useRef } from 'react'
 import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useSession } from '@/lib/authClient'
 import { fetchProfile } from '@/api/profile.api'
 import { USE_MOCK } from '@/lib/env'
@@ -23,6 +24,7 @@ import type { SessionUser } from '@/stores/authStore'
 function App() {
   const screen = useNavStore((s) => s.screen)
   const go = useNavStore((s) => s.go)
+  const setGroup = useNavStore((s) => s.setGroup)
   const user = useAuthStore((s) => s.user)
   const setSessionUser = useAuthStore((s) => s.setSessionUser)
 
@@ -40,8 +42,10 @@ function App() {
   // After Google OAuth the browser reloads fresh at the app origin with the nav
   // store defaulted to 'sign-in'. Once the session resolves, move an
   // authenticated user off the auth screens: to onboarding if they have no
-  // profile yet (brand-new — Google never hits AuthPage.onAuthed), else into the
-  // app. The ref guards against the async fetch firing more than once.
+  // profile yet (brand-new — Google never hits AuthPage.onAuthed); otherwise into
+  // the app — an existing user with groups lands in their most recent group chat,
+  // one with none sees empty-groups. The ref guards the async fetch from firing
+  // more than once.
   const routedRef = useRef(false)
   useEffect(() => {
     if (USE_MOCK) return
@@ -49,9 +53,20 @@ function App() {
     routedRef.current = true
     void (async () => {
       const profile = await fetchProfile()
-      go(profile ? 'empty-groups' : 'onboarding-1')
+      if (!profile) {
+        go('onboarding-1')
+        return
+      }
+      await useGroupsStore.getState().load()
+      const latest = mostRecentGroup(useGroupsStore.getState().groups)
+      if (latest) {
+        setGroup(latest.id)
+        go('group-chat')
+      } else {
+        go('empty-groups')
+      }
     })()
-  }, [session, isAuthScreen, go])
+  }, [session, isAuthScreen, go, setGroup])
 
   // Auth guard (live mode only): every screen except the auth pages requires a
   // signed-in user. Wait for the initial session check before bouncing.
