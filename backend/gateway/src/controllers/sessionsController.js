@@ -1,6 +1,7 @@
 // Session/event request handlers.
 import { prisma } from '../lib/prisma.js';
 import { getRecommendations as fetchRecommendations } from '../services/aiClient.js';
+import { geocode } from '../services/geocodeClient.js';
 
 /** Parse a route param to a positive integer, or null when invalid. */
 const toPositiveInt = (value) => {
@@ -254,6 +255,7 @@ const submitQa = async (req, res, next) => {
     disliked_cuisines,
     occasion,
     location_mode,
+    location_address,
     location_lat,
     location_lon,
     radius_miles,
@@ -273,6 +275,13 @@ const submitQa = async (req, res, next) => {
   }
   if (radius_miles !== undefined && radius_miles !== null && radius_miles < 0) {
     return res.status(400).json({ error: 'radius_miles must be non-negative.' });
+  }
+  if (
+    location_address !== undefined &&
+    location_address !== null &&
+    typeof location_address !== 'string'
+  ) {
+    return res.status(400).json({ error: 'location_address must be a string.' });
   }
 
   try {
@@ -301,14 +310,26 @@ const submitQa = async (req, res, next) => {
     const occasionValue = isHost ? (occasion ?? null) : null;
     const timeSlotValue = isHost ? (time_slot ?? null) : null;
 
+    // When a member supplies an address, geocode it server-side and let the
+    // derived coordinates override any client-sent lat/lon (stored coords must
+    // match the stored address; a geocode miss/outage yields null coords rather
+    // than blocking the save). With no address (e.g. realtime device location),
+    // the client-sent coordinates pass through unchanged.
+    const hasAddress =
+      typeof location_address === 'string' && location_address.trim();
+    const coords = hasAddress ? await geocode(location_address) : null;
+    const resolvedLat = hasAddress ? (coords?.lat ?? null) : (location_lat ?? null);
+    const resolvedLon = hasAddress ? (coords?.lon ?? null) : (location_lon ?? null);
+
     // Shared fields for both create and update (per-member overrides).
     const fields = {
       preferred_cuisines: preferred_cuisines ?? [],
       disliked_cuisines: disliked_cuisines ?? [],
       occasion: occasionValue,
       location_mode: location_mode ?? null,
-      location_lat: location_lat ?? null,
-      location_lon: location_lon ?? null,
+      location_address: location_address ?? null,
+      location_lat: resolvedLat,
+      location_lon: resolvedLon,
       radius_miles: radius_miles ?? null,
       time_slot: timeSlotValue,
       budget_min: budget_min ?? null,

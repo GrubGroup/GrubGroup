@@ -87,6 +87,7 @@ _QA_UPDATABLE_FIELDS = (
     "disliked_cuisines",
     "occasion",
     "location_mode",
+    "location_address",
     "location_lat",
     "location_lon",
     "radius_miles",
