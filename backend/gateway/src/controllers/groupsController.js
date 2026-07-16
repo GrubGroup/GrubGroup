@@ -34,8 +34,10 @@ const listGroups = async (req, res, next) => {
       where: { members: { some: { user_id: req.user.id } } },
       include: {
         _count: { select: { members: true } },
-        // The single most recent message, for the sidebar preview line.
+        // The single most recent non-system message, for the sidebar preview
+        // line (SYSTEM lines like "X has left the group" are not previews).
         messages: {
+          where: { message_type: { not: 'SYSTEM' } },
           orderBy: { id: 'desc' },
           take: 1,
           include: { user: { select: { display_name: true, username: true } } },
@@ -186,6 +188,34 @@ const addMember = async (req, res, next) => {
     const member = await prisma.groupMember.create({
       data: { group_id: groupId, user_id: target.id },
     });
+
+    // Announce the arrival to the room: persist a SYSTEM message and broadcast it
+    // over the existing chat pipeline so live clients append it and reloads
+    // replay it in history. Best-effort — never block the add.
+    try {
+      const name = target.display_name ?? target.username ?? 'Someone';
+      const row = await prisma.groupMessage.create({
+        data: {
+          group_id: groupId,
+          user_id: target.id,
+          content: `${name} has entered the group`,
+          message_type: 'SYSTEM',
+        },
+      });
+      const io = req.app.get('io');
+      io?.to(`group:${groupId}`).emit('chat:message', {
+        id: String(row.id),
+        groupId,
+        userId: target.id,
+        name,
+        text: row.content,
+        at: row.created_at.toISOString(),
+        type: 'system',
+      });
+    } catch (broadcastErr) {
+      console.error('add-member system message failed', broadcastErr);
+    }
+
     return res.status(201).json(member);
   } catch (err) {
     return next(err);

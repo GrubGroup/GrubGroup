@@ -11,10 +11,11 @@ import type { Group } from '@/types'
 
 // Resolve the preview line + relative time for a group's sidebar row. Prefers a
 // live message from the open chat (so it updates in real time as you chat), then
-// the group's last_message from the DB, then the static mock preview.
+// the group's last_message from the DB, then the static mock preview. System
+// lines (e.g. "X has left the group") are skipped — they aren't chat previews.
 function usePreview(group: Group): { preview: string; time: string } {
   const live = useGroupChatStore((s) => s.messagesByGroup[group.id])
-  const latest = live?.[live.length - 1]
+  const latest = live?.findLast((m) => m.type !== 'system')
   if (latest) {
     const who = latest.name ? `${latest.name}: ` : ''
     return { preview: `${who}${latest.text}`, time: timeAgo(latest.at) }
@@ -27,10 +28,13 @@ function usePreview(group: Group): { preview: string; time: string } {
 }
 
 // A group's last-activity time (epoch ms), matching usePreview's precedence:
-// newest live message → DB last_message → 0 (message-less groups sink last).
-function lastActivity(group: Group, messagesByGroup: Record<number, { at: string }[]>): number {
+// newest non-system live message → DB last_message → 0 (message-less sink last).
+function lastActivity(
+  group: Group,
+  messagesByGroup: Record<number, { at: string; type?: string }[]>,
+): number {
   const live = messagesByGroup[group.id]
-  const at = live?.[live.length - 1]?.at ?? group.last_message?.at
+  const at = live?.findLast((m) => m.type !== 'system')?.at ?? group.last_message?.at
   const ms = at ? new Date(at).getTime() : 0
   return Number.isNaN(ms) ? 0 : ms
 }
