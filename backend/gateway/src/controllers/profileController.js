@@ -1,5 +1,6 @@
 // Profile request handlers: read, create, and update the caller's preference profile.
 import { prisma } from '../lib/prisma.js';
+import { geocode } from '../services/geocodeClient.js';
 
 /**
  * Validate the shared profile body. Returns an error message string when invalid,
@@ -53,14 +54,27 @@ const validateProfileBody = (body) => {
   return null;
 };
 
-// Normalize the persistable location fields from a request body. Absent keys
-// stay undefined (so an upsert can omit them); explicit null clears them.
-const locationFields = (body) => {
+// Resolve the persistable location fields from a request body. Absent keys stay
+// undefined (so an upsert can omit them, leaving stored values untouched);
+// explicit null clears them.
+//
+// When a non-empty default_address is supplied, we geocode it server-side and
+// let the derived coordinates OVERRIDE any client-sent default_lat/default_lon —
+// stored coordinates must always correspond to the stored address. A geocode
+// miss/outage yields null coords (graceful degradation) rather than a stale
+// address/coordinate mismatch or a rejected save.
+const resolveLocationFields = async (body) => {
   const fields = {};
   if (body.default_address !== undefined) fields.default_address = body.default_address;
   if (body.default_lat !== undefined) fields.default_lat = body.default_lat;
   if (body.default_lon !== undefined) fields.default_lon = body.default_lon;
   if (body.default_radius !== undefined) fields.default_radius = body.default_radius;
+
+  if (typeof body.default_address === 'string' && body.default_address.trim()) {
+    const coords = await geocode(body.default_address);
+    fields.default_lat = coords?.lat ?? null;
+    fields.default_lon = coords?.lon ?? null;
+  }
   return fields;
 };
 
@@ -109,6 +123,8 @@ const createProfile = async (req, res, next) => {
       return res.status(409).json({ error: 'Profile already exists.' });
     }
 
+    // Geocode only after the 409 check so a doomed create never spends a lookup.
+    const location = await resolveLocationFields(req.body);
     const profile = await prisma.profile.create({
       data: {
         user_id: req.user.id,
@@ -118,7 +134,7 @@ const createProfile = async (req, res, next) => {
         budget_min,
         budget_max,
         liked_restaurant_ids: [],
-        ...locationFields(req.body),
+        ...location,
       },
     });
     return res.status(201).json(profile);
@@ -154,13 +170,15 @@ const updateProfile = async (req, res, next) => {
   };
 
   try {
+    // Geocode once, reuse in both upsert branches (create + update).
+    const location = await resolveLocationFields(req.body);
     const profile = await prisma.profile.upsert({
       where: { user_id: req.user.id },
       update: {
         ...lists,
         budget_min,
         budget_max,
-        ...locationFields(req.body),
+        ...location,
       },
       create: {
         user_id: req.user.id,
@@ -168,7 +186,7 @@ const updateProfile = async (req, res, next) => {
         budget_min,
         budget_max,
         liked_restaurant_ids: [],
-        ...locationFields(req.body),
+        ...location,
       },
     });
     return res.status(200).json(profile);
