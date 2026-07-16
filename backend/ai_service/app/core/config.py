@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
 
+    # Geocodio API key — turns a member's named location into lat/lon on the
+    # conversational analyze path. Accepts either GEOCODIO_API_KEY or the
+    # gateway's GEOCODIO_API name. Optional: absent key degrades to null coords.
+    geocodio_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEOCODIO_API_KEY", "GEOCODIO_API"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

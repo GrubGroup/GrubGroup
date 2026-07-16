@@ -32,13 +32,34 @@ const listGroups = async (req, res, next) => {
   try {
     const groups = await prisma.group.findMany({
       where: { members: { some: { user_id: req.user.id } } },
-      include: { _count: { select: { members: true } } },
+      include: {
+        _count: { select: { members: true } },
+        // The single most recent non-system message, for the sidebar preview
+        // line (SYSTEM lines like "X has left the group" are not previews).
+        messages: {
+          where: { message_type: { not: 'SYSTEM' } },
+          orderBy: { id: 'desc' },
+          take: 1,
+          include: { user: { select: { display_name: true, username: true } } },
+        },
+      },
       orderBy: { created_at: 'desc' },
     });
-    const shaped = groups.map(({ _count, ...group }) => ({
-      ...group,
-      member_count: _count.members,
-    }));
+    const shaped = groups.map(({ _count, messages, ...group }) => {
+      const last = messages[0];
+      return {
+        ...group,
+        member_count: _count.members,
+        last_message: last
+          ? {
+              text: last.content,
+              name: last.user?.display_name ?? last.user?.username ?? null,
+              user_id: last.user_id,
+              at: last.created_at.toISOString(),
+            }
+          : null,
+      };
+    });
     return res.status(200).json(shaped);
   } catch (err) {
     return next(err);
@@ -167,6 +188,34 @@ const addMember = async (req, res, next) => {
     const member = await prisma.groupMember.create({
       data: { group_id: groupId, user_id: target.id },
     });
+
+    // Announce the arrival to the room: persist a SYSTEM message and broadcast it
+    // over the existing chat pipeline so live clients append it and reloads
+    // replay it in history. Best-effort — never block the add.
+    try {
+      const name = target.display_name ?? target.username ?? 'Someone';
+      const row = await prisma.groupMessage.create({
+        data: {
+          group_id: groupId,
+          user_id: target.id,
+          content: `${name} has entered the group`,
+          message_type: 'SYSTEM',
+        },
+      });
+      const io = req.app.get('io');
+      io?.to(`group:${groupId}`).emit('chat:message', {
+        id: String(row.id),
+        groupId,
+        userId: target.id,
+        name,
+        text: row.content,
+        at: row.created_at.toISOString(),
+        type: 'system',
+      });
+    } catch (broadcastErr) {
+      console.error('add-member system message failed', broadcastErr);
+    }
+
     return res.status(201).json(member);
   } catch (err) {
     return next(err);
@@ -192,8 +241,10 @@ const removeMember = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a group member.' });
     }
 
+    // Include the user so we can name them in the "X has left the group" line.
     const target = await prisma.groupMember.findUnique({
       where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
+      include: { user: { select: { display_name: true, username: true } } },
     });
     if (!target) {
       return res.status(404).json({ error: 'Member not found.' });
@@ -202,6 +253,34 @@ const removeMember = async (req, res, next) => {
     await prisma.groupMember.delete({
       where: { group_id_user_id: { group_id: groupId, user_id: targetId } },
     });
+
+    // Announce the departure to the remaining members: persist a SYSTEM message
+    // and broadcast it over the existing chat pipeline so live clients append it
+    // and reloads replay it in history. Best-effort — never block the leave.
+    try {
+      const name = target.user?.display_name ?? target.user?.username ?? 'Someone';
+      const row = await prisma.groupMessage.create({
+        data: {
+          group_id: groupId,
+          user_id: targetId,
+          content: `${name} has left the group`,
+          message_type: 'SYSTEM',
+        },
+      });
+      const io = req.app.get('io');
+      io?.to(`group:${groupId}`).emit('chat:message', {
+        id: String(row.id),
+        groupId,
+        userId: targetId,
+        name,
+        text: row.content,
+        at: row.created_at.toISOString(),
+        type: 'system',
+      });
+    } catch (broadcastErr) {
+      console.error('leave-group system message failed', broadcastErr);
+    }
+
     return res.status(204).send();
   } catch (err) {
     return next(err);

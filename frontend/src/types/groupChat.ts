@@ -9,4 +9,7 @@ export interface GroupMessage {
   name?: string | null
   text: string
   at: string // ISO timestamp
+  // 'system' renders as a centered divider (e.g. "Sofia has left the group").
+  // Absent/'text' is a normal chat bubble.
+  type?: 'text' | 'system'
 }

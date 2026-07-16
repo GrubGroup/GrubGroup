@@ -19,7 +19,10 @@ interface ProfileState {
   setRadius: (miles: number) => void
   toggleLikedRestaurant: (id: number) => void
   setPreferredLocation: (loc: LocationPref | undefined) => void
-  save: () => Promise<void>
+  // Persist the profile. Resolves true on success, false on failure (never
+  // throws), so callers can gate navigation / show an error. `saving` is always
+  // reset.
+  save: () => Promise<boolean>
 }
 
 // Remove `value` from an array if present, else add it. Pure.
@@ -153,7 +156,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   save: async () => {
     const p = get().profile
-    if (!p) return
+    if (!p) return false
     set({ saving: true })
     // Fold any in-flight picker label onto the profile before persisting, so the
     // LocationField path (which only sets preferredLocation) still saves the
@@ -163,7 +166,15 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       loc?.label && !p.default_address
         ? { ...p, default_address: loc.label, default_lat: loc.lat ?? null, default_lon: loc.lon ?? null }
         : p
-    const saved = await saveProfile(toSave)
-    set({ profile: saved, saving: false })
+    try {
+      const saved = await saveProfile(toSave)
+      set({ profile: saved, saving: false })
+      return true
+    } catch {
+      // Never strand the caller: reset the flag and report failure so the UI can
+      // surface an error instead of hanging.
+      set({ saving: false })
+      return false
+    }
   },
 }))

@@ -37,6 +37,11 @@ const config = {
   aiServiceUrl: AI_SERVICE_URL,
   jwtSecret: process.env.JWT_SECRET || '',
   databaseUrl: DATABASE_URL,
+
+  // Geocodio API key — used to turn a member's address into lat/lon at write
+  // time (services/geocodeClient.js). Optional: absent key degrades gracefully
+  // (addresses save with null coordinates rather than blocking the request).
+  geocodioApiKey: process.env.GEOCODIO_API || '',
 };
 
 export { config };

@@ -8,6 +8,7 @@ import sessionsRouter from './sessionsRoutes.js';
 import profileRouter from './profileRoutes.js';
 import userRouter from './userRoutes.js';
 import groupsRouter from './groupsRoutes.js';
+import usersRouter from './usersRoutes.js';
 import eventsRouter from './eventsRoutes.js';
 import { getAuthMethods } from '../controllers/authMethodsController.js';
 
@@ -26,6 +27,7 @@ router.use('/sessions', sessionsRouter);
 router.use('/profile', profileRouter);
 router.use('/user', userRouter);
 router.use('/groups', groupsRouter);
+router.use('/users', usersRouter);
 router.use('/events', eventsRouter);
 
 // TODO: mount the ai router here once implemented.

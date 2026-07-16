@@ -9,7 +9,10 @@ import { logger } from './src/utils/logger.js';
 // HTTP server/port for the live group-chat layer.
 const httpServer = createServer(app);
 
-createSocketServer(httpServer);
+// Keep a handle to io on the Express app so REST controllers can broadcast
+// real-time events (e.g. the "X has left the group" system message on leave).
+const io = createSocketServer(httpServer);
+app.set('io', io);
 
 httpServer.listen(config.PORT, () => {
   logger.info(`Gateway listening on http://localhost:${config.PORT}`);

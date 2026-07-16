@@ -6,6 +6,7 @@ from app.crud import session as session_crud
 from app.crud import user as user_crud
 from app.db.session import async_session_factory
 from app.schemas.ai import ExtractedSignals
+from app.services.geocode import geocode
 
 # Which ExtractedSignals fields are durable per-user prefs (-> Profile) vs
 # session-scoped signals (-> Qa). The split mirrors the two tables the
@@ -103,9 +104,23 @@ async def persist_qa(
     snapshot is AI-produced, session-lifecycle data — the same ownership footing
     as the Recommendation rows ai_service already writes. `is_host` gates the
     host-only occasion / time_slot fields at the CRUD layer.
+
+    When the LLM extracted a named location (``location_label``) we persist it as
+    ``location_address`` and geocode it into coordinates — unless the turn already
+    carried explicit coords (LLM- or client-provided), which take precedence. A
+    geocode miss/outage leaves lat/lon out of the diff (upsert skips None), so the
+    address text is stored with null coords rather than blocking the write.
     """
+    diff = qa_diff(signals)
+    if signals.location_label:
+        diff["location_address"] = signals.location_label
+        if "location_lat" not in diff:
+            coords = await geocode(signals.location_label)
+            if coords is not None:
+                diff["location_lat"], diff["location_lon"] = coords
+
     async with async_session_factory() as db:
         await session_crud.upsert_qa_signals(
-            db, session_id, user_id, qa_diff(signals), is_host=is_host
+            db, session_id, user_id, diff, is_host=is_host
         )
     return True

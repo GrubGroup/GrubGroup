@@ -29,6 +29,8 @@ class Qa(SQLModel, table=True):
     )
     occasion: str | None = None  # host-only
     location_mode: str | None = None
+    # Free-text address the member named; geocoded into location_lat/lon.
+    location_address: str | None = None
     location_lat: float | None = None
     location_lon: float | None = None
     radius_miles: float | None = None
