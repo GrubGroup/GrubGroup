@@ -10,9 +10,13 @@ class Qa(SQLModel, table=True):
     There is one Qa row per (session, member) — keyed by the Prisma
     ``@@unique([session_id, user_id])``. Each row holds that member's TEMPORARY
     overrides for this session only (they outrank the durable Profile and are
-    deleted when the Event is created). ``occasion`` and ``time_slot`` are
-    HOST-ONLY: only the ``Session.host_user_id`` member's row carries them; a
-    non-host's row leaves them null.
+    deleted when the Event is created). ``occasion`` is HOST-ONLY: only the
+    ``Session.host_user_id`` member's row carries it; a non-host's row leaves it
+    null. The host's chosen event TIME is no longer a Qa field — it lives on
+    ``Session.scheduled_for`` (a real datetime). ``location_*`` are per-member:
+    the host's row holds the group's primary location; each member may add a
+    preferred (closer-to-them) location the orchestrator weights as a secondary
+    anchor.
     """
 
     __tablename__ = "Qa"
@@ -34,7 +38,6 @@ class Qa(SQLModel, table=True):
     location_lat: float | None = None
     location_lon: float | None = None
     radius_miles: float | None = None
-    time_slot: str | None = None  # host-only
     budget_min: int | None = None
     budget_max: int | None = None
     member_status: str | None = None

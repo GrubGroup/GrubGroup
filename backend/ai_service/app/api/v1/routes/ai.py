@@ -136,9 +136,9 @@ async def analyze_session_turn(
     Extracts/updates the structured signal set (reconciling corrections against
     prior signals) and persists ONLY that member's session-scoped Qa row — their
     temporary override for this event. The durable Profile is never written on a
-    session turn (it is read elsewhere purely as the fallback). occasion /
-    time_slot are captured only when the caller is the session host. Returns the
-    reconciled signals + a confirm-then-ask agent reply + still-missing signals.
+    session turn (it is read elsewhere purely as the fallback). occasion is
+    captured only when the caller is the session host. Returns the reconciled
+    signals + a confirm-then-ask agent reply + still-missing signals.
     """
     return await _run_analyze(payload, session_id=session_id)
 

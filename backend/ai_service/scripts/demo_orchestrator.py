@@ -352,7 +352,6 @@ _SESSION_QA = QaSignals(
     location_lat=37.7749,   # downtown San Francisco (matches the seed cluster)
     location_lon=-122.4194,
     radius_miles=10.0,
-    time_slot="dinner",
 )
 
 _DEMO_SESSION_ID = 9001  # cosmetic only — offline mode never touches the DB.
@@ -607,14 +606,14 @@ def _print_session_qa(ink: Ink) -> None:
         _agent_says(ink, "Session Agent", q)
         _user_says(ink, host, a)
     print()
-    _substep(ink, "Parsed session signals (QaSignals — host-only occasion/time + location):")
+    _substep(ink, "Parsed session signals (QaSignals — host-only occasion + location):")
     _kv(ink, "occasion", str(_SESSION_QA.occasion))
     _kv(ink, "location", f"({_SESSION_QA.location_lat}, {_SESSION_QA.location_lon}) "
                          f"mode={_SESSION_QA.location_mode}")
     _kv(ink, "radius_miles", str(_SESSION_QA.radius_miles))
-    _kv(ink, "time_slot", str(_SESSION_QA.time_slot))
     _note(ink, "budget is per-member (each states their own in their QA chat), "
-               "not a session field.")
+               "not a session field. The event time lives on Session.scheduled_for, "
+               "not QaSignals.")
 
 
 def _offline_completion_for(

@@ -227,17 +227,18 @@ const run = async () => {
     (await bob.client.patch(`/api/sessions/${sessionId}/members/me`, { status: true })).status, 200);
   check('GET members -> 200', (await alice.client.get(`/api/sessions/${sessionId}/members`)).status, 200);
 
-  // QA: host sets occasion/time_slot (kept); non-host sets them (dropped + flagged).
+  // QA: host sets occasion (kept); non-host sets it (dropped + flagged). The
+  // event time is no longer a Qa field — it lives on Session.scheduled_for.
   const hostQa = await alice.client.post(`/api/sessions/${sessionId}/qa`, {
     preferred_cuisines: ['thai'], budget_min: 20, budget_max: 60,
-    occasion: 'Birthday dinner', time_slot: 'evening',
+    occasion: 'Birthday dinner',
   });
   check('POST qa host -> 201', hostQa.status, 201);
   assert('host qa host_only_ignored=false', hostQa.data?.host_only_ignored === false,
     `got ${hostQa.data?.host_only_ignored}`);
   const bobQa = await bob.client.post(`/api/sessions/${sessionId}/qa`, {
     preferred_cuisines: ['mexican'], budget_min: 10, budget_max: 30,
-    occasion: 'should be ignored', time_slot: 'ignored',
+    occasion: 'should be ignored',
   });
   check('POST qa non-host -> 201', bobQa.status, 201);
   assert('non-host qa host_only_ignored=true', bobQa.data?.host_only_ignored === true,
@@ -252,7 +253,7 @@ const run = async () => {
   assert('GET latest recommendation -> 200 or 404', latestRec.status === 200 || latestRec.status === 404,
     `got ${latestRec.status}`);
 
-  console.log('\n== Close -> Event (validates occasion/time_slot persistence) ==');
+  console.log('\n== Close -> Event (validates occasion persistence) ==');
   check('non-host close -> 403',
     (await bob.client.post(`/api/sessions/${sessionId}/close`, {
       restaurant_id: restaurantId, date: new Date(0).toISOString(), address: '123 Test St',
@@ -265,8 +266,10 @@ const run = async () => {
   check('host close -> 200', closeRes.status, 200);
   assert('closed Event has occasion = host value',
     closeRes.data?.event?.occasion === 'Birthday dinner', `got ${closeRes.data?.event?.occasion}`);
-  assert('closed Event has time_slot = host value',
-    closeRes.data?.event?.time_slot === 'evening', `got ${closeRes.data?.event?.time_slot}`);
+  // Event.time_slot is sourced from Session.scheduled_for in Phase 2's close
+  // rework; until then close leaves it null (Qa.time_slot was dropped).
+  assert('closed Event time_slot null (pre Phase 2)',
+    closeRes.data?.event?.time_slot === null, `got ${closeRes.data?.event?.time_slot}`);
   check('GET summary after close -> 200', (await alice.client.get(`/api/sessions/${sessionId}/summary`)).status, 200);
 
   console.log('\n== Events ==');
@@ -278,8 +281,6 @@ const run = async () => {
   assert('dining history includes the new event', Boolean(created));
   assert('event.occasion surfaced in history', created?.occasion === 'Birthday dinner',
     `got ${created?.occasion}`);
-  assert('event.time_slot surfaced in history', created?.time_slot === 'evening',
-    `got ${created?.time_slot}`);
 
   console.log('\n== AI proxy (recommendation generate) ==');
   if (await isReachable(AI_SERVICE_URL)) {

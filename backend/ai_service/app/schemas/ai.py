@@ -76,14 +76,15 @@ class ExtractedSignals(BaseModel):
     disliked_cuisines: list[str] = Field(default_factory=list)
     budget_min: int | None = None
     budget_max: int | None = None
-    # Session-scoped Qa signals (QaSignals shape).
+    # Session-scoped Qa signals (QaSignals shape). occasion is host-only; the
+    # host's event TIME is no longer a signal here — it lives on
+    # Session.scheduled_for (set in the pre-session modal, not the chat turn).
     occasion: str | None = None
     location_mode: Literal["named", "realtime", "unset"] | None = None
     location_label: str | None = None
     location_lat: float | None = None
     location_lon: float | None = None
     radius_miles: float | None = None
-    time_slot: str | None = None
 
 
 class AnalyzeRequest(BaseModel):

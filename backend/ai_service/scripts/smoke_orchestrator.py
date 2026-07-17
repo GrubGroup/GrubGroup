@@ -208,17 +208,17 @@ async def _create_throwaway_session() -> tuple[int, list[int], int]:
         )
 
         # Qa: one row per member (session-scoped overrides). The HOST's row
-        # carries the event's occasion + time_slot and the shared search location
-        # (host-only); members carry only their own overrides. Carol's row shows
-        # a QA cuisine override (she wants ramen today) that should outrank her
-        # profile cuisines for this session while still counting them.
+        # carries the event's occasion and the shared search location (host-only);
+        # members carry only their own overrides. Carol's row shows a QA cuisine
+        # override (she wants ramen today) that should outrank her profile
+        # cuisines for this session while still counting them. (The event time
+        # lives on Session.scheduled_for, not Qa.)
         host_uid = user_ids[0]
         db.add_all(
             Qa(
                 session_id=session.id,
                 user_id=uid,
                 occasion="casual group dinner" if uid == host_uid else None,
-                time_slot="dinner" if uid == host_uid else None,
                 location_mode="manual" if uid == host_uid else None,
                 location_lat=37.7749 if uid == host_uid else None,
                 location_lon=-122.4194 if uid == host_uid else None,

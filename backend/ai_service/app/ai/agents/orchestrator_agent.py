@@ -38,8 +38,8 @@ def _reconcile(state: PipelineState) -> ReconciledConstraints:
     weights reward preferred cuisines and penalize disliked ones, summed across
     members: durable Profile cuisines score +/-1 and session QA cuisines add
     +/-_QA_CUISINE_WEIGHT on top, so a QA override outranks the Profile for this
-    session while still counting the Profile taste. occasion / time_slot /
-    center / radius come from the host-authored session signals.
+    session while still counting the Profile taste. occasion / center / radius
+    come from the host-authored session signals.
     """
     required_dietary: list[str] = []
     seen_dietary: set[str] = set()
@@ -103,8 +103,6 @@ def _build_query_text(
     parts: list[str] = ["Group dining recommendation."]
     if state.qa.occasion:
         parts.append(f"Occasion: {state.qa.occasion}.")
-    if state.qa.time_slot:
-        parts.append(f"Time: {state.qa.time_slot}.")
 
     liked = [c for c, w in reconciled.cuisine_weights.items() if w > 0]
     disliked = [c for c, w in reconciled.cuisine_weights.items() if w < 0]

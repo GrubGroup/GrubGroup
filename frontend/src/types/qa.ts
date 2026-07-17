@@ -1,5 +1,7 @@
-// Modeled on Prisma `Qa` — per-session preference intake (occasion, location, budget, time).
-// NOTE: location officially lives HERE (per session), not on Profile.
+// Modeled on Prisma `Qa` — per-session preference intake (occasion, location, budget).
+// NOTE: location officially lives HERE (per session), not on Profile. The event
+// TIME is NOT a Qa field — it lives on Session.scheduled_for (the host sets it in
+// the pre-session modal), so there is no `time_slot` here.
 
 export type LocationMode = 'named' | 'realtime' | 'unset'
 
@@ -11,7 +13,6 @@ export interface Qa {
   location_lat?: number | null
   location_lon?: number | null
   radius_miles?: number | null
-  time_slot?: string | null
   budget_min?: number | null
   budget_max?: number | null
   member_status?: string | null

@@ -238,11 +238,12 @@ const setReady = async (req, res, next) => {
  * POST /api/sessions/:session_id/qa — submit this member's session preferences.
  *
  * Qa is one row per (session, member): this UPSERTS the caller's own row (their
- * temporary, session-scoped overrides — cuisines/budget/location). occasion and
- * time_slot describe the shared EVENT and are HOST-ONLY: a non-host's values are
- * silently dropped and the response flags `host_only_ignored` so the client can
- * tell the user only the host sets those. 400 on invalid ranges, 403 for
- * non-members.
+ * temporary, session-scoped overrides — cuisines/budget/location). occasion
+ * describes the shared EVENT and is HOST-ONLY: a non-host's value is silently
+ * dropped and the response flags `host_only_ignored` so the client can tell the
+ * user only the host sets it. The event TIME is no longer a Qa field — it lives
+ * on Session.scheduled_for, set in the pre-session modal. 400 on invalid ranges,
+ * 403 for non-members.
  */
 const submitQa = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -259,7 +260,6 @@ const submitQa = async (req, res, next) => {
     location_lat,
     location_lon,
     radius_miles,
-    time_slot,
     budget_min,
     budget_max,
   } = req.body ?? {};
@@ -300,15 +300,12 @@ const submitQa = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a session member.' });
     }
 
-    // occasion + time_slot are the host's to set. For a non-host, drop them and
-    // flag it so the client can explain why (silent drop, not a hard failure).
+    // occasion is the host's to set. For a non-host, drop it and flag it so the
+    // client can explain why (silent drop, not a hard failure).
     const isHost = session.host_user_id === req.user.id;
     const hostOnlyIgnored =
-      !isHost &&
-      ((occasion !== undefined && occasion !== null) ||
-        (time_slot !== undefined && time_slot !== null));
+      !isHost && occasion !== undefined && occasion !== null;
     const occasionValue = isHost ? (occasion ?? null) : null;
-    const timeSlotValue = isHost ? (time_slot ?? null) : null;
 
     // When a member supplies an address, geocode it server-side and let the
     // derived coordinates override any client-sent lat/lon (stored coords must
@@ -331,7 +328,6 @@ const submitQa = async (req, res, next) => {
       location_lat: resolvedLat,
       location_lon: resolvedLon,
       radius_miles: radius_miles ?? null,
-      time_slot: timeSlotValue,
       budget_min: budget_min ?? null,
       budget_max: budget_max ?? null,
     };
@@ -434,20 +430,23 @@ const closeSession = async (req, res, next) => {
       return res.status(400).json({ error: 'restaurant_id does not exist.' });
     }
 
-    // occasion + time_slot are host-only, so they live on the HOST's Qa row.
-    // Snapshot them onto the durable Event before the Qa rows are deleted below.
+    // occasion is host-only, so it lives on the HOST's Qa row. Snapshot it onto
+    // the durable Event before the Qa rows are deleted below. (The event TIME is
+    // no longer a Qa field — Event.date + Event.time_slot are sourced from
+    // Session.scheduled_for in Phase 2's close rework; for now Event.time_slot is
+    // left null and Event.lat/lon default null until that snapshot lands.)
     const hostQa = await prisma.qa.findUnique({
       where: {
         session_id_user_id: { session_id: sessionId, user_id: session.host_user_id },
       },
-      select: { occasion: true, time_slot: true },
+      select: { occasion: true },
     });
 
     // Close the session, create the Event, and clear the session's Qa rows
     // atomically. Qa holds each member's TEMPORARY, session-scoped overrides;
     // once the event is created they've served their purpose and are deleted
-    // (they never mutate the durable Profile, so nothing is lost — occasion and
-    // time_slot are preserved on the Event above).
+    // (they never mutate the durable Profile, so nothing is lost — occasion is
+    // preserved on the Event above).
     const [closedSession, event] = await prisma.$transaction([
       prisma.session.update({
         where: { id: sessionId },
@@ -460,7 +459,6 @@ const closeSession = async (req, res, next) => {
           restaurant_id,
           restaurant_name: restaurant.name,
           occasion: hostQa?.occasion ?? null,
-          time_slot: hostQa?.time_slot ?? null,
           group_id: session.group_id ?? null,
           group_name: session.group?.name ?? null,
           attendees: {

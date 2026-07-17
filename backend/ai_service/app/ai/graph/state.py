@@ -43,8 +43,10 @@ class QaSignals(BaseModel):
     """Session-level (host-authored) Q&A signals; the shared event context.
 
     Per-member overrides (budget, cuisines) live on MemberPref, not here — this
-    carries only the signals that are one-per-session: occasion / time_slot
-    (HOST-ONLY) and the resolved group search location.
+    carries only the signals that are one-per-session: occasion (HOST-ONLY) and
+    the resolved group search location (the host's primary anchor). The host's
+    chosen event time is no longer here — it lives on Session.scheduled_for and
+    is threaded into the pipeline separately for open/closed evaluation.
     """
 
     occasion: str | None = None
@@ -52,7 +54,6 @@ class QaSignals(BaseModel):
     location_lat: float | None = None
     location_lon: float | None = None
     radius_miles: float | None = None
-    time_slot: str | None = None
 
 
 class ReconciledConstraints(BaseModel):

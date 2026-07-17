@@ -19,7 +19,7 @@ async def analyze_member_turn(
     Workflow (mirrors recommendation_service's load -> compute -> persist shape):
       1. Resolve the caller's role for this session: is_host = (the session's
          host_user_id == payload.user_id). Only the host may set the event-level
-         occasion / time_slot; a member's turn never captures or writes them.
+         occasion; a member's turn never captures or writes it.
       2. Run the conversational agent (LLM parse + reconcile against prior
          signals; graceful degradation is handled inside analyze_turn), passing
          is_host so it asks the host-only questions of the host alone.

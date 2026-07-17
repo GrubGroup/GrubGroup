@@ -66,18 +66,18 @@ def _build_session_signals(
 ) -> QaSignals:
     """Reduce per-member Qa rows into the one session-level signal set.
 
-    occasion / time_slot are HOST-ONLY: they are read strictly from the host's
-    Qa row (the schema already keeps them null on non-host rows, but reading only
-    the host row makes that explicit). The search location is taken from the
-    host's row when present, otherwise from the first member who supplied one, so
-    a host who skipped location still gets a usable group center.
+    occasion is HOST-ONLY: it is read strictly from the host's Qa row (the schema
+    already keeps it null on non-host rows, but reading only the host row makes
+    that explicit). The search location is taken from the host's row when present,
+    otherwise from the first member who supplied one, so a host who skipped
+    location still gets a usable group center. The host's chosen event time is no
+    longer a Qa signal — it lives on Session.scheduled_for.
     """
     host_qa = next(
         (qa for qa in qa_rows if qa.user_id == host_user_id), None
     )
 
     occasion = host_qa.occasion if host_qa else None
-    time_slot = host_qa.time_slot if host_qa else None
 
     # Prefer the host's location; else fall back to any member's.
     located = None
@@ -87,11 +87,10 @@ def _build_session_signals(
         located = next((qa for qa in qa_rows if qa.location_lat is not None), None)
 
     if located is None:
-        return QaSignals(occasion=occasion, time_slot=time_slot)
+        return QaSignals(occasion=occasion)
 
     return QaSignals(
         occasion=occasion,
-        time_slot=time_slot,
         location_mode=located.location_mode,
         location_lat=located.location_lat,
         location_lon=located.location_lon,
@@ -146,10 +145,9 @@ async def run_pipeline(
             }
         )
 
-    # Session-level (host-authored) signals: occasion / time_slot are host-only,
-    # and the group search location comes from the host's Qa row, falling back
-    # to any member who supplied one so a host who skipped location still gets a
-    # sensible center.
+    # Session-level (host-authored) signals: occasion is host-only, and the group
+    # search location comes from the host's Qa row, falling back to any member who
+    # supplied one so a host who skipped location still gets a sensible center.
     qa = _build_session_signals(qa_rows, host_user_id)
 
     state = PipelineState(session_id=session_id, qa=qa, raw_profiles=raw_profiles)

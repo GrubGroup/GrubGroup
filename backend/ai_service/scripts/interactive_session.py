@@ -659,7 +659,7 @@ async def _collect_member_prefs(
 
     prefs: list[MemberPref] = []
     for i, member in enumerate(_MEMBERS):
-        # Member #1 (index 0) is the host — only they may set occasion/time_slot.
+        # Member #1 (index 0) is the host — only they may set the occasion.
         is_host = i == 0
         interactive_here = all_interactive or member["username"] == played["username"]
         if interactive_here:

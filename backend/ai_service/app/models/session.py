@@ -16,6 +16,10 @@ class Session(SQLModel, table=True):
     host_user_id: int = Field(foreign_key="User.id")
     group_id: int | None = Field(default=None, foreign_key="Group.id")
     time_limit: int
+    # The host's chosen event time (from the pre-session modal). Drives restaurant
+    # open/closed evaluation in the orchestrator; snapshotted onto Event.date at
+    # close. Replaces the removed host Qa.time_slot free-text field.
+    scheduled_for: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     closed_at: datetime | None = None
     # No avg_budget column: the averaged group budget is computed on demand from

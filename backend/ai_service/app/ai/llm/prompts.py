@@ -105,20 +105,24 @@ PREFERENCE_TURN_SYSTEM = (
     'place/neighborhood, "realtime" if they want to search near them right now, '
     'else "unset".\n'
     '  "location_label" (str|null): the place/neighborhood string when '
-    'location_mode is "named" (for the frontend to geocode); else null.\n'
-    '  "time_slot" (str|null): e.g. tonight, lunch, "7pm".\n\n'
-    "HOST vs MEMBER (see USER_ROLE in the context): occasion and time_slot "
-    "describe the shared EVENT and are set by the HOST only. If USER_ROLE is "
-    "HOST, ask about and capture occasion + time_slot normally. If USER_ROLE is "
-    "MEMBER, do NOT ask about occasion or time_slot, do NOT put them in "
-    "extracted_signals, and do NOT list them in missing_signals — they are the "
-    "host's to set. If a member volunteers an occasion/time anyway, keep it out "
-    "of the signals and gently note the host decides those.\n\n"
+    'location_mode is "named" (for the frontend to geocode); else null.\n\n'
+    "LOCATION is per-member and optional: the HOST has already set the group's "
+    "primary location for this event. Each member may add a location that is more "
+    "convenient for THEM (e.g. closer to their home/office) so the group can find "
+    "a spot in between — capture it as location_label/location_mode. A member who "
+    "is happy with the host's location can leave it unset.\n\n"
+    "HOST vs MEMBER (see USER_ROLE in the context): occasion describes the shared "
+    "EVENT and is set by the HOST only. If USER_ROLE is HOST, ask about and "
+    "capture occasion normally. If USER_ROLE is MEMBER, do NOT ask about "
+    "occasion, do NOT put it in extracted_signals, and do NOT list it in "
+    "missing_signals — it is the host's to set. If a member volunteers an "
+    "occasion anyway, keep it out of the signals and gently note the host decides "
+    "that. (The event TIME is also host-set, in the pre-session setup — never ask "
+    "about it here.)\n\n"
     "Also decide missing_signals: of [dietary_restrictions, preferred_cuisines, "
-    "budget, occasion, location, time_slot], list the ones still unknown after "
-    "this turn (use these exact names; treat an intentional 'no preference' as "
-    "answered, not missing). For a MEMBER, never include occasion or time_slot "
-    "in missing_signals.\n\n"
+    "budget, occasion, location], list the ones still unknown after this turn "
+    "(use these exact names; treat an intentional 'no preference' as answered, "
+    "not missing). For a MEMBER, never include occasion in missing_signals.\n\n"
     "Return STRICT JSON ONLY — a single object with exactly these keys:\n"
     '  "extracted_signals": { the updated signal fields above, including any '
     'removed_* lists },\n'
@@ -146,7 +150,7 @@ def build_preference_turn_messages(
     multi-turn corrections work. `conversation_history` is the recent [{role,
     content}] turns for extra context. `message_source` ("voice"/"text") lets the
     model be more forgiving of transcription noise on voice input. `is_host`
-    surfaces USER_ROLE so the model only asks the host about occasion/time_slot.
+    surfaces USER_ROLE so the model only asks the host about occasion.
     """
     history = conversation_history or []
     signals = current_signals or {}

@@ -29,19 +29,21 @@ from app.ai.taxonomy import (
 from app.schemas.ai import ConversationTurn, ExtractedSignals
 
 # The signal names the reply logic can ask about, in the order we prefer to ask.
+# location is member-visible (each member may add a preferred spot near them);
+# the event TIME is no longer asked here — the host sets it in the pre-session
+# modal (Session.scheduled_for), not in the chat turn.
 _MISSING_ORDER = [
     "dietary_restrictions",
     "preferred_cuisines",
     "budget",
     "occasion",
     "location",
-    "time_slot",
 ]
 
-# occasion + time_slot describe the EVENT and are set by the host only. A
-# non-host's sub-agent never asks about them, never reports them missing, and
-# never writes them (see _ask_order / _reconcile).
-_HOST_ONLY_SIGNALS = {"occasion", "time_slot"}
+# occasion describes the EVENT and is set by the host only. A non-host's
+# sub-agent never asks about it, never reports it missing, and never writes it
+# (see _ask_order / _reconcile).
+_HOST_ONLY_SIGNALS = {"occasion"}
 
 _VALID_LOCATION_MODES = {"named", "realtime", "unset"}
 
@@ -215,9 +217,9 @@ def _reconcile(
     that is how a correction drops a stale tag. Fields the model omits are
     carried through from `prior`. Scalars are only overwritten when the model
     supplies a non-null value, so a partial turn never nulls out earlier answers.
-    occasion / time_slot are HOST-ONLY: for a non-host they are never taken from
-    the parse (defense-in-depth on top of the prompt not asking), so a defiant
-    non-host still cannot set the event's occasion or timing.
+    occasion is HOST-ONLY: for a non-host it is never taken from the parse
+    (defense-in-depth on top of the prompt not asking), so a defiant non-host
+    still cannot set the event's occasion.
 
     Cuisine lists are additionally EXPANDED through the taxonomy (broad group
     terms like "asian" -> their member cuisines; style terms like "bbq" ->
@@ -270,10 +272,10 @@ def _reconcile(
     if bmax is not None:
         signals.budget_max = bmax
 
-    # location_label is always allowed; occasion/time_slot only for the host.
+    # location_label is always allowed; occasion only for the host.
     text_fields = ["location_label"]
     if is_host:
-        text_fields += ["occasion", "time_slot"]
+        text_fields += ["occasion"]
     for field in text_fields:
         value = parsed.get(field)
         if isinstance(value, str) and value.strip():
@@ -297,8 +299,8 @@ def _compute_missing(signals: ExtractedSignals, *, is_host: bool) -> list[str]:
     Used when the LLM's own missing_signals list is absent/unusable, and to keep
     the reply logic honest. A budget counts as present if either bound is set;
     location counts as present once a mode is chosen. Non-hosts never see the
-    host-only occasion/time_slot signals in the ask-order, so those are never
-    reported missing for them.
+    host-only occasion signal in the ask-order, so it is never reported missing
+    for them.
     """
     present: dict[str, bool] = {
         "dietary_restrictions": bool(signals.dietary_restrictions),
@@ -306,7 +308,6 @@ def _compute_missing(signals: ExtractedSignals, *, is_host: bool) -> list[str]:
         "budget": signals.budget_min is not None or signals.budget_max is not None,
         "occasion": bool(signals.occasion),
         "location": signals.location_mode is not None,
-        "time_slot": bool(signals.time_slot),
     }
     return [name for name in _ask_order(is_host) if not present[name]]
 
@@ -327,22 +328,21 @@ _QUESTION_FOR = {
     "preferred_cuisines": "What kind of food are you in the mood for?",
     "budget": "What is your budget per person?",
     "occasion": "What is the occasion?",
-    "location": "Where are you looking to eat?",
-    "time_slot": "When are you thinking?",
+    "location": "Any spot that's more convenient for you? I can factor it in.",
 }
 
 
 # Appended to a non-host's reply when they tried to set a host-only event field,
-# so they learn why it didn't take (the host owns the occasion + timing).
+# so they learn why it didn't take (the host owns the occasion).
 _NON_HOST_NUDGE = (
-    " Just so you know, only the host sets the occasion and timing for this "
-    "event, so I've left those to them."
+    " Just so you know, only the host sets the occasion for this event, so I've "
+    "left that to them."
 )
 
 
 def _non_host_touched_host_field(parsed: dict[str, Any]) -> bool:
-    """True if a non-host's parsed turn tried to set occasion or time_slot."""
-    for field in ("occasion", "time_slot"):
+    """True if a non-host's parsed turn tried to set the host-only occasion."""
+    for field in ("occasion",):
         value = parsed.get(field)
         if isinstance(value, str) and value.strip():
             return True
@@ -402,11 +402,11 @@ async def analyze_turn(
     strict-JSON prompt + local fence strip), reconciles the parsed signals over
     the prior set (corrections replace lists; partial turns carry the rest
     through), and returns the updated ExtractedSignals, a confirm-then-ask reply,
-    and the still-missing signals. `is_host` gates the event-level signals: only
-    the host is asked about (and can set) occasion / time_slot — a non-host is
-    never prompted for them, never has them extracted, and is gently told the
-    host owns them if they try. On any LLM/parse failure it degrades to the prior
-    signals + a safe deterministic reply (TurnResult.degraded == True).
+    and the still-missing signals. `is_host` gates the event-level signal: only
+    the host is asked about (and can set) occasion — a non-host is never prompted
+    for it, never has it extracted, and is gently told the host owns it if they
+    try. On any LLM/parse failure it degrades to the prior signals + a safe
+    deterministic reply (TurnResult.degraded == True).
     """
     prior = current_signals or ExtractedSignals()
     history = [t.model_dump() for t in (conversation_history or [])]
