@@ -140,10 +140,17 @@ const registerSessionHandlers = (io, socket) => {
   // A member started a session. Broadcast to the whole room (incl. sender) so
   // every client shows the session card live, inline in their own chat.
   // Ephemeral — reconstructed from live session state, not replayed from history.
-  socket.on('session:start', ({ groupId }) => {
+  //
+  // The host creates the Session over REST first, then emits this with the new
+  // `sessionId`; we relay it so every OTHER member's client can adopt the same
+  // session (load its roster, drive analyze/ready) and share one synchronized
+  // countdown anchored to `at`. `sessionId` may be absent for a legacy/no-op
+  // start — clients then fall back to their own session state.
+  socket.on('session:start', ({ groupId, sessionId }) => {
     if (groupId == null) return;
     io.to(room(groupId)).emit('session:start', {
       groupId,
+      sessionId: sessionId ?? null,
       startedBy: socket.data.userId ?? null,
       at: new Date().toISOString(),
     });
