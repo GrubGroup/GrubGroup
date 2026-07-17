@@ -107,10 +107,13 @@ PREFERENCE_TURN_SYSTEM = (
     '  "location_label" (str|null): the place/neighborhood string when '
     'location_mode is "named" (for the frontend to geocode); else null.\n\n'
     "LOCATION is per-member and optional: the HOST has already set the group's "
-    "primary location for this event. Each member may add a location that is more "
-    "convenient for THEM (e.g. closer to their home/office) so the group can find "
-    "a spot in between — capture it as location_label/location_mode. A member who "
-    "is happy with the host's location can leave it unset.\n\n"
+    "primary location for this event (shown as HOST_LOCATION in the context when "
+    "known). Each member may add a location that is more convenient for THEM "
+    "(e.g. closer to their home/office) so the group can find a spot in between — "
+    "capture it as location_label/location_mode. When you ask, frame it relative "
+    "to the host's spot (e.g. \"the host set <HOST_LOCATION> — is there somewhere "
+    "more convenient for you, or is that good?\"). A member happy with the host's "
+    "location can leave it unset.\n\n"
     "HOST vs MEMBER (see USER_ROLE in the context): occasion describes the shared "
     "EVENT and is set by the HOST only. If USER_ROLE is HOST, ask about and "
     "capture occasion normally. If USER_ROLE is MEMBER, do NOT ask about "
@@ -142,6 +145,7 @@ def build_preference_turn_messages(
     conversation_history: list[dict[str, Any]] | None = None,
     current_signals: dict[str, Any] | None = None,
     is_host: bool = False,
+    host_location_label: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build chat messages for one conversational preference-parse turn.
 
@@ -151,6 +155,8 @@ def build_preference_turn_messages(
     content}] turns for extra context. `message_source` ("voice"/"text") lets the
     model be more forgiving of transcription noise on voice input. `is_host`
     surfaces USER_ROLE so the model only asks the host about occasion.
+    `host_location_label` (for a MEMBER) surfaces the host's chosen location so
+    the agent can frame the optional location question relative to it.
     """
     history = conversation_history or []
     signals = current_signals or {}
@@ -158,6 +164,12 @@ def build_preference_turn_messages(
     context_lines = [
         f"MESSAGE_SOURCE: {message_source}",
         f"USER_ROLE: {'HOST' if is_host else 'MEMBER'}",
+    ]
+    # For a non-host, surface the host's location so the agent can offer a closer
+    # spot ("the host set X — want somewhere more convenient for you?").
+    if not is_host and host_location_label:
+        context_lines.append(f"HOST_LOCATION: {host_location_label}")
+    context_lines += [
         "CURRENT_SIGNALS (captured so far — reconcile the new message against "
         "this, applying any corrections):",
         json.dumps(signals, ensure_ascii=False),
@@ -186,12 +198,24 @@ def build_preference_turn_messages(
 GROUP_RERANK_SYSTEM = (
     "You are the group restaurant orchestrator for a shared dining session. "
     "You are given reconciled GROUP CONSTRAINTS and a list of CANDIDATE "
-    "restaurants that already passed hard filters (dietary, price, distance). "
-    "Rank the candidates for how well they satisfy the WHOLE group, balancing "
-    "preferred cuisines (reward), disliked cuisines (penalize), rating, price "
-    "fit, and proximity. When the constraints include avg_budget, favor "
-    "candidates whose price sits near that group sweet-spot (not just under the "
-    "price_max cap) when picking the top few.\n\n"
+    "restaurants that already passed hard filters (dietary, price, distance, and "
+    "open-at-the-event-time). Rank the candidates for how well they satisfy the "
+    "WHOLE group, balancing preferred cuisines (reward), disliked cuisines "
+    "(penalize), rating, price fit, and LOCATION. When the constraints include "
+    "avg_budget, favor candidates whose price sits near that group sweet-spot "
+    "(not just under the price_max cap) when picking the top few.\n\n"
+    "LOCATION guidance: each candidate carries a `proximity_tier` relative to the "
+    "host's location (primary) and members' preferred locations (secondary):\n"
+    '  - "between": sits on the corridor between the host and a member — BEST, '
+    "it serves both; rank these highest, all else equal.\n"
+    '  - "host": close to the host\'s location — strong (host location is the '
+    "primary weight).\n"
+    '  - "member": close to a member\'s preferred spot only — a nice-to-have '
+    "consideration.\n"
+    '  - "far": neither — no location bonus.\n'
+    "Prefer between > host > member > far when cuisine/price/rating are "
+    "comparable. Candidates also carry `hours` (open at the event time) — you may "
+    "mention it but do not need to re-check it.\n\n"
     "Return STRICT JSON only: a JSON array where each element is an object with "
     "exactly these keys:\n"
     '  "restaurant_id" (int, must be one of the candidate ids),\n'

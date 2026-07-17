@@ -47,6 +47,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 # Real pipeline building blocks — the demo drives these directly so the narrated
@@ -252,7 +253,9 @@ _MEMBERS: list[MockMember] = [
             "budget_max": 20,
             "liked_restaurant_ids": [],
         },
-        # Broad cuisine GROUP ("Asian") + a STYLE dislike ("nothing fine-dining").
+        # Broad cuisine GROUP ("Asian") + a STYLE dislike ("nothing fine-dining")
+        # + a PREFERRED LOCATION relative to the host (a spot closer to Bob), which
+        # becomes the secondary anchor for the between-host-and-member ranking.
         "analyze_turns": [
             ("Hey Bob — any dietary restrictions?",
              "Nope, I'll eat anything.",
@@ -266,6 +269,12 @@ _MEMBERS: list[MockMember] = [
             ("What's your budget per head?",
              "Keep it under $20.",
              {"budget_max": 20}),
+            ("The host set the spot around downtown SF — anywhere more convenient "
+             "for you, or is that good?",
+             "I'm over by the Mission, could we lean that way?",
+             {"location_label": "Mission District, San Francisco",
+              "location_mode": "named",
+              "location_lat": 37.7599, "location_lon": -122.4148}),
         ],
     },
     {
@@ -356,6 +365,12 @@ _SESSION_QA = QaSignals(
 
 _DEMO_SESSION_ID = 9001  # cosmetic only — offline mode never touches the DB.
 
+# The host's chosen event time (would be Session.scheduled_for). A fixed Monday
+# 7pm so the open/closed hard filter is deterministic run-to-run (scripts cannot
+# call datetime.now()). Most seed dinner spots are open at this time; lunch-only
+# spots get filtered out, demonstrating the hours hard filter.
+_DEMO_SCHEDULED_FOR = datetime(2026, 7, 13, 19, 0)  # Mon 7:00pm
+
 # Set once in _run: when False (offline), each analyze_turn call is fed a scripted
 # LLM completion; when True (--live), analyze_turn hits the real gateway. Threaded
 # as a module global so the reused-by-interactive_session narration helpers don't
@@ -389,6 +404,7 @@ class _MockRestaurant:
     avg_rating: float | None = None
     lat: float | None = None
     long: float | None = None
+    hours: str | None = None
 
 
 def _load_mock_catalog() -> list[_MockRestaurant]:
@@ -408,6 +424,7 @@ def _load_mock_catalog() -> list[_MockRestaurant]:
                 avg_rating=row["avg_rating"],
                 lat=row["lat"],
                 long=row["long"],
+                hours=row.get("hours"),
             )
         )
     return catalog
@@ -657,6 +674,14 @@ def _offline_completion_for(
         if key in delta:
             signals[key] = delta[key]
 
+    # Location: a member's preferred spot (the secondary ranking anchor). The
+    # label + optional coords stand in for what the LLM would extract; the real
+    # analyze_turn maps location_label -> Qa.location_address and (live) geocodes,
+    # while offline we pass explicit coords so ranking has something to work with.
+    for key in ("location_label", "location_mode", "location_lat", "location_lon"):
+        if key in delta:
+            signals[key] = delta[key]
+
     # No agent_reply / missing_signals here on purpose — let the REAL analyze_turn
     # generate them (its confirm-then-ask fallback + missing computation), so the
     # narrated reply and the group-summary of an expanded cuisine list are real.
@@ -701,6 +726,11 @@ def _build_member_pref(
         "qa_disliked_cuisines": qa.get("disliked_cuisines", []),
         "qa_budget_min": qa.get("budget_min"),
         "qa_budget_max": qa.get("budget_max"),
+        # A member's preferred location becomes the SECONDARY anchor the
+        # orchestrator ranks between host and member on. Offline the coords come
+        # straight from the scripted signals (live, persist_qa geocodes the label).
+        "qa_location_lat": qa.get("location_lat"),
+        "qa_location_lon": qa.get("location_lon"),
     }
     return merged
 
@@ -816,6 +846,9 @@ def _print_reconcile(
     _kv(ink, "price_max (tightest cap)", ink.warn(price))
     _kv(ink, "center / radius",
         f"{reconciled.center} / {reconciled.radius_miles} mi")
+    _kv(ink, "host anchor (primary)", str(reconciled.host_location))
+    _kv(ink, "member anchors (secondary)",
+        str(reconciled.member_locations) or "[]")
     # Show cuisine weights sorted most-preferred first.
     weights = sorted(
         reconciled.cuisine_weights.items(), key=lambda kv: kv[1], reverse=True
@@ -881,27 +914,26 @@ async def _print_orchestrate_and_rank(
                       f"restaurants")
         hits = _mock_similarity_search(catalog, reconciled, limit=_CANDIDATE_LIMIT)
 
-    candidates = [
-        CandidateRestaurant(
-            id=r.id,
-            name=r.name,
-            cuisine_tags=list(r.cuisine_tags or []),
-            dietary_tags=list(r.dietary_tags or []),
-            price_avg=r.price_avg,
-            avg_rating=r.avg_rating,
-            distance=distance,
-        )
-        for r, distance in hits
-        if r.id is not None
-    ]
-    _db_line(ink, f"retrieved {len(candidates)} candidate(s) that passed all "
-                  f"hard filters:")
+    # Build candidates via the REAL orchestrator helper: it attaches each
+    # candidate's proximity tier (between-host-and-member > host > member > far)
+    # and open/closed status at the event time, and HARD-FILTERS confidently-
+    # closed venues out — the exact geo/hours logic the live pipeline runs.
+    from app.ai.agents.orchestrator_agent import _build_candidates
+
+    n_before = len(hits)
+    candidates = _build_candidates(hits, reconciled, state)
+    dropped = n_before - len(candidates)
+    _db_line(ink, f"retrieved {n_before} candidate(s); hours hard-filter dropped "
+                  f"{dropped} closed at the event time, leaving {len(candidates)}:")
     for c in candidates:
         dist = f"{c.distance:.4f}" if c.distance is not None else "n/a"
+        openflag = {True: "open", False: "closed", None: "hours?"}[c.is_open]
         print(f"        {ink.db('•')} {c.name}  "
               f"{ink.dim(f'[{', '.join(c.cuisine_tags)}]')}  "
               f"{ink.dim(f'~${c.price_avg:.0f}' if c.price_avg else '')}  "
-              f"{ink.dim('dist=' + dist)}")
+              f"{ink.dim('dist=' + dist)}  "
+              f"{ink.dim('tier=' + (c.proximity_tier or '-'))}  "
+              f"{ink.dim(openflag)}")
     print(f"    {ink.db('✔ END OF DATABASE ACCESS')}")
 
     if not candidates:
@@ -932,29 +964,41 @@ async def _print_orchestrate_and_rank(
     if len(raw.strip().splitlines()) > 14:
         print(f"        {ink.dim('… (truncated)')}")
 
-    # --- Real parsing + real distance-ranked fallback -----------------------
+    # --- Real parsing + real proximity blend + distance-ranked fallback ------
+    from app.ai.agents.orchestrator_agent import _blend_proximity
+
     valid_ids = {c.id for c in candidates}
+    tier_by_id = {c.id: c.proximity_tier for c in candidates}
     ranked = _parse_ranked(raw, valid_ids)
     if ranked:
         _substep(ink, f"_parse_ranked accepted {len(ranked)} of "
-                      f"{len(candidates)} candidates.")
+                      f"{len(candidates)} candidates; blending proximity tiers.")
+        for item in ranked:
+            item.match_score = _blend_proximity(
+                item.match_score, tier_by_id.get(item.restaurant_id)
+            )
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
     else:
         # Same fallback the real orchestrator uses when the LLM returns nothing
-        # parseable — rank by retrieval distance so we still emit valid output.
+        # parseable — rank by retrieval distance + proximity so we still emit
+        # valid, geometry-aware output.
         _substep(ink, ink.warn("LLM returned nothing parseable → "
-                               "distance-ranked FALLBACK engaged."))
+                               "distance+proximity FALLBACK engaged."))
         ordered = sorted(
             candidates, key=lambda c: (c.distance if c.distance is not None else 1.0)
         )
         ranked = [
             RankedItem(
                 restaurant_id=c.id,
-                match_score=round(max(0.0, 1.0 - (c.distance or 0.0)), 4),
-                justification="Ranked by embedding similarity (LLM re-rank "
-                              "unavailable).",
+                match_score=_blend_proximity(
+                    max(0.0, 1.0 - (c.distance or 0.0)), c.proximity_tier
+                ),
+                justification="Ranked by embedding similarity + proximity "
+                              "(LLM re-rank unavailable).",
             )
             for c in ordered
         ]
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
 
     by_id = {c.id: c for c in candidates}
     return [(item, by_id[item.restaurant_id]) for item in ranked]
@@ -1073,6 +1117,7 @@ async def _run(live: bool, no_color: bool, top_n: int) -> int:
         session_id=_DEMO_SESSION_ID,
         qa=_SESSION_QA,
         members=prefs,
+        scheduled_for=_DEMO_SCHEDULED_FOR,
     )
 
     # STEP 4: reconcile the group (real _reconcile).

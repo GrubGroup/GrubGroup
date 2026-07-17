@@ -39,6 +39,10 @@ async def normalize_member(
         qa_disliked_cuisines=list(_get(profile, "qa_disliked_cuisines", []) or []),
         qa_budget_min=_get(profile, "qa_budget_min", None),
         qa_budget_max=_get(profile, "qa_budget_max", None),
+        # This member's preferred (closer-to-them) location — the secondary anchor
+        # for the between-host-and-member ranking (None when they didn't set one).
+        qa_location_lat=_get(profile, "qa_location_lat", None),
+        qa_location_lon=_get(profile, "qa_location_lon", None),
     )
 
     if enrich:

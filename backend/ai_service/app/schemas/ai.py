@@ -25,12 +25,21 @@ class RecommendationRequest(BaseModel):
 
 
 class RecommendationItemOut(BaseModel):
-    """A single ranked restaurant pick within a recommendation."""
+    """A single ranked restaurant pick within a recommendation.
+
+    The persisted RecommendationItem row carries only restaurant_id / match_score
+    / justification; `name`, `hours`, and `is_open` are enriched from the pipeline
+    candidates so the picks payload is self-contained (e.g. when delivered into
+    the group chat). `is_open` is the venue's open/closed status at the session's
+    chosen event time — None when no time was set (unknown, not filtered).
+    """
 
     restaurant_id: int
     match_score: float | None
     justification: str | None
     name: str | None = None
+    hours: str | None = None
+    is_open: bool | None = None
 
 
 class RecommendationOut(BaseModel):

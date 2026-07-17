@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -193,10 +194,12 @@ async def _create_throwaway_session() -> tuple[int, list[int], int]:
 
         # Session (host = first user). No avg_budget column — the orchestrator
         # computes the averaged group budget on demand from member budgets.
+        # scheduled_for drives the open/closed hard filter (Mon 7pm here).
         session = Session(
             host_user_id=user_ids[0],
             group_id=group.id,
             time_limit=15,
+            scheduled_for=datetime(2026, 7, 13, 19, 0),
         )
         db.add(session)
         await db.flush()
@@ -208,22 +211,32 @@ async def _create_throwaway_session() -> tuple[int, list[int], int]:
         )
 
         # Qa: one row per member (session-scoped overrides). The HOST's row
-        # carries the event's occasion and the shared search location (host-only);
-        # members carry only their own overrides. Carol's row shows a QA cuisine
-        # override (she wants ramen today) that should outrank her profile
-        # cuisines for this session while still counting them. (The event time
-        # lives on Session.scheduled_for, not Qa.)
+        # carries the event's occasion and the shared PRIMARY search location
+        # (downtown SF, wide radius so the box spans to the East Bay). The LAST
+        # member adds a PREFERRED location (Oakland) — the secondary anchor for
+        # the between-host-and-member ranking — plus a QA cuisine override (ramen)
+        # that outranks their profile cuisines while still counting them. (The
+        # event time lives on Session.scheduled_for, not Qa.)
         host_uid = user_ids[0]
+        member_uid = user_ids[-1]
         db.add_all(
             Qa(
                 session_id=session.id,
                 user_id=uid,
                 occasion="casual group dinner" if uid == host_uid else None,
-                location_mode="manual" if uid == host_uid else None,
-                location_lat=37.7749 if uid == host_uid else None,
-                location_lon=-122.4194 if uid == host_uid else None,
-                radius_miles=10.0 if uid == host_uid else None,
-                preferred_cuisines=["ramen"] if uid == user_ids[-1] else [],
+                location_mode="manual" if uid in (host_uid, member_uid) else None,
+                location_lat=(
+                    37.7749 if uid == host_uid
+                    else 37.8044 if uid == member_uid
+                    else None
+                ),
+                location_lon=(
+                    -122.4194 if uid == host_uid
+                    else -122.2712 if uid == member_uid
+                    else None
+                ),
+                radius_miles=20.0 if uid == host_uid else None,
+                preferred_cuisines=["ramen"] if uid == member_uid else [],
                 budget_max=45 if uid == host_uid else None,
             )
             for uid in user_ids

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from operator import add
 from typing import Annotated, Any
 
@@ -32,11 +33,24 @@ class MemberPref(BaseModel):
     qa_disliked_cuisines: list[str] = Field(default_factory=list)
     qa_budget_min: int | None = None
     qa_budget_max: int | None = None
+    # This member's PREFERRED location for the session (from their Qa row) — a
+    # spot more convenient for them than the host's, used as a SECONDARY anchor in
+    # the between-host-and-member ranking. None when they didn't set one (they're
+    # fine with the host location) or a geocode miss left coords null.
+    qa_location_lat: float | None = None
+    qa_location_lon: float | None = None
 
     @property
     def effective_budget_max(self) -> int:
         """QA budget cap if the member set one this session, else the Profile's."""
         return self.qa_budget_max if self.qa_budget_max is not None else self.budget_max
+
+    @property
+    def location(self) -> tuple[float, float] | None:
+        """This member's preferred (lat, lon), or None if they set no location."""
+        if self.qa_location_lat is not None and self.qa_location_lon is not None:
+            return (self.qa_location_lat, self.qa_location_lon)
+        return None
 
 
 class QaSignals(BaseModel):
@@ -65,8 +79,17 @@ class ReconciledConstraints(BaseModel):
     # computed in code (there is no Session.avg_budget column) and handed to the
     # re-rank step so top picks land near what the group typically spends.
     avg_budget: float | None = None
+    # `center` is the retrieval anchor + PRIMARY location weight: the host's
+    # location when set, else a member's (see orchestrator._reconcile). It also
+    # seeds the bounding-box prefilter.
     center: tuple[float, float] | None = None
     radius_miles: float | None = None
+    # The host's location (primary anchor) and every member's preferred location
+    # (secondary anchors), threaded through for the between-host-and-member
+    # proximity ranking. `host_location` may equal `center`; `member_locations`
+    # excludes null coords. Empty/None => proximity ranking degrades to host-only.
+    host_location: tuple[float, float] | None = None
+    member_locations: list[tuple[float, float]] = Field(default_factory=list)
     # cuisine -> weight; preferred cuisines score positive, disliked negative.
     cuisine_weights: dict[str, float] = Field(default_factory=dict)
 
@@ -82,6 +105,19 @@ class CandidateRestaurant(BaseModel):
     avg_rating: float | None = None
     # Cosine distance from the reconciled query embedding (lower = closer).
     distance: float | None = None
+    # Geo + hours, carried through so the orchestrator can score proximity to the
+    # host/member anchors and evaluate open/closed at the event time. `long`
+    # mirrors the Restaurant column name (not `lon`). `is_open` is computed
+    # against Session.scheduled_for (None when no event time is known -> unknown
+    # hours are treated as open, so it is not hard-filtered).
+    lat: float | None = None
+    long: float | None = None
+    hours: str | None = None
+    is_open: bool | None = None
+    # Proximity tier for the between-host-and-member ranking (see orchestrator):
+    # "between" (on the corridor between host + a member) > "host" (near host) >
+    # "member" (near a member only) > "far"/None. Fed to the re-rank prompt.
+    proximity_tier: str | None = None
 
 
 class RankedItem(BaseModel):
@@ -108,6 +144,10 @@ class PipelineState(BaseModel):
     raw_profiles: list[dict[str, Any]] = Field(default_factory=list)
     members: Annotated[list[MemberPref], add] = Field(default_factory=list)
     qa: QaSignals = Field(default_factory=QaSignals)
+    # The host's chosen event time (Session.scheduled_for), used to evaluate each
+    # candidate's open/closed status. None when the host left it unset -> hours
+    # are not hard-filtered (unknown time treated as always-open).
+    scheduled_for: datetime | None = None
     reconciled: ReconciledConstraints | None = None
     candidates: list[CandidateRestaurant] = Field(default_factory=list)
     ranked: list[RankedItem] = Field(default_factory=list)
