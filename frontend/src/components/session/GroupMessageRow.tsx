@@ -1,5 +1,6 @@
 import type { GroupMessage } from '@/types'
 import { Avatar } from '@/components/ui'
+import { SessionPicksBlock } from './SessionPicksBlock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 
 export interface GroupMessageRowProps {
@@ -15,6 +16,12 @@ function formatTime(iso: string): string {
 }
 
 export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps) {
+  // The top-5 picks card, delivered into the chat as a SESSION_BLOCK message
+  // (live via session:picks, or replayed from persisted history on reload).
+  if (message.type === 'session_block' && message.block) {
+    return <SessionPicksBlock block={message.block} currentUserId={currentUserId} />
+  }
+
   // System lines (e.g. "Sofia has left the group") render as a centered divider,
   // matching the "… started a session" style.
   if (message.type === 'system') {

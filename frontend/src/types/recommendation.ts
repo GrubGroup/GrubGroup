@@ -1,12 +1,23 @@
 import type { Restaurant } from './restaurant'
 
 // Modeled on Prisma `Recommendation` + `RecommendationItem`.
+//
+// `id` / `recommendation_id` are OPTIONAL: the live gateway responses
+// (`getLatestRecommendation` and the `POST .../recommendations` proxy that
+// delivers picks into the group chat) carry only `restaurant_id` / `match_score`
+// / `justification` on each item — plus `name` and, on the generate path,
+// `hours` / `is_open` enriched from the pipeline candidates. The mock fixture
+// carries the full row shape. `is_open` is the venue's open/closed state at the
+// session's chosen event time (null when no time was set → unknown, not closed).
 export interface RecommendationItem {
-  id: number
-  recommendation_id: number
+  id?: number
+  recommendation_id?: number
   restaurant_id: number
   match_score?: number | null
   justification?: string | null
+  name?: string | null
+  hours?: string | null
+  is_open?: boolean | null
 }
 
 export interface Recommendation {
@@ -21,4 +32,16 @@ export interface Recommendation {
 export interface RankedPick extends RecommendationItem {
   restaurant: Restaurant
   voteCount: number
+}
+
+// The structured payload the gateway delivers into the group chat as a
+// SESSION_BLOCK message (persisted as JSON, replayed on reload) and broadcasts
+// live over `session:picks`. Both paths carry the identical shape, so the
+// in-chat picks card renders the same whether live or reconstructed from
+// `chat:history`. Mirrors the gateway `blockPayload` in sessionsController.js.
+export interface SessionBlock {
+  kind: 'top_picks'
+  session_id: number
+  recommendation_id: number
+  items: RecommendationItem[]
 }

@@ -1,50 +1,162 @@
 import { create } from 'zustand'
-import type { ChatMessage, NotedPref } from '@/types'
-import { MOCK_AGENT_REPLIES, MOCK_CHAT_OPENING, MOCK_NOTED_PREFS } from '@/api/mock/chatScript.mock'
+import type { ChatMessage, ConversationTurn, ExtractedSignals, NotedPref } from '@/types'
+import { MOCK_CHAT_OPENING, MOCK_NOTED_PREFS } from '@/api/mock/chatScript.mock'
+import { USE_MOCK } from '@/lib/env'
+import { analyzeTurn, resetMockAnalyze } from '@/api/session.api'
 
 interface ChatState {
   messages: ChatMessage[]
   notedPreferences: NotedPref[]
-  replyIndex: number
-  seed: () => void
-  sendUserMessage: (text: string) => void
+  // The session this transcript/signal-set belongs to. Used to re-seed when the
+  // active session changes, so session B never inherits session A's chat.
+  sessionId: number | null
+  // The reconciled signal set the agent has accumulated across turns — sent back
+  // on each turn so corrections work, and rendered in the "Noted so far" panel.
+  currentSignals: ExtractedSignals
+  missingSignals: string[]
+  sending: boolean
+  // Reset the conversation for a (possibly new) session. Records the sessionId so
+  // the page can detect a stale transcript and re-seed.
+  seed: (sessionId?: number | null) => void
+  // Send one member turn to the QA sub-agent (analyze). Async: appends the user
+  // message immediately, then the agent reply when it returns. `sessionId` is the
+  // live session; null falls back to the mock/canned path.
+  sendUserMessage: (text: string, sessionId: number | null) => Promise<void>
 }
 
 let idCounter = 100
 const nextId = () => `m${++idCounter}`
 
+const emptySignals = (): ExtractedSignals => ({
+  dietary_restrictions: [],
+  preferred_cuisines: [],
+  disliked_cuisines: [],
+  budget_min: null,
+  budget_max: null,
+  occasion: null,
+  location_mode: null,
+  location_label: null,
+  location_lat: null,
+  location_lon: null,
+  radius_miles: null,
+})
+
+// Map reconciled signals + what's still missing into the "Noted so far" chips.
+// A field is `confirmed` once the agent stopped listing it as missing.
+function signalsToNotedPrefs(sig: ExtractedSignals, missing: string[]): NotedPref[] {
+  const prefs: NotedPref[] = []
+  const isMissing = (key: string) => missing.includes(key)
+
+  if (sig.dietary_restrictions.length) {
+    prefs.push({
+      id: 'diet',
+      label: sig.dietary_restrictions.join(', '),
+      confirmed: !isMissing('dietary'),
+    })
+  }
+  if (sig.preferred_cuisines.length) {
+    prefs.push({
+      id: 'likes',
+      label: `Likes: ${sig.preferred_cuisines.slice(0, 4).join(', ')}`,
+      confirmed: !isMissing('preferred'),
+    })
+  }
+  if (sig.disliked_cuisines.length) {
+    prefs.push({
+      id: 'avoids',
+      label: `Avoids: ${sig.disliked_cuisines.slice(0, 4).join(', ')}`,
+      confirmed: !isMissing('disliked'),
+    })
+  }
+  if (sig.budget_min != null || sig.budget_max != null) {
+    const label =
+      sig.budget_min != null && sig.budget_max != null
+        ? `$${sig.budget_min}–${sig.budget_max}pp`
+        : sig.budget_max != null
+          ? `Up to $${sig.budget_max}pp`
+          : `From $${sig.budget_min}pp`
+    prefs.push({ id: 'budget', label, confirmed: !isMissing('budget') })
+  }
+  if (sig.location_label) {
+    prefs.push({
+      id: 'location',
+      label: sig.location_label,
+      confirmed: !isMissing('location'),
+    })
+  }
+  return prefs
+}
+
+// Build the conversation_history the analyze endpoint replays for context, from
+// the rendered messages (system lines dropped; agent -> assistant).
+function toConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'agent')
+    .map((m) => ({ role: m.role === 'agent' ? 'assistant' : 'user', content: m.text }))
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   notedPreferences: [],
-  replyIndex: 0,
+  sessionId: null,
+  currentSignals: emptySignals(),
+  missingSignals: [],
+  sending: false,
 
-  seed: () => {
+  seed: (sessionId = null) => {
+    if (USE_MOCK) resetMockAnalyze()
     set({
       messages: structuredClone(MOCK_CHAT_OPENING),
       notedPreferences: structuredClone(MOCK_NOTED_PREFS),
-      replyIndex: 0,
+      sessionId,
+      currentSignals: emptySignals(),
+      missingSignals: [],
     })
   },
 
-  sendUserMessage: (text) => {
-    if (!text.trim()) return
+  sendUserMessage: async (text, sessionId) => {
+    const trimmed = text.trim()
+    if (!trimmed || get().sending) return
+
     const userMsg: ChatMessage = {
       id: nextId(),
       role: 'user',
-      text: text.trim(),
+      text: trimmed,
       at: new Date().toISOString(),
     }
-    set((s) => ({ messages: [...s.messages, userMsg] }))
+    const history = toConversationHistory(get().messages)
+    set((s) => ({ messages: [...s.messages, userMsg], sending: true }))
 
-    // Mock agent reply (cycled). Later replaced by socket/AI response.
-    const { replyIndex } = get()
-    const replyText = MOCK_AGENT_REPLIES[Math.min(replyIndex, MOCK_AGENT_REPLIES.length - 1)]
-    const agentMsg: ChatMessage = {
-      id: nextId(),
-      role: 'agent',
-      text: replyText,
-      at: new Date().toISOString(),
+    try {
+      const res = await analyzeTurn(sessionId ?? 0, {
+        message: trimmed,
+        message_source: 'text',
+        conversation_history: history,
+        current_signals: get().currentSignals,
+      })
+      const agentMsg: ChatMessage = {
+        id: nextId(),
+        role: 'agent',
+        text: res.agent_reply,
+        at: new Date().toISOString(),
+      }
+      set((s) => ({
+        messages: [...s.messages, agentMsg],
+        currentSignals: res.extracted_signals,
+        missingSignals: res.missing_signals,
+        notedPreferences: signalsToNotedPrefs(res.extracted_signals, res.missing_signals),
+        sending: false,
+      }))
+    } catch {
+      // Graceful degradation: keep prior signals, acknowledge the turn so the
+      // conversation never dead-ends on a transient LLM/network failure.
+      const fallback: ChatMessage = {
+        id: nextId(),
+        role: 'agent',
+        text: "Got that — anything else you'd like the group to know?",
+        at: new Date().toISOString(),
+      }
+      set((s) => ({ messages: [...s.messages, fallback], sending: false }))
     }
-    set((s) => ({ messages: [...s.messages, agentMsg], replyIndex: s.replyIndex + 1 }))
   },
 }))
