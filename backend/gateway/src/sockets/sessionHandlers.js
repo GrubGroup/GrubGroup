@@ -16,24 +16,55 @@ const HISTORY_LIMIT = 50;
 const room = (groupId) => `group:${groupId}`;
 
 /**
+ * Map a GroupMessage.message_type to the wire `type` the client renders on.
+ * SYSTEM -> a centered divider; SESSION_BLOCK -> a structured picks card;
+ * everything else -> a plain text bubble.
+ */
+const wireType = (messageType) => {
+  if (messageType === 'SYSTEM') return 'system';
+  if (messageType === 'SESSION_BLOCK') return 'session_block';
+  return 'text';
+};
+
+/**
  * Shape a persisted GroupMessage row into the camelCase wire message the
- * frontend expects ({ id, groupId, userId, name, text, at }). `name` prefers
- * the author's stored display name / username, falling back to the socket's
- * cosmetic handshake label.
- * @param {{ id: number, group_id: number, user_id: number, content: string, created_at: Date, user?: { display_name?: string|null, username?: string|null } }} row
+ * frontend expects ({ id, groupId, userId, name, text, at, type }). `name`
+ * prefers the author's stored display name / username, falling back to the
+ * socket's cosmetic handshake label.
+ *
+ * A SESSION_BLOCK row stores its payload as JSON in `content`; we parse it into
+ * a structured `block` field so a reload (chat:history replay) can reconstruct
+ * the top-picks card exactly like the live `session:picks` broadcast — the raw
+ * JSON is never shown as message text. Malformed JSON degrades to a plain text
+ * bubble so a bad row can't break the whole history replay.
+ * @param {{ id: number, group_id: number, user_id: number, content: string, message_type?: string, created_at: Date, user?: { display_name?: string|null, username?: string|null } }} row
  * @param {string|null} [fallbackName]
  */
-const toWireMessage = (row, fallbackName = null) => ({
-  id: String(row.id),
-  groupId: row.group_id,
-  userId: row.user_id,
-  name: row.user?.display_name ?? row.user?.username ?? fallbackName,
-  text: row.content,
-  at: row.created_at.toISOString(),
-  // Tag SYSTEM rows (e.g. "X has left the group") so the client renders them as
-  // a centered divider rather than a chat bubble. Everything else is text.
-  type: row.message_type === 'SYSTEM' ? 'system' : 'text',
-});
+const toWireMessage = (row, fallbackName = null) => {
+  let type = wireType(row.message_type);
+  let block = null;
+  if (type === 'session_block') {
+    try {
+      block = JSON.parse(row.content);
+    } catch {
+      // Unparseable block content — fall back to a plain bubble rather than
+      // dropping the message or crashing the history replay.
+      type = 'text';
+    }
+  }
+  return {
+    id: String(row.id),
+    groupId: row.group_id,
+    userId: row.user_id,
+    name: row.user?.display_name ?? row.user?.username ?? fallbackName,
+    // SESSION_BLOCK carries its data in `block`; `text` is left empty for it so
+    // the client never renders the raw JSON. Other types use `content` as text.
+    text: type === 'session_block' ? '' : row.content,
+    block,
+    at: row.created_at.toISOString(),
+    type,
+  };
+};
 
 /**
  * True when `userId` belongs to `groupId`. Guards persistence + broadcast so we

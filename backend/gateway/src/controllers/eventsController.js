@@ -14,6 +14,8 @@ const listEvents = async (req, res, next) => {
         id: true,
         date: true,
         address: true,
+        lat: true,
+        lon: true,
         restaurant_id: true,
         restaurant_name: true,
         occasion: true,
