@@ -5,6 +5,8 @@ import { create } from 'zustand'
 // the group-chat view and the agent-chat view; a session shows as a card inside
 // the group chat.
 export type Screen =
+  // Public
+  | 'landing' // marketing landing page (logged-out entry)
   // Auth
   | 'sign-in'
   | 'sign-up'
@@ -45,7 +47,7 @@ interface NavState {
 }
 
 export const useNavStore = create<NavState>((set, get) => ({
-  screen: 'sign-in',
+  screen: 'landing',
   groupId: 7, // default matches the seeded session/messages
   returnTo: 'group-chat',
   go: (screen) => set({ screen }),

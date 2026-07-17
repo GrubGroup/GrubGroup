@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button, Icon, IconButton, Input, Modal, Spinner } from '@/components/ui'
+import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { fetchGroup, addGroupMember } from '@/api/groups.api'
 import { searchUsers } from '@/api/users.api'
 import { useGroupsStore } from '@/stores/groupsStore'
@@ -158,23 +159,35 @@ export function GroupDetailPanel({
     }
   }
 
-  if (!open) return null
-
   const members = detail?.members ?? []
   const created = formatCreated(detail?.created_at)
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex justify-end bg-overlay" onClick={handleClose}>
+    {/* Non-blocking side panel: an in-flow flex item whose width animates from 0
+        to w-80. The chat area (flex-1) reflows and shrinks in the same frames, so
+        it reads as a responsive layout shift rather than a modal overlay — no
+        backdrop, no page dimming, the rest of the UI stays interactive. Kept
+        mounted (width 0 when closed) so the exit animation plays. */}
+    <div
+      className={cn(
+        'shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out',
+        open ? 'w-80' : 'w-0',
+      )}
+      aria-hidden={!open}
+      inert={!open}
+    >
       <aside
-        role="dialog"
-        aria-modal="true"
         aria-label="Group details"
-        onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-80 flex-col bg-surface-raised shadow-xl"
+        className="flex h-full w-80 flex-col border-l border-border bg-surface-raised"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        {/* Header — same height as the chat/sidebar headers so borders line up */}
+        <div
+          className={cn(
+            'flex items-center justify-between border-b border-border px-5',
+            COLUMN_HEADER_H,
+          )}
+        >
           <h2 className="font-display text-lg font-semibold text-text">Group details</h2>
           <IconButton label="Close" size="sm" icon={<Icon name="x" size={14} />} onClick={handleClose} />
         </div>

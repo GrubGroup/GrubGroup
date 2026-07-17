@@ -45,6 +45,7 @@ function GroupRow({ group }: { group: Group }) {
   const groupId = useNavStore((s) => s.groupId)
   const setGroup = useNavStore((s) => s.setGroup)
   const { preview, time } = usePreview(group)
+  const selected = group.id === groupId
 
   return (
     <button
@@ -53,19 +54,24 @@ function GroupRow({ group }: { group: Group }) {
         go('group-chat')
       }}
       className={cn(
-        'flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left',
-        group.id === groupId && 'bg-surface-raised/40',
+        'flex w-full items-center gap-2.5 rounded-[10px] p-2 text-left duration-200 ease-out',
+        'transition-[background-color,box-shadow,transform] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-sm',
+        selected
+          ? 'border border-border bg-surface-raised shadow-sm'
+          : 'border border-transparent hover:bg-surface-raised/60',
       )}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-surface-raised text-lg">
+      <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] border border-border bg-surface-raised text-[15px]">
         {group.emoji}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between">
-          <span className="truncate text-[13px] font-semibold text-text">{group.name}</span>
-          <span className="text-[10px] text-text-muted">{time}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-px">
+        <div className="flex items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text">
+            {group.name}
+          </span>
+          <span className="shrink-0 text-[10px] font-medium text-text-muted">{time}</span>
         </div>
-        <p className="truncate text-xs text-text-muted">{preview}</p>
+        <p className="truncate text-[11px] font-medium text-text-muted">{preview}</p>
       </div>
     </button>
   )
@@ -85,11 +91,18 @@ export function GroupsSidebar() {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState('')
 
   // Newest activity first (WhatsApp-style); sort a copy, never the store array.
   const sortedGroups = [...groups].sort(
     (a, b) => lastActivity(b, messagesByGroup) - lastActivity(a, messagesByGroup),
   )
+
+  // Client-side name filter for the search box (purely presentational).
+  const q = query.trim().toLowerCase()
+  const visibleGroups = q
+    ? sortedGroups.filter((g) => g.name.toLowerCase().includes(q))
+    : sortedGroups
 
   // Load the real group list (with last messages) on mount. No-op in mock mode.
   useEffect(() => {
@@ -109,19 +122,47 @@ export function GroupsSidebar() {
   }
 
   return (
-    <AppSidebar activeTab="groups">
-      <button
-        onClick={() => setModalOpen(true)}
-        className="flex w-full items-center gap-3 border-b border-border px-4 py-2.5 text-left"
-      >
-        <span className="text-text-muted">
+    <AppSidebar
+      activeTab="groups"
+      title="Groups"
+      // Wider panel so the group-chat list isn't cramped (~+15% vs default w-56).
+      panelWidth="w-64"
+      headerAction={
+        <button
+          onClick={() => setModalOpen(true)}
+          aria-label="New group"
+          className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-inverse text-white transition-opacity hover:opacity-90"
+        >
           <Icon name="plus" size={14} />
-        </span>
-        <span className="text-xs font-medium text-text-muted">New group</span>
-      </button>
-      {sortedGroups.map((g) => (
-        <GroupRow key={g.id} group={g} />
-      ))}
+        </button>
+      }
+    >
+      {/* Search (visual entry point; filters the list below) */}
+      <div className="px-2.5 py-1.5">
+        <div className="flex items-center gap-2 rounded-[10px] border border-border bg-surface-raised px-2.5 py-2">
+          <span className="text-text-muted">
+            <Icon name="search" size={14} />
+          </span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            aria-label="Search groups"
+            className="min-w-0 flex-1 bg-transparent text-xs font-medium text-text placeholder:text-text-muted focus:outline-none"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-0.5 px-2 pt-1">
+        {visibleGroups.map((g) => (
+          <GroupRow key={g.id} group={g} />
+        ))}
+        {visibleGroups.length === 0 && (
+          <p className="px-2 py-6 text-center text-xs text-text-muted">
+            {query.trim() ? 'No groups match your search.' : 'No groups yet.'}
+          </p>
+        )}
+      </div>
 
       <NewGroupModal
         open={modalOpen}

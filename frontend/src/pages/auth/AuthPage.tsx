@@ -77,7 +77,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       if (methods.google && !methods.password) {
         setLoading(false)
         setGoogleHint(true)
-        setError('This email is registered with Google. Use "Continue with Google" below.')
+        setError('This email is registered with Google. Use "Continue with Google" above.')
         return
       }
     }
@@ -129,7 +129,7 @@ export function AuthPage({ mode }: AuthPageProps) {
 
   return (
     <div className="flex h-screen bg-surface-raised">
-      <BrandPanel />
+      <BrandPanel onLogoClick={() => go('landing')} />
 
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="flex w-full max-w-sm flex-col gap-5">

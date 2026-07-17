@@ -47,7 +47,7 @@ function EventRow({ e }: { e: EventLite }) {
 export function EventsPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-surface-raised">
-      <AppSidebar activeTab="events">
+      <AppSidebar activeTab="events" title="Events">
         <p className="px-4 pt-3 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
           Upcoming
         </p>

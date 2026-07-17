@@ -1,15 +1,37 @@
 import { Icon } from '@/components/ui'
 
+export interface BrandPanelProps {
+  /** When provided, the wordmark becomes a button that calls this (auth screens
+   * use it to return to the landing page). Omitted elsewhere (e.g. onboarding),
+   * so the wordmark stays a static, non-interactive label. */
+  onLogoClick?: () => void
+}
+
 // Dark brand panel shown on the left of the auth screens (matches wireframe).
-export function BrandPanel() {
+export function BrandPanel({ onLogoClick }: BrandPanelProps = {}) {
+  const logo = (
+    <>
+      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10">
+        <Icon name="utensils" size={16} />
+      </span>
+      <span className="font-display text-lg font-bold">GrubGroup</span>
+    </>
+  )
+
   return (
     <div className="relative hidden w-[38%] shrink-0 flex-col justify-between bg-surface-inverse p-10 text-white lg:flex">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10">
-          <Icon name="utensils" size={16} />
-        </span>
-        <span className="font-display text-lg font-bold">GrubGroup</span>
-      </div>
+      {onLogoClick ? (
+        <button
+          type="button"
+          onClick={onLogoClick}
+          aria-label="Go to home"
+          className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          {logo}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2.5">{logo}</div>
+      )}
 
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-3 text-3xl">

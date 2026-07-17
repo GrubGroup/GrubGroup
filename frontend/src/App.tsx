@@ -1,4 +1,5 @@
 import { AuthPage } from '@/pages/auth/AuthPage'
+import { LandingPage } from '@/pages/public/LandingPage'
 import { Onboarding1 } from '@/pages/member/onboarding/Onboarding1'
 import { OnboardingCuisines } from '@/pages/member/onboarding/OnboardingCuisines'
 import { Onboarding2 } from '@/pages/member/onboarding/Onboarding2'
@@ -38,6 +39,8 @@ function App() {
   }, [session, setSessionUser])
 
   const isAuthScreen = screen === 'sign-in' || screen === 'sign-up'
+  // Public screens a logged-out user may view without being bounced to sign-in.
+  const isPublicScreen = isAuthScreen || screen === 'landing'
 
   // After Google OAuth the browser reloads fresh at the app origin with the nav
   // store defaulted to 'sign-in'. Once the session resolves, move an
@@ -49,7 +52,9 @@ function App() {
   const routedRef = useRef(false)
   useEffect(() => {
     if (USE_MOCK) return
-    if (!session?.user || !isAuthScreen || routedRef.current) return
+    // Forward an authenticated user off any public screen (auth pages OR the
+    // landing page, which is now the fresh-reload default) into the app.
+    if (!session?.user || !isPublicScreen || routedRef.current) return
     routedRef.current = true
     void (async () => {
       const profile = await fetchProfile()
@@ -66,15 +71,18 @@ function App() {
         go('empty-groups')
       }
     })()
-  }, [session, isAuthScreen, go, setGroup])
+  }, [session, isPublicScreen, go, setGroup])
 
-  // Auth guard (live mode only): every screen except the auth pages requires a
-  // signed-in user. Wait for the initial session check before bouncing.
-  if (!USE_MOCK && !isPending && !user && !isAuthScreen) {
+  // Auth guard (live mode only): every screen except the public pages (landing +
+  // auth) requires a signed-in user. Wait for the initial session check before
+  // bouncing.
+  if (!USE_MOCK && !isPending && !user && !isPublicScreen) {
     return <AuthPage mode="signin" />
   }
 
   switch (screen) {
+    case 'landing':
+      return <LandingPage />
     case 'sign-in':
       return <AuthPage mode="signin" />
     case 'sign-up':
