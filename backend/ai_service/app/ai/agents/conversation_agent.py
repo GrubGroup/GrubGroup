@@ -395,6 +395,7 @@ async def analyze_turn(
     message_source: str = "text",
     conversation_history: list[ConversationTurn] | None = None,
     is_host: bool = False,
+    host_location_label: str | None = None,
 ) -> TurnResult:
     """Parse one conversational turn into reconciled signals + an agent reply.
 
@@ -405,8 +406,11 @@ async def analyze_turn(
     and the still-missing signals. `is_host` gates the event-level signal: only
     the host is asked about (and can set) occasion — a non-host is never prompted
     for it, never has it extracted, and is gently told the host owns it if they
-    try. On any LLM/parse failure it degrades to the prior signals + a safe
-    deterministic reply (TurnResult.degraded == True).
+    try. `host_location_label` (for a non-host) is the host's chosen location, so
+    the agent can frame the optional per-member location question relative to it
+    ("the host set X — want somewhere closer to you?"). On any LLM/parse failure
+    it degrades to the prior signals + a safe deterministic reply
+    (TurnResult.degraded == True).
     """
     prior = current_signals or ExtractedSignals()
     history = [t.model_dump() for t in (conversation_history or [])]
@@ -417,6 +421,7 @@ async def analyze_turn(
         conversation_history=history,
         current_signals=prior.model_dump(),
         is_host=is_host,
+        host_location_label=host_location_label,
     )
 
     # NOTE: do NOT pass response_format={"type": "json_object"} — the active
