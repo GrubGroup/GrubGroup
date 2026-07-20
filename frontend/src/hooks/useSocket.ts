@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { GroupMessage, SessionBlock } from '@/types'
+import type { GroupMessage, RecommendationItem } from '@/types'
 import { getSocket } from '@/lib/socket'
 import { useAuthStore } from '@/stores/authStore'
 import { useGroupChatStore } from '@/stores/groupChatStore'
@@ -70,26 +70,19 @@ export function useSocket(groupId: number) {
     }
     socket.on('session:member_done', handleMemberDone)
 
-    // The orchestrator's top-5 delivered into the chat. Route it through the same
-    // receiveMessage path as a history SESSION_BLOCK row so live + reload render
-    // identically.
+    // The orchestrator's top-5 is ready. Recommendations live in the session /
+    // results flow — NOT the group chat — so adopt them into the session store
+    // (which surfaces the "Results" affordance); navigation stays user-driven.
     const handlePicks = (payload: {
       groupId: number
       sessionId: number
-      messageId: string
-      userId: number | null
-      block: SessionBlock
-      at: string
+      recommendationId: number
+      items: RecommendationItem[]
     }) => {
-      useGroupChatStore.getState().receiveMessage({
-        id: payload.messageId,
-        groupId: payload.groupId,
-        userId: payload.userId,
-        name: null,
-        text: '',
-        at: payload.at,
-        type: 'session_block',
-        block: payload.block,
+      useSessionStore.getState().receivePicks({
+        recommendationId: payload.recommendationId,
+        sessionId: payload.sessionId,
+        items: payload.items,
       })
     }
     socket.on('session:picks', handlePicks)

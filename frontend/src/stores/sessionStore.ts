@@ -36,6 +36,15 @@ interface SessionState {
   // them if the roster hasn't loaded them yet) so every client's progress bar and
   // roster reconcile from the server echo — not an optimistic local flip.
   applyProgress: (doneCount: number, total: number, userId: number, status: boolean) => void
+  // Adopt a recommendation delivered live over the socket (session:picks), so the
+  // "Results" affordance appears without a fetch. Stores the recommendation only —
+  // it deliberately does NOT set phase:'picks' (that implies the user is VIEWING
+  // results); navigation to the results screen stays user-driven.
+  receivePicks: (payload: {
+    recommendationId: number
+    sessionId: number
+    items: Recommendation['items']
+  }) => void
   loadRecommendation: () => Promise<void>
   castVote: (restaurantId: number, userId: number) => void
   chooseRestaurant: (restaurantId: number) => void
@@ -130,6 +139,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Reflect the current user's own completion in their local UI phase.
     if (userId === get().currentUserId && status) set({ phase: 'done' })
   },
+
+  receivePicks: ({ recommendationId, sessionId, items }) =>
+    set({
+      recommendation: {
+        id: recommendationId,
+        session_id: sessionId,
+        created_at: new Date().toISOString(),
+        items,
+      },
+    }),
 
   loadRecommendation: async () => {
     const id = get().activeSessionId ?? get().session?.id

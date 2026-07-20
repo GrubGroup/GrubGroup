@@ -57,7 +57,7 @@ export function SessionCard({
             onClick={onViewResults}
             className="flex items-center gap-1.5 rounded-input bg-success px-3 py-1.5 text-xs font-medium text-white"
           >
-            <Icon name="utensils" size={12} /> View results
+            <Icon name="utensils" size={12} /> Results
           </button>
         )}
       </div>

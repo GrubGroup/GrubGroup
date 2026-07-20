@@ -33,15 +33,3 @@ export interface RankedPick extends RecommendationItem {
   restaurant: Restaurant
   voteCount: number
 }
-
-// The structured payload the gateway delivers into the group chat as a
-// SESSION_BLOCK message (persisted as JSON, replayed on reload) and broadcasts
-// live over `session:picks`. Both paths carry the identical shape, so the
-// in-chat picks card renders the same whether live or reconstructed from
-// `chat:history`. Mirrors the gateway `blockPayload` in sessionsController.js.
-export interface SessionBlock {
-  kind: 'top_picks'
-  session_id: number
-  recommendation_id: number
-  items: RecommendationItem[]
-}

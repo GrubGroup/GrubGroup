@@ -56,20 +56,28 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
   sessionStartIndexByGroup: {},
   typingByGroup: {},
 
-  receiveMessage: (msg) =>
+  receiveMessage: (msg) => {
+    // Recommendations live in the session/results flow, never the chat — drop any
+    // legacy SESSION_BLOCK row so it can't surface as a blank bubble.
+    if (msg.type === 'session_block') return
     set((s) => ({
       messagesByGroup: {
         ...s.messagesByGroup,
         [msg.groupId]: [...(s.messagesByGroup[msg.groupId] ?? EMPTY), msg],
       },
-    })),
+    }))
+  },
 
   // Seed a group's messages from the persisted backlog. Replaces the list
   // (set, not append) so a reload/late-join starts from the stored history;
-  // subsequent live receiveMessage calls append after it.
+  // subsequent live receiveMessage calls append after it. Legacy SESSION_BLOCK
+  // rows are filtered out (recommendations moved to the results flow).
   receiveHistory: (groupId, messages) =>
     set((s) => ({
-      messagesByGroup: { ...s.messagesByGroup, [groupId]: messages },
+      messagesByGroup: {
+        ...s.messagesByGroup,
+        [groupId]: messages.filter((m) => m.type !== 'session_block'),
+      },
     })),
 
   sendMessage: (groupId, text) => {

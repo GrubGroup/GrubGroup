@@ -24,6 +24,27 @@ const broadcastToGroup = (req, groupId, event, payload) => {
 };
 
 /**
+ * Broadcast a ready recommendation to the session's group room. Recommendations
+ * are delivered into the SESSION / RESULTS flow only — never as a group-chat
+ * message — so this carries just the ids + ranked items (no messageId, no
+ * persisted GroupMessage). Shared by the manual generate path and the auto-
+ * complete path so both emit an identical `session:picks` event.
+ */
+const broadcastPicks = (io, groupId, sessionId, recommendation) => {
+  if (groupId == null) return;
+  try {
+    io?.to(`group:${groupId}`).emit('session:picks', {
+      groupId,
+      sessionId,
+      recommendationId: recommendation.id,
+      items: recommendation.items ?? [],
+    });
+  } catch (err) {
+    console.error('socket broadcast session:picks failed', err);
+  }
+};
+
+/**
  * POST /api/sessions/:session_id/recommendations — proxy the group orchestrator.
  *
  * Delegates to the ai_service, which reconciles member preferences into a ranked
@@ -32,11 +53,11 @@ const broadcastToGroup = (req, groupId, event, payload) => {
  * rather than collapsing everything to a 500.
  *
  * Auth-guarded + member-scoped (see the route): only a session member may
- * trigger picks, since success WRITES a SESSION_BLOCK message into the group
- * chat and broadcasts it. On success the top picks are delivered INTO the group
- * chat: we persist a SESSION_BLOCK GroupMessage carrying the ranked items as JSON
- * (so it survives a reload via chat:history) and broadcast `session:picks` to the
- * group room. Both are best-effort — a chat-delivery hiccup never fails the call.
+ * trigger picks. On success we broadcast `session:picks` to the group room so
+ * every client adopts the ranked items into the SESSION / RESULTS flow. The
+ * recommendation is NOT written into the group chat — it stays durable in the
+ * Recommendation table (fetchable via GET /:id/recommendations). The broadcast
+ * is best-effort — a socket hiccup never fails the call.
  */
 const getRecommendations = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -48,7 +69,7 @@ const getRecommendations = async (req, res, next) => {
 
   try {
     // Membership guard: reject a caller who isn't part of this session before we
-    // proxy (and before any group-chat write) — mirrors submitQa/analyzeTurn.
+    // proxy — mirrors submitQa/analyzeTurn.
     const member = await prisma.sessionMember.findUnique({
       where: { session_id_user_id: { session_id: sessionId, user_id: req.user.id } },
     });
@@ -58,45 +79,16 @@ const getRecommendations = async (req, res, next) => {
 
     const recommendation = await fetchRecommendations(sessionId, { forcePartial });
 
-    // Deliver the picks into the group chat (best-effort). Look up the session's
-    // group + host so we can attribute the SESSION_BLOCK message and route the
-    // broadcast to the right room.
+    // Announce the ready picks to the group room (best-effort) so every client's
+    // session/results view can adopt them without polling.
     try {
       const session = await prisma.session.findUnique({
         where: { id: sessionId },
-        select: { group_id: true, host_user_id: true },
+        select: { group_id: true },
       });
-      if (session?.group_id != null) {
-        // The block payload is the SAME shape whether delivered live (session:picks)
-        // or reconstructed from chat:history (toWireMessage parses this JSON back
-        // into `block`), so both paths render the identical picks card.
-        const blockPayload = {
-          kind: 'top_picks',
-          session_id: sessionId,
-          recommendation_id: recommendation.id,
-          items: recommendation.items ?? [],
-        };
-        const block = await prisma.groupMessage.create({
-          data: {
-            group_id: session.group_id,
-            user_id: session.host_user_id,
-            content: JSON.stringify(blockPayload),
-            message_type: 'SESSION_BLOCK',
-          },
-        });
-        // Mirror the wire shape of a SESSION_BLOCK history message so the client
-        // handles the live event and a reloaded message with one code path.
-        broadcastToGroup(req, session.group_id, 'session:picks', {
-          groupId: session.group_id,
-          sessionId,
-          messageId: String(block.id),
-          userId: session.host_user_id,
-          block: blockPayload,
-          at: block.created_at.toISOString(),
-        });
-      }
+      broadcastPicks(req.app.get('io'), session?.group_id, sessionId, recommendation);
     } catch (deliveryErr) {
-      console.error('top-picks group-chat delivery failed', deliveryErr);
+      console.error('top-picks broadcast failed', deliveryErr);
     }
 
     return res.status(200).json(recommendation);

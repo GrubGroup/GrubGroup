@@ -5,7 +5,6 @@ import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
 import { USE_MOCK } from '@/lib/env'
 import { useSessionStore } from '@/stores/sessionStore'
-import { useGroupChatStore } from '@/stores/groupChatStore'
 import { generateRecommendation } from '@/api/session.api'
 
 export interface SessionTopBarProps {
@@ -22,34 +21,28 @@ export function SessionTopBar({ label = 'Your food agent' }: SessionTopBarProps)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const startedAt = useSessionStore((s) => s.startedAt)
   const isHost = useSessionStore((s) => s.isHost())
+  const recommendation = useSessionStore((s) => s.recommendation)
+  const receivePicks = useSessionStore((s) => s.receivePicks)
   const generatingRef = useRef(false)
 
   if (activeSessionId == null || session == null) return null
 
+  // The timer is now only a FALLBACK: auto-complete generates results the moment
+  // every member finishes (server-side live, simulated in mock). If results
+  // already exist, there's nothing for the timer to force.
   const handleExpire = async () => {
-    if (!isHost || generatingRef.current) return
+    if (!isHost || generatingRef.current || recommendation != null) return
     generatingRef.current = true
     try {
       const rec = await generateRecommendation(activeSessionId, { forcePartial: true })
-      // Live: the gateway persists a SESSION_BLOCK message + broadcasts
-      // session:picks, so the card lands via the socket. Offline (mock, socket
-      // null) there is no broadcast — inject the picks block locally so the
-      // in-chat card still appears.
-      if (USE_MOCK && session.group_id != null) {
-        useGroupChatStore.getState().receiveMessage({
-          id: `picks-${rec.id}`,
-          groupId: session.group_id,
-          userId: session.host_user_id,
-          name: null,
-          text: '',
-          at: new Date().toISOString(),
-          type: 'session_block',
-          block: {
-            kind: 'top_picks',
-            session_id: activeSessionId,
-            recommendation_id: rec.id,
-            items: rec.items,
-          },
+      // Live: the gateway broadcasts session:picks, so results land via the
+      // socket. Offline (mock, socket null) there is no broadcast — adopt the
+      // recommendation into the store so the Results affordance appears.
+      if (USE_MOCK) {
+        receivePicks({
+          recommendationId: rec.id,
+          sessionId: activeSessionId,
+          items: rec.items,
         })
       }
     } catch {
