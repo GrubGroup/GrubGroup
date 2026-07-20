@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { Avatar, Icon, type IconName } from '@/components/ui'
+import { Avatar, Icon, Wordmark, type IconName } from '@/components/ui'
 import { AccountMenu } from './AccountMenu'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
@@ -17,8 +17,8 @@ type SidebarTab = 'groups' | 'events'
 export interface AppSidebarProps {
   /** Which rail tab is active; omit to render the rail with no active tab. */
   activeTab?: SidebarTab
-  /** Panel title shown in the header (e.g. "Groups", "Events"). */
-  title?: string
+  /** Small uppercase eyebrow under the constant "GrubGroup" wordmark (e.g. "Groups", "Events"). */
+  eyebrow?: string
   /** Optional action rendered on the right of the panel header (e.g. add button). */
   headerAction?: ReactNode
   /** Scrollable panel body — group list, events list, or an empty-state block. */
@@ -38,7 +38,7 @@ export interface AppSidebarProps {
 // contexts; behavior mirrors the previous tab bar.
 export function AppSidebar({
   activeTab,
-  title,
+  eyebrow,
   headerAction,
   children,
   showFooter = true,
@@ -49,14 +49,18 @@ export function AppSidebar({
   const logout = useAuthStore((s) => s.logout)
   const resetGroups = useGroupsStore((s) => s.reset)
   const go = useNavStore((s) => s.go)
+  const setGroup = useNavStore((s) => s.setGroup)
   const openProfile = useNavStore((s) => s.openProfile)
   const [menuOpen, setMenuOpen] = useState(false)
 
   // Clear the Better Auth session (cookie) + local state, then return to sign-in.
+  // Reset the selected group to the sentinel so the next account never targets
+  // the previous one's room before its own load() runs.
   const handleSignOut = async () => {
     await signOut()
     logout()
     resetGroups()
+    setGroup(0)
     go('sign-in')
   }
 
@@ -129,9 +133,14 @@ export function AppSidebar({
             COLUMN_HEADER_H,
           )}
         >
-          <span className="min-w-0 flex-1 truncate font-display text-[20px] font-bold text-text">
-            {title ?? 'GrubGroup'}
-          </span>
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            <Wordmark size="sm" showTile={false} />
+            {eyebrow && (
+              <p className="mt-0.5 truncate text-overline font-semibold uppercase tracking-wide text-text-muted">
+                {eyebrow}
+              </p>
+            )}
+          </div>
           {headerAction}
         </div>
 
@@ -160,13 +169,34 @@ function RailButton({
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
+        'group relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
         active
           ? 'bg-surface-inverse text-white'
           : 'text-text-muted hover:bg-surface-raised/70 hover:text-text',
       )}
     >
-      <Icon name={icon} size={18} />
+      {/* Outline (default) + filled (active or hovered) crossfaded via opacity —
+          pure CSS group-hover, no re-render. Under reduced motion the CSS
+          backstop zeroes the fade so it swaps instantly. */}
+      <span className="relative inline-flex h-[18px] w-[18px]">
+        <Icon
+          name={icon}
+          size={18}
+          className={cn(
+            'absolute inset-0 transition-opacity duration-150 ease-out',
+            active ? 'opacity-0' : 'opacity-100 group-hover:opacity-0',
+          )}
+        />
+        <Icon
+          name={icon}
+          size={18}
+          filled
+          className={cn(
+            'absolute inset-0 transition-opacity duration-150 ease-out',
+            active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        />
+      </span>
     </button>
   )
 }

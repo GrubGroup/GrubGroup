@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { motion, useReducedMotion, type Variants } from 'framer-motion'
-import { Button, Icon, type IconName } from '@/components/ui'
+import { motion, useReducedMotion } from 'framer-motion'
+import { Button, Icon, Wordmark, type IconName } from '@/components/ui'
+import { EASE, viewport, useFadeUp, makeFloat } from '@/lib/motion'
 import { useNavStore } from '@/stores/navStore'
 import { cn } from '@/utils/cn'
 
@@ -10,22 +11,9 @@ import { cn } from '@/utils/cn'
 // band for rhythm. Purely presentational: Sign in → existing sign-in page,
 // Start a session → existing sign-up page. No auth/behavior changes.
 
-// ---------------------------------------------------------------------------
-// Shared motion helpers (all reduced-motion aware via useReducedMotion below).
-// ---------------------------------------------------------------------------
-const EASE = [0.22, 1, 0.36, 1] as const
-
-// Fade + rise on scroll-into-view. `custom` (index) staggers siblings.
-const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  show: (i = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, delay: i * 0.08, ease: EASE },
-  }),
-}
-
-const viewport = { once: true, amount: 0.3 } as const
+// Motion vocabulary (EASE, viewport, useFadeUp, makeFloat) lives in @/lib/motion
+// and is shared with the auth/onboarding brand panel. useFadeUp() is
+// reduced-motion aware (drops the rise when the user prefers reduced motion).
 
 // Smooth-scroll to a section by id (honors reduced-motion via the global
 // scroll-behavior guard in index.css). Shared by the nav + in-page links.
@@ -77,13 +65,7 @@ export function LandingPage() {
   const toSignUp = () => go('sign-up')
 
   // Gentle infinite float for the hero's layered panels (disabled if reduced).
-  const float = (delay: number, dist = 10) =>
-    reduce
-      ? {}
-      : {
-          animate: { y: [0, -dist, 0] },
-          transition: { duration: 6, repeat: Infinity, ease: 'easeInOut', delay },
-        }
+  const float = makeFloat(!!reduce)
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-surface font-sans text-text">
@@ -96,22 +78,6 @@ export function LandingPage() {
       <EmotionalBenefit />
       <FinalCta toSignUp={toSignUp} />
       <Footer />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Wordmark
-function Wordmark({ dark = false }: { dark?: boolean }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-white">
-        <Icon name="utensils" size={17} />
-      </span>
-      <span className="font-display text-[22px] font-extrabold leading-none">
-        <span className={dark ? 'text-white' : 'text-text'}>Grub</span>
-        <span className="text-primary">Group</span>
-      </span>
     </div>
   )
 }
@@ -176,6 +142,7 @@ function Hero({
   float: (delay: number, dist?: number) => object
   reduce: boolean
 }) {
+  const fadeUp = useFadeUp()
   return (
     // Fills exactly one viewport (nav is 72px sticky) so a full-screen visitor
     // sees only the hero, with the scroll cue pinned to the bottom.
@@ -427,6 +394,7 @@ function ChatBubble({ children, me = false }: { children: ReactNode; me?: boolea
 // ---------------------------------------------------------------------------
 // §3 Social proof band
 function SocialBand() {
+  const fadeUp = useFadeUp()
   const stats = [
     ['12k+', 'sessions'],
     ['4.9', 'avg group rating'],
@@ -491,6 +459,7 @@ const STEPS: { n: string; icon: IconName; eyebrow: string; title: string; body: 
 
 function HowItWorks() {
   const reduce = useReducedMotion()
+  const fadeUp = useFadeUp()
   return (
     <section id="how-it-works" className="scroll-mt-24 bg-surface-raised px-6 py-20 lg:px-8 lg:py-24">
       <SectionHeader eyebrow="HOW IT WORKS" title="Three steps to one table." />
@@ -531,6 +500,7 @@ function HowItWorks() {
 // ---------------------------------------------------------------------------
 // §5 Feature showcase — inset dark consensus panel + supporting cards + strip
 function FeatureShowcase() {
+  const fadeUp = useFadeUp()
   const prefs = [
     { i: 0, label: 'Vegan' },
     { i: 1, label: '≤ $25' },
@@ -659,6 +629,7 @@ function FeatureCard({
   children?: ReactNode
 }) {
   const reduce = useReducedMotion()
+  const fadeUp = useFadeUp()
   return (
     <motion.div
       custom={i}
@@ -683,6 +654,7 @@ function FeatureCard({
 // ---------------------------------------------------------------------------
 // §6 Product in use — the one dark tentpole
 function ProductInUse() {
+  const fadeUp = useFadeUp()
   const cards = ['Verde Cocina', 'Casa Verde', "Nonna's", 'Sakura', 'Olive & Ash', 'Fuego']
   const pcts = ['98%', '94%', '91%', '88%', '85%', '82%']
   return (
@@ -729,6 +701,7 @@ function ProductInUse() {
 // ---------------------------------------------------------------------------
 // §7 Emotional benefit
 function EmotionalBenefit() {
+  const fadeUp = useFadeUp()
   return (
     <section className="bg-surface-panel px-6 py-20 lg:px-8 lg:py-24">
       <div className="mx-auto grid max-w-[1100px] items-center gap-12 lg:grid-cols-2">
@@ -776,6 +749,7 @@ function EmotionalBenefit() {
 // ---------------------------------------------------------------------------
 // §8 Final CTA — cocoa card on sand
 function FinalCta({ toSignUp }: { toSignUp: () => void }) {
+  const fadeUp = useFadeUp()
   return (
     <section className="bg-surface px-6 py-16 lg:px-8 lg:py-24">
       <motion.div
@@ -865,6 +839,7 @@ function SectionHeader({
   align?: 'center' | 'left'
   dark?: boolean
 }) {
+  const fadeUp = useFadeUp()
   return (
     <motion.div
       initial="hidden"

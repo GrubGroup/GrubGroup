@@ -54,10 +54,10 @@ function GroupRow({ group }: { group: Group }) {
         go('group-chat')
       }}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[10px] p-2 text-left duration-200 ease-out',
-        'transition-[background-color,box-shadow,transform] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-sm',
+        'flex w-full items-center gap-2.5 rounded-[10px] p-2 text-left',
+        'transition-colors duration-150 ease-out',
         selected
-          ? 'border border-border bg-surface-raised shadow-sm'
+          ? 'border border-border bg-surface-raised'
           : 'border border-transparent hover:bg-surface-raised/60',
       )}
     >
@@ -66,12 +66,12 @@ function GroupRow({ group }: { group: Group }) {
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <div className="flex items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text">
+          <span className="min-w-0 flex-1 truncate text-item-title font-semibold text-text">
             {group.name}
           </span>
-          <span className="shrink-0 text-[10px] font-medium text-text-muted">{time}</span>
+          <span className="shrink-0 text-caption font-medium text-text-muted">{time}</span>
         </div>
-        <p className="truncate text-[11px] font-medium text-text-muted">{preview}</p>
+        <p className="truncate text-caption font-medium text-text-muted">{preview}</p>
       </div>
     </button>
   )
@@ -124,7 +124,7 @@ export function GroupsSidebar() {
   return (
     <AppSidebar
       activeTab="groups"
-      title="Groups"
+      eyebrow="Groups"
       // Wider panel so the group-chat list isn't cramped (~+15% vs default w-56).
       panelWidth="w-64"
       headerAction={
@@ -148,7 +148,7 @@ export function GroupsSidebar() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search"
             aria-label="Search groups"
-            className="min-w-0 flex-1 bg-transparent text-xs font-medium text-text placeholder:text-text-muted focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-caption font-medium text-text placeholder:text-text-muted focus:outline-none"
           />
         </div>
       </div>
@@ -158,7 +158,7 @@ export function GroupsSidebar() {
           <GroupRow key={g.id} group={g} />
         ))}
         {visibleGroups.length === 0 && (
-          <p className="px-2 py-6 text-center text-xs text-text-muted">
+          <p className="px-2 py-6 text-center text-caption text-text-muted">
             {query.trim() ? 'No groups match your search.' : 'No groups yet.'}
           </p>
         )}
