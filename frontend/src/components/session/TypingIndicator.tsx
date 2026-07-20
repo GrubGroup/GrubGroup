@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Typer } from '@/stores/groupChatStore'
 import { Avatar } from '@/components/ui'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 
 export interface TypingIndicatorProps {
   typers: Typer[]

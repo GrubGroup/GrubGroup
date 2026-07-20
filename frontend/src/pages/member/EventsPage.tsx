@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import type { EventRecord } from '@/types'
 import { Avatar, Badge, Icon } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
-import { FEATURED_EVENT } from '@/api/mock/events.mock'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { FEATURED_EVENT } from '@/api/mock/eventsMock'
+import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 import { useEventListStore } from '@/stores/eventListStore'
 
 // A cuisine/dietary emoji is not on the API row, so pick a stable default.

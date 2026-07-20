@@ -5,7 +5,7 @@ import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
 import { USE_MOCK } from '@/lib/env'
 import { useSessionStore } from '@/stores/sessionStore'
-import { generateRecommendation } from '@/api/session.api'
+import { generateRecommendation } from '@/api/sessionApi'
 
 export interface SessionTopBarProps {
   /** Center label; the wireframe uses "Your food agent". */

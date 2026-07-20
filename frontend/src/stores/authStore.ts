@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Role, User } from '@/types'
-import { MOCK_USER } from '@/api/mock/profile.mock'
-import { MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { MOCK_USER } from '@/api/mock/profileMock'
+import { MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 import { USE_MOCK } from '@/lib/env'
 
 // DEV ONLY: let two browser windows act as different members via a URL param,

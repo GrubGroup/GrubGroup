@@ -8,12 +8,12 @@ import type {
 } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { mockAnalyzeTurn } from './mock/agentAnalyze.mock'
+import { mockAnalyzeTurn } from './mock/agentAnalyzeMock'
 import {
   MOCK_MEMBERS,
   MOCK_RECOMMENDATION,
   MOCK_SESSION,
-} from './mock/session.mock'
+} from './mock/sessionMock'
 
 export async function fetchSession(sessionId: number): Promise<{
   session: Session

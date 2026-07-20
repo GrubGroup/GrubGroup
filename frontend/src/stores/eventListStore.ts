@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { EventRecord } from '@/types'
-import { fetchEvents } from '@/api/events.api'
+import { fetchEvents } from '@/api/eventsApi'
 
 // The Events-tab dining-history list. Separate from `eventStore` (the in-session
 // order "cart"): this store holds the durable Event rows from GET /api/events and

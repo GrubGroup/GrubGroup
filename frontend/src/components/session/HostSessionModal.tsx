@@ -3,7 +3,7 @@ import type { Session } from "@/types";
 import { Button, Chip, Icon, Input, Modal } from "@/components/ui";
 import { usePlacesInput } from "@/hooks/usePlacesInput";
 import { cn } from "@/utils/cn";
-import { createSession, geocodeAddress } from "@/api/session.api";
+import { createSession, geocodeAddress } from "@/api/sessionApi";
 
 export interface HostSessionModalProps {
   open: boolean;

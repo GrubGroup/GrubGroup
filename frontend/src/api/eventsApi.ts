@@ -1,8 +1,8 @@
 import type { EventRecord } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { FEATURED_EVENT, PAST_EVENTS, UPCOMING_EVENTS } from './mock/events.mock'
-import { MOCK_MEMBER_NAMES } from './mock/session.mock'
+import { FEATURED_EVENT, PAST_EVENTS, UPCOMING_EVENTS } from './mock/eventsMock'
+import { MOCK_MEMBER_NAMES } from './mock/sessionMock'
 
 // Mock attendees for the demo, derived from the featured event's roster so the
 // "Who's going" list has real names offline. Live events carry their own

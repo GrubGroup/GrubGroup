@@ -15,8 +15,8 @@ import {
   SESSION_STARTED_BY,
   MOCK_GROUP_MESSAGES,
   MOCK_GROUP_MESSAGES_AFTER,
-} from '@/api/mock/groupChat.mock'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+} from '@/api/mock/groupChatMock'
+import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'

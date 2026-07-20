@@ -1,7 +1,7 @@
 import type { MenuItem, Restaurant } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_MENUS, MOCK_RESTAURANTS } from './mock/restaurants.mock'
+import { MOCK_MENUS, MOCK_RESTAURANTS } from './mock/restaurantsMock'
 
 export async function fetchRestaurants(): Promise<Restaurant[]> {
   if (USE_MOCK) return structuredClone(MOCK_RESTAURANTS)

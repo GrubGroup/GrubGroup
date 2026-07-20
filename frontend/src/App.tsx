@@ -15,7 +15,7 @@ import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useSession } from '@/lib/authClient'
-import { fetchProfile } from '@/api/profile.api'
+import { fetchProfile } from '@/api/profileApi'
 import { USE_MOCK } from '@/lib/env'
 import type { SessionUser } from '@/stores/authStore'
 

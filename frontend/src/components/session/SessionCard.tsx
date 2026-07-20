@@ -1,7 +1,7 @@
 import type { SessionMember } from '@/types'
 import { Avatar, Button, Icon } from '@/components/ui'
 import { SegmentedProgress } from './SegmentedProgress'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
 
 type SessionCardState = 'not-joined' | 'continue' | 'waiting' | 'complete'

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, ConversationTurn, ExtractedSignals, NotedPref } from '@/types'
 import { openingAgentMessage } from '@/constants/agentChat'
-import { analyzeTurn } from '@/api/session.api'
+import { analyzeTurn } from '@/api/sessionApi'
 
 interface ChatState {
   messages: ChatMessage[]

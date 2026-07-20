@@ -1,7 +1,7 @@
 import type { Profile } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_PROFILE } from './mock/profile.mock'
+import { MOCK_PROFILE } from './mock/profileMock'
 
 // Swap boundary: stores import from here, never from mock/* directly.
 // Flip VITE_USE_MOCK=false to hit the real gateway with no store changes.

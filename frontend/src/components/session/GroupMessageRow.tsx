@@ -1,6 +1,6 @@
 import type { GroupMessage } from '@/types'
 import { Avatar } from '@/components/ui'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
 
 export interface GroupMessageRowProps {

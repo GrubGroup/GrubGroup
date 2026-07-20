@@ -1,8 +1,8 @@
 import type { Group, GroupDetail, GroupMember } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_GROUPS } from './mock/groups.mock'
-import { MOCK_MEMBER_NAMES } from './mock/session.mock'
+import { MOCK_GROUPS } from './mock/groupsMock'
+import { MOCK_MEMBER_NAMES } from './mock/sessionMock'
 
 // The gateway returns groups the caller belongs to, each with its latest message
 // (last_message) for the sidebar preview. Emoji is UI-only, so we backfill it

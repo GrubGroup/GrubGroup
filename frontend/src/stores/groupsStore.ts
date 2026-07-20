@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import { isAxiosError } from 'axios'
 import type { Group } from '@/types'
 import { USE_MOCK } from '@/lib/env'
-import { MOCK_GROUPS } from '@/api/mock/groups.mock'
-import { fetchGroups, createGroup, addGroupMember, removeGroupMember } from '@/api/groups.api'
+import { MOCK_GROUPS } from '@/api/mock/groupsMock'
+import { fetchGroups, createGroup, addGroupMember, removeGroupMember } from '@/api/groupsApi'
 
 // The user's group list. In live mode it's loaded from the gateway (each group
 // carries its latest DB message as last_message, for the sidebar preview); in

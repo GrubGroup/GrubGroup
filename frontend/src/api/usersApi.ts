@@ -1,7 +1,7 @@
 import type { UserSearchResult } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_USERS } from './mock/users.mock'
+import { MOCK_USERS } from './mock/usersMock'
 
 // Match the gateway: don't search on <2-char fragments.
 const MIN_QUERY_LENGTH = 2

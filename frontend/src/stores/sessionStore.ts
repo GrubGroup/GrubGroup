@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
-import { fetchRecommendation, fetchSession } from '@/api/session.api'
-import { MOCK_RECOMMENDATION } from '@/api/mock/session.mock'
+import { fetchRecommendation, fetchSession } from '@/api/sessionApi'
+import { MOCK_RECOMMENDATION } from '@/api/mock/sessionMock'
 
 interface SessionState {
   session: Session | null

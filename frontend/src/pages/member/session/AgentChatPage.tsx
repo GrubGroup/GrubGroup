@@ -14,7 +14,7 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useSocket } from '@/hooks/useSocket'
-import { setReady } from '@/api/session.api'
+import { setReady } from '@/api/sessionApi'
 import { chipsForMissing } from '@/constants/agentChat'
 
 export function AgentChatPage() {

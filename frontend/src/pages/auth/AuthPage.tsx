@@ -4,8 +4,8 @@ import { BrandPanel } from '@/components/layout/BrandPanel'
 import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { signIn, signUp } from '@/lib/authClient'
-import { fetchProfile } from '@/api/profile.api'
-import { fetchAuthMethods } from '@/api/auth.api'
+import { fetchProfile } from '@/api/profileApi'
+import { fetchAuthMethods } from '@/api/authApi'
 
 export interface AuthPageProps {
   mode: 'signin' | 'signup'

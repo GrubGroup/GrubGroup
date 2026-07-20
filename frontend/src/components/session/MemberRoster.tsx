@@ -1,6 +1,6 @@
 import type { SessionMember } from '@/types'
 import { Avatar, Icon } from '@/components/ui'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
 
 export interface MemberRosterProps {

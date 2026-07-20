@@ -9,7 +9,7 @@ import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { USE_MOCK } from '@/lib/env'
-import { closeSession } from '@/api/session.api'
+import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
   const go = useNavStore((s) => s.go)

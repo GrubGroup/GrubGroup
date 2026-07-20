@@ -1,7 +1,7 @@
 import type { User } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_USER } from './mock/profile.mock'
+import { MOCK_USER } from './mock/profileMock'
 
 // Swap boundary for the caller's own User account (identity fields shown on the
 // profile header). Auth credentials (email/password) are owned by Better Auth

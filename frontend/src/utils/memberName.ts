@@ -1,5 +1,5 @@
 import type { SessionMember } from '@/types'
-import { MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 
 // Single source of truth for turning a user id into a display name across the
 // session UI. Precedence: the live/mock roster's `display_name` (what

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Avatar, Button, Icon, Input, Modal, Spinner } from '@/components/ui'
-import { searchUsers } from '@/api/users.api'
+import { searchUsers } from '@/api/usersApi'
 import { cn } from '@/utils/cn'
 import type { UserSearchResult } from '@/types'
 

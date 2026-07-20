@@ -222,8 +222,8 @@ The feature structure below **exists and is populated** — build new work into 
 ```
 src/
 ├── api/            # HTTP calls to the gateway via axios
-│   ├── session.api.ts  events.api.ts  restaurants.api.ts  profile.api.ts   # live modules
-│   └── mock/           # mock modules (session, restaurants, profile, groupChat, chatScript, groups, events)
+│   ├── sessionApi.ts  eventsApi.ts  restaurantsApi.ts  profileApi.ts   # live modules (camelCase)
+│   └── mock/           # mock modules (sessionMock, restaurantsMock, profileMock, groupChatMock, groupsMock, eventsMock, usersMock, agentAnalyzeMock)
 ├── pages/          # Full screens (navStore-driven; no react-router)
 │   ├── auth/           # AuthPage (Better Auth sign-in/up + Google)
 │   └── member/         # EmptyGroupsPage, GroupChatPage, EventsPage
