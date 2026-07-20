@@ -1,7 +1,24 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
-import { fetchRecommendation, fetchSession } from '@/api/sessionApi'
+import { fetchRecommendation, fetchSession, generateRecommendation } from '@/api/sessionApi'
 import { MOCK_RECOMMENDATION } from '@/api/mock/sessionMock'
+import { USE_MOCK } from '@/lib/env'
+import { useAuthStore } from '@/stores/authStore'
+
+// Module-level guard so the timer-expiry generation fires at most once even if
+// both the group-chat card timer and the agent-chat top-bar timer were to expire.
+let expiryGenerating = false
+
+// The signed-in user's name fields, so locally-built roster rows for the current
+// user carry a real name (the gateway's create response doesn't include one, and
+// join/progress rows would otherwise be nameless → "User N"/"U1" avatars).
+// Read lazily via getState() — authStore does not import sessionStore, so there's
+// no cycle. Returns undefined name fields when signed out (mock defaults apply).
+function selfNameFields(userId: number): Pick<SessionMember, 'display_name' | 'username'> {
+  const user = useAuthStore.getState().user
+  if (!user || user.id !== userId) return {}
+  return { display_name: user.display_name ?? null, username: user.username ?? null }
+}
 
 interface SessionState {
   session: Session | null
@@ -25,6 +42,10 @@ interface SessionState {
   currentUserId: number
 
   load: (sessionId: number, currentUserId: number) => Promise<void>
+  // Merge the gateway's name-carrying roster into `members` WITHOUT resetting
+  // phase/startedAt (unlike load). Used to give the host real member names right
+  // after they create a session (their local rows are otherwise nameless).
+  hydrateMembers: (sessionId: number) => Promise<void>
   // Adopt a session object directly (e.g. the one the host just created via the
   // modal), without a round-trip. Seeds activeSessionId + startedAt.
   setSession: (session: Session, currentUserId?: number) => void
@@ -47,6 +68,10 @@ interface SessionState {
     items: Recommendation['items']
   }) => void
   loadRecommendation: () => Promise<void>
+  // Timer-expiry fallback: the HOST client alone generates results (force_partial)
+  // if the countdown runs out before everyone finishes. No-op for non-hosts or
+  // when results already exist. Guarded against concurrent/repeat calls.
+  triggerExpiryGeneration: () => Promise<void>
   // MOCK-ONLY demo helper: flip every remaining member to done and adopt the mock
   // recommendation, standing in for the gateway's server-side auto-complete (which
   // isn't reachable offline, where the socket is disabled).
@@ -86,13 +111,53 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
+  hydrateMembers: async (sessionId) => {
+    const { members: fetched } = await fetchSession(sessionId)
+    set((s) => {
+      // Merge fetched name/status rows over the local roster, preserving any
+      // local status flip that's newer than the fetch (a member who finished
+      // between create and hydrate). Fetched rows are the source of names.
+      const byId = new Map(s.members.map((m) => [m.user_id, m]))
+      const merged = fetched.map((f) => {
+        const local = byId.get(f.user_id)
+        return { ...f, status: local?.status || f.status }
+      })
+      // Keep any local-only rows the fetch doesn't know about yet.
+      for (const local of s.members) {
+        if (!merged.some((m) => m.user_id === local.user_id)) merged.push(local)
+      }
+      return { members: merged, serverTotal: Math.max(s.serverTotal, merged.length) }
+    })
+  },
+
   setSession: (session, currentUserId) =>
-    set((s) => ({
-      session,
-      activeSessionId: session.id,
-      startedAt: session.created_at ?? new Date().toISOString(),
-      currentUserId: currentUserId ?? s.currentUserId,
-    })),
+    set((s) => {
+      // Seed the host (the current user, who just created the session) into the
+      // roster with their real name, so the roster is never empty/nameless right
+      // after create — hydrateMembers then merges in the rest of the group.
+      const uid = currentUserId ?? s.currentUserId
+      const hasSelf = s.members.some((m) => m.user_id === uid)
+      const members = hasSelf
+        ? s.members
+        : [
+            ...s.members,
+            {
+              session_id: session.id,
+              user_id: uid,
+              status: false,
+              joined_at: new Date().toISOString(),
+              ...selfNameFields(uid),
+            },
+          ]
+      return {
+        session,
+        members,
+        serverTotal: Math.max(s.serverTotal, members.length),
+        activeSessionId: session.id,
+        startedAt: session.created_at ?? new Date().toISOString(),
+        currentUserId: uid,
+      }
+    }),
 
   setStartedAt: (at) => set({ startedAt: at }),
 
@@ -110,6 +175,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             user_id: currentUserId,
             status: false,
             joined_at: new Date().toISOString(),
+            ...selfNameFields(currentUserId),
           },
         ]
     set({ members: next, phase: 'waiting' })
@@ -127,7 +193,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((s) => {
       const known = s.members.some((m) => m.user_id === userId)
       const members = known
-        ? s.members.map((m) => (m.user_id === userId ? { ...m, status } : m))
+        ? s.members.map((m) =>
+            m.user_id === userId
+              ? // Backfill the current user's name if this row was created bare
+                // (e.g. by an earlier progress echo) so its avatar isn't "User N".
+                { ...m, status, ...(m.display_name || m.username ? {} : selfNameFields(userId)) }
+              : m,
+          )
         : [
             ...s.members,
             {
@@ -135,6 +207,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               user_id: userId,
               status,
               joined_at: new Date().toISOString(),
+              ...selfNameFields(userId),
             },
           ]
       // Trust the server's authoritative total so the denominator is right even
@@ -160,6 +233,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (id == null) return
     const recommendation = await fetchRecommendation(id)
     set({ recommendation, phase: 'picks' })
+  },
+
+  triggerExpiryGeneration: async () => {
+    const { activeSessionId, recommendation } = get()
+    // Only the host generates; skip if results already exist or none in progress.
+    if (activeSessionId == null || recommendation != null || !get().isHost()) return
+    if (expiryGenerating) return
+    expiryGenerating = true
+    try {
+      const rec = await generateRecommendation(activeSessionId, { forcePartial: true })
+      // Live: the gateway broadcasts session:picks, so results arrive via the
+      // socket. Offline (mock, socket null): adopt the rec so Results appears.
+      if (USE_MOCK) {
+        get().receivePicks({
+          recommendationId: rec.id,
+          sessionId: activeSessionId,
+          items: rec.items,
+        })
+      }
+    } catch {
+      // Generation failure (e.g. 409 not-ready) is surfaced elsewhere; allow a
+      // later retry rather than latching the guard.
+      expiryGenerating = false
+    }
   },
 
   simulateAutoComplete: () => {

@@ -283,7 +283,7 @@ const getSession = async (req, res, next) => {
             user_id: true,
             status: true,
             joined_at: true,
-            user: { select: { display_name: true } },
+            user: { select: { display_name: true, username: true } },
           },
         },
       },
@@ -298,6 +298,7 @@ const getSession = async (req, res, next) => {
     const members = session.members.map(({ user, user_id, status, joined_at }) => ({
       user_id,
       display_name: user?.display_name ?? null,
+      username: user?.username ?? null,
       status,
       joined_at,
     }));
@@ -359,7 +360,7 @@ const listMembers = async (req, res, next) => {
         user_id: true,
         status: true,
         joined_at: true,
-        user: { select: { display_name: true } },
+        user: { select: { display_name: true, username: true } },
       },
       orderBy: { joined_at: 'asc' },
     });
@@ -370,6 +371,7 @@ const listMembers = async (req, res, next) => {
     const shaped = members.map(({ user, user_id, status, joined_at }) => ({
       user_id,
       display_name: user?.display_name ?? null,
+      username: user?.username ?? null,
       status,
       joined_at,
     }));

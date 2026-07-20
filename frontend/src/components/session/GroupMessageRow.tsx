@@ -1,4 +1,4 @@
-import type { GroupMessage } from '@/types'
+import type { GroupMessage, SessionMember } from '@/types'
 import { Avatar } from '@/components/ui'
 import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
@@ -6,6 +6,8 @@ import { nameForMember } from '@/utils/memberName'
 export interface GroupMessageRowProps {
   message: GroupMessage
   currentUserId: number
+  /** Session roster, so a chat author's name resolves to their real name. */
+  members?: SessionMember[]
 }
 
 // Format an ISO timestamp as a short local time, e.g. "11:42 AM".
@@ -15,7 +17,7 @@ function formatTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps) {
+export function GroupMessageRow({ message, currentUserId, members }: GroupMessageRowProps) {
   // Restaurant recommendations no longer appear in the group chat — they live in
   // the session/results flow only. Swallow any legacy SESSION_BLOCK row (its text
   // is empty, so falling through would render a blank bubble).
@@ -36,7 +38,7 @@ export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps
   }
 
   const isOwn = message.userId === currentUserId
-  const name = message.name ?? nameForMember(message.userId)
+  const name = message.name ?? nameForMember(message.userId, members)
   const time = formatTime(message.at)
 
   if (isOwn) {

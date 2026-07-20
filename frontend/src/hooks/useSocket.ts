@@ -50,6 +50,11 @@ export function useSocket(groupId: number) {
         // The host already set the session locally via the modal; others load it.
         if (store.activeSessionId !== payload.sessionId) {
           void store.load(payload.sessionId, currentUserId ?? store.currentUserId)
+        } else {
+          // Host path: the session is already adopted, so load() is skipped — but
+          // the create response carried no member names. Hydrate the roster so the
+          // host's own avatar/roster shows real names instead of "User N".
+          void store.hydrateMembers(payload.sessionId)
         }
         if (payload.at) store.setStartedAt(payload.at)
       }

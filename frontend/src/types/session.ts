@@ -18,11 +18,13 @@ export interface Session {
 
 export interface SessionMember {
   // The gateway's getSession/listMembers reads DON'T return session_id (it's
-  // implied by the route), but they DO return the member's display_name. Model
-  // the actual wire shape: session_id optional, display_name present.
+  // implied by the route), but they DO return the member's display_name and
+  // username. Model the actual wire shape: session_id optional, name fields
+  // present (username is the fallback when display_name is null).
   session_id?: number
   user_id: number
   display_name?: string | null
+  username?: string | null
   status: boolean // true = done sharing preferences
   joined_at: string
 }

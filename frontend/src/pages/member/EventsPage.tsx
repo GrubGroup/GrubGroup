@@ -3,7 +3,8 @@ import type { EventRecord } from '@/types'
 import { Avatar, Badge, Icon } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { FEATURED_EVENT } from '@/api/mock/eventsMock'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
+import { nameForMember } from '@/utils/memberName'
 import { useEventListStore } from '@/stores/eventListStore'
 
 // A cuisine/dietary emoji is not on the API row, so pick a stable default.
@@ -194,18 +195,20 @@ function FeaturedFallback() {
             <span className="text-xs text-text-muted">{FEATURED_EVENT.confirmed} confirmed</span>
           </div>
           <div className="flex flex-col">
-            {FEATURED_EVENT.attendees.map((a) => (
+            {FEATURED_EVENT.attendees.map((a) => {
+              const name = nameForMember(a.userId)
+              return (
               <div
                 key={a.userId}
                 className="flex items-center gap-3 border-b border-border py-2.5 last:border-b-0"
               >
                 <Avatar
-                  name={MOCK_MEMBER_NAMES[a.userId] ?? '?'}
+                  name={name}
                   size="sm"
                   colorClass={MOCK_MEMBER_COLORS[a.userId]}
                 />
                 <span className="flex-1 text-sm text-text">
-                  {MOCK_MEMBER_NAMES[a.userId] ?? '?'}
+                  {name}
                 </span>
                 <span
                   className={
@@ -218,7 +221,8 @@ function FeaturedFallback() {
                   {a.status}
                 </span>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>

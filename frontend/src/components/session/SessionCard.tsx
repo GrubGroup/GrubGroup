@@ -1,6 +1,7 @@
 import type { SessionMember } from '@/types'
 import { Avatar, Button, Icon } from '@/components/ui'
 import { SegmentedProgress } from './SegmentedProgress'
+import { SessionTimer } from './SessionTimer'
 import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
 
@@ -11,22 +12,34 @@ export interface SessionCardProps {
   members: SessionMember[]
   readyCount: number
   total: number
+  // Countdown anchor + length (from the session), so the card shows the same
+  // live timer as the agent-chat top bar while a session is in progress.
+  startedAt?: string | null
+  minutes?: number
   onJoin?: () => void
   onContinue?: () => void
   onViewResults?: () => void
+  // Fired when the countdown reaches zero (host-only generation, centralized).
+  onExpire?: () => void
+  // Re-open the (preserved) conversation to review answers — shown when waiting.
+  onReview?: () => void
 }
 
 // The inline "session in progress" card shown inside the group chat. Its CTA
 // changes with state: Join (not yet joined) / Continue (joined, in progress) /
-// waiting label (user done).
+// Review answers + waiting label (user done) / Results (complete).
 export function SessionCard({
   state,
   members,
   readyCount,
   total,
+  startedAt,
+  minutes,
   onJoin,
   onContinue,
   onViewResults,
+  onExpire,
+  onReview,
 }: SessionCardProps) {
   const complete = state === 'complete'
   return (
@@ -41,6 +54,10 @@ export function SessionCard({
                 ? 'Session complete'
                 : 'Session in progress'}
           </span>
+          {/* Live countdown while the session runs (not once complete). */}
+          {!complete && minutes != null && (
+            <SessionTimer startedAt={startedAt ?? null} minutes={minutes} onExpire={onExpire} />
+          )}
         </div>
         {state === 'not-joined' && (
           <Button size="sm" variant="primary" onClick={onJoin}>
@@ -50,6 +67,11 @@ export function SessionCard({
         {state === 'continue' && (
           <Button size="sm" variant="accent" onClick={onContinue}>
             Continue
+          </Button>
+        )}
+        {state === 'waiting' && (
+          <Button size="sm" variant="secondary" onClick={onReview}>
+            Review your answers
           </Button>
         )}
         {complete && (

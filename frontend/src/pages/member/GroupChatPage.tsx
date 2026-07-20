@@ -52,6 +52,9 @@ export function GroupChatPage() {
   const join = useSessionStore((s) => s.join)
   const loadSession = useSessionStore((s) => s.load)
   const setSession = useSessionStore((s) => s.setSession)
+  const hydrateMembers = useSessionStore((s) => s.hydrateMembers)
+  const startedAt = useSessionStore((s) => s.startedAt)
+  const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
   // Live group chat: connect + join the selected room (no-op in mock mode).
@@ -145,6 +148,10 @@ export function GroupChatPage() {
     // Live: the card appears via the server's session:start echo. Mock: the
     // socket is null, so drop the card inline locally.
     if (USE_MOCK) receiveSessionStart(groupId)
+    // Live: the create response has no member names, and the host skips the
+    // session:start load() — so fetch the name-carrying roster now, else the
+    // host's own avatar/roster shows "User N"/"U1".
+    else void hydrateMembers(session.id)
     setHostModalOpen(false)
   }
 
@@ -220,7 +227,7 @@ export function GroupChatPage() {
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
           {/* Messages that existed before the session started */}
           {(sessionStartIndex === null ? messages : messages.slice(0, sessionStartIndex)).map((m) => (
-            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
+            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} members={members} />
           ))}
 
           {/* Session-started divider + card — inline at the point the user started it */}
@@ -228,7 +235,8 @@ export function GroupChatPage() {
             <>
               <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
                 <span className="h-px flex-1 bg-border" />
-                {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
+                {nameForMember(sessionObj?.host_user_id ?? SESSION_STARTED_BY, members)} started a
+                session
                 <span className="h-px flex-1 bg-border" />
               </div>
               <SessionCard
@@ -236,21 +244,25 @@ export function GroupChatPage() {
                 members={members}
                 readyCount={cardState === 'complete' ? total : doneCount}
                 total={total}
+                startedAt={startedAt}
+                minutes={sessionObj?.time_limit}
                 onJoin={handleJoin}
                 onContinue={() => go('agent-chat')}
                 onViewResults={() => go('top-picks')}
+                onExpire={() => void triggerExpiryGeneration()}
+                onReview={() => go('agent-chat-done')}
               />
 
               {/* Messages that arrived after the session started */}
               {messages.slice(sessionStartIndex).map((m) => (
-                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
+                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} members={members} />
               ))}
             </>
           )}
         </div>
 
         {/* Live "… is typing" bubble, pinned just above the composer */}
-        <TypingIndicator typers={typers} />
+        <TypingIndicator typers={typers} members={members} />
 
         {/* Composer — same reusable message bar as the agent chat */}
         <VoiceComposer
