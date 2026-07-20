@@ -171,15 +171,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sending: false,
       }))
     } catch {
-      // Graceful degradation: keep prior signals, acknowledge the turn so the
-      // conversation never dead-ends on a transient LLM/network failure.
-      const fallback: ChatMessage = {
+      // The analyze round-trip failed (network / gateway / ai_service / LLM). Keep
+      // the prior signals untouched — the answer wasn't processed — and surface an
+      // HONEST error rather than a fake agent acknowledgement. A `system` line
+      // renders as a distinct centered notice (ChatMessage), so it's visibly an
+      // error, NOT the agent moving on; and system lines are excluded from
+      // toConversationHistory, so a retry re-asks the SAME question cleanly instead
+      // of appearing to have been answered. Composer re-enables (sending:false).
+      const errorNotice: ChatMessage = {
         id: nextId(),
-        role: 'agent',
-        text: "Got that — anything else you'd like the group to know?",
+        role: 'system',
+        text: "Couldn't reach your food agent — check your connection and try again.",
         at: new Date().toISOString(),
       }
-      set((s) => ({ messages: [...s.messages, fallback], sending: false }))
+      set((s) => ({ messages: [...s.messages, errorNotice], sending: false }))
     }
   },
 }))
