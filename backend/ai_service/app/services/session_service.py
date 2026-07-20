@@ -7,8 +7,56 @@ from typing import Any
 from app.ai.agents.conversation_agent import analyze_turn
 from app.crud import session as session_crud
 from app.db.session import async_session_factory
-from app.schemas.ai import AnalyzeRequest
+from app.models.qa import Qa
+from app.schemas.ai import AnalyzeRequest, ExtractedSignals
 from app.services import profile_service
+
+
+def _merge_prior_qa(
+    request_signals: ExtractedSignals | None, qa: Qa | None
+) -> ExtractedSignals | None:
+    """Merge the caller's ALREADY-STORED Qa row UNDER the request's signals.
+
+    The frontend starts each session's ``current_signals`` empty, so without this
+    the conversational agent never sees what the caller already set (most visibly
+    the HOST's modal-chosen location, seeded onto their Qa row) and re-asks for it.
+    We seed from the stored Qa row, then let the request's non-empty fields win —
+    so an in-conversation correction still overrides the stored value, while
+    fields the empty client body left null (location, budget, cuisines) are
+    back-filled from the row. ``occasion`` is deliberately NOT surfaced: it's a
+    pre-session-modal field the chat never touches.
+    """
+    if qa is None:
+        return request_signals
+    req = request_signals or ExtractedSignals()
+
+    # Base = the stored Qa row mapped onto ExtractedSignals fields (names line up;
+    # Qa.location_address -> location_label for the frontend geocode round-trip).
+    merged = ExtractedSignals(
+        # Carry durable-shaped fields the request already holds (dietary lives on
+        # Profile, not Qa, so it only comes from the request).
+        dietary_restrictions=list(req.dietary_restrictions),
+        preferred_cuisines=(
+            req.preferred_cuisines or list(qa.preferred_cuisines or [])
+        ),
+        disliked_cuisines=(
+            req.disliked_cuisines or list(qa.disliked_cuisines or [])
+        ),
+        budget_min=req.budget_min if req.budget_min is not None else qa.budget_min,
+        budget_max=req.budget_max if req.budget_max is not None else qa.budget_max,
+        location_mode=req.location_mode or qa.location_mode,  # type: ignore[arg-type]
+        location_label=req.location_label or qa.location_address,
+        location_lat=(
+            req.location_lat if req.location_lat is not None else qa.location_lat
+        ),
+        location_lon=(
+            req.location_lon if req.location_lon is not None else qa.location_lon
+        ),
+        radius_miles=(
+            req.radius_miles if req.radius_miles is not None else qa.radius_miles
+        ),
+    )
+    return merged
 
 
 async def analyze_member_turn(
@@ -44,6 +92,7 @@ async def analyze_member_turn(
     # closer to you?").
     is_host = False
     host_location_label: str | None = None
+    current_signals = payload.current_signals
     if session_id is not None:
         async with async_session_factory() as db:
             session = await session_crud.get_session(db, session_id)
@@ -56,10 +105,18 @@ async def analyze_member_turn(
                     )
                     if host_qa is not None:
                         host_location_label = host_qa.location_address
+            # Seed the agent with what the CALLER already set this session (their
+            # own Qa row). The frontend sends empty current_signals each session,
+            # so without this the host's modal-set location (and any prior answers)
+            # are invisible and get re-asked. Request fields still win over stored.
+            own_qa = await session_crud.get_qa_for_user(
+                db, session_id, payload.user_id
+            )
+            current_signals = _merge_prior_qa(payload.current_signals, own_qa)
 
     result = await analyze_turn(
         payload.message,
-        current_signals=payload.current_signals,
+        current_signals=current_signals,
         message_source=payload.message_source,
         conversation_history=payload.conversation_history,
         is_host=is_host,

@@ -116,6 +116,40 @@ const getRecommendations = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a session member.' });
     }
 
+    // force_partial is the TIMEOUT / expiry path: the session's clock ran out, so
+    // it completes now regardless of who finished. Force-finish every remaining
+    // member and broadcast an all-done completion so every client's card flips to
+    // complete (matching "on timeout, allDone should be true"), then generate over
+    // whoever actually answered.
+    if (forcePartial) {
+      await prisma.sessionMember.updateMany({
+        where: { session_id: sessionId, status: false },
+        data: { status: true },
+      });
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: {
+          group_id: true,
+          closed_at: true,
+          members: { select: { user_id: true } },
+        },
+      });
+      if (session?.group_id != null) {
+        const total = session.members.length;
+        broadcastToGroup(req, session.group_id, 'session:member_done', {
+          groupId: session.group_id,
+          sessionId,
+          userId: req.user.id,
+          status: true,
+          doneCount: total,
+          total,
+          allDone: true,
+          closedAt: session.closed_at ?? null,
+          at: new Date().toISOString(),
+        });
+      }
+    }
+
     const recommendation = await fetchRecommendations(sessionId, { forcePartial });
 
     // Announce the ready picks to the group room (best-effort) so every client's

@@ -36,6 +36,11 @@ interface SessionState {
   // (e.g. 1/6, not 1/1). 0 = unknown → fall back to members.length.
   serverTotal: number
   recommendation: Recommendation | null
+  // Results-fetch UI state so the results screen can tell loading / empty / error
+  // apart instead of a single permanent "Loading picks…". `recommendationError`
+  // is set when the read-back fails on a session that should already have results.
+  recommendationLoading: boolean
+  recommendationError: boolean
   phase: SessionPhase
   votes: Record<number, number[]> // restaurantId -> userIds who voted
   chosenRestaurantId: number | null
@@ -93,6 +98,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   members: [],
   serverTotal: 0,
   recommendation: null,
+  recommendationLoading: false,
+  recommendationError: false,
   phase: 'joining',
   votes: {},
   chosenRestaurantId: null,
@@ -231,8 +238,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   loadRecommendation: async () => {
     const id = get().activeSessionId ?? get().session?.id
     if (id == null) return
-    const recommendation = await fetchRecommendation(id)
-    set({ recommendation, phase: 'picks' })
+    set({ recommendationLoading: true, recommendationError: false })
+    try {
+      const recommendation = await fetchRecommendation(id)
+      set({ recommendation, phase: 'picks', recommendationLoading: false })
+    } catch {
+      // The read-back failed — most often a 404 because generation hasn't landed
+      // yet (or the session timed out with nothing to generate). Surface it as a
+      // retryable error state rather than throwing (which left the page stuck on a
+      // permanent "Loading picks…" with no recovery). A later session:picks socket
+      // delivery still populates `recommendation` via receivePicks.
+      set({ recommendationLoading: false, recommendationError: true })
+    }
   },
 
   triggerExpiryGeneration: async () => {

@@ -40,7 +40,7 @@ export function openingAgentMessage(name?: string | null): string {
 export const AGENT_CHIPS: Record<AgentSignalName, string[]> = {
   preferred_cuisines: ['Asian food', 'Italian', 'A steakhouse', 'Anything works'],
   disliked_cuisines: ['No steakhouses', 'Nothing fancy', 'No BBQ', 'Nothing to avoid'],
-  budget: ['$15–20pp', 'Under $20', '$20–40', "I'm flexible"],
+  budget: ['$15–20', 'Under $20', '$20–40', "I'm flexible"],
   location: ["Near the Mission", "Downtown's fine", 'By the office', 'Wherever works'],
 }
 
