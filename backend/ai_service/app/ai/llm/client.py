@@ -11,24 +11,26 @@ from app.core.config import settings
 
 @lru_cache(maxsize=1)
 def get_llm_client() -> AsyncOpenAI:
-    """Build the active LLM client — Salesforce internal gateway (OpenAI-compatible).
+    """Build the active LLM client — OpenRouter/DeepSeek (OpenAI-compatible).
 
-    Uses the corporate CA bundle from NODE_EXTRA_CA_CERTS when set, otherwise
-    falls back to the default certifi verification (verify=True).
+    Local run routes LLM calls through OpenRouter (the only creds present in
+    .env: OPENROUTER_API_KEY / OPENROUTER_BASE_URL). settings.llm_model falls back
+    to LLM_MODEL (deepseek/deepseek-chat) when SALESFORCE_LLM_MODEL is unset.
     """
     return AsyncOpenAI(
-        api_key=settings.salesforce_api_key,
-        base_url=settings.salesforce_base_url,
-        http_client=httpx.AsyncClient(
-            verify=settings.node_extra_ca_certs or True,
-        ),
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
     )
 
-    # --- DEPLOYMENT (OpenRouter/DeepSeek): comment out the Salesforce client above
-    # --- and uncomment this block to route LLM calls through OpenRouter in prod.
+    # --- SALESFORCE internal gateway: comment out the OpenRouter client above and
+    # --- uncomment this block to route LLM calls through the Salesforce gateway.
+    # --- Uses the corporate CA bundle from NODE_EXTRA_CA_CERTS when set.
     # return AsyncOpenAI(
-    #     api_key=settings.openrouter_api_key,
-    #     base_url=settings.openrouter_base_url,
+    #     api_key=settings.salesforce_api_key,
+    #     base_url=settings.salesforce_base_url,
+    #     http_client=httpx.AsyncClient(
+    #         verify=settings.node_extra_ca_certs or True,
+    #     ),
     # )
 
 
