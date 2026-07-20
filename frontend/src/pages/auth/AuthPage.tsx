@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Button, Input } from '@/components/ui'
 import { BrandPanel } from '@/components/layout/BrandPanel'
+import { AppSplash } from '@/components/layout/AppSplash'
 import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
+import { useAuthStore } from '@/stores/authStore'
 import { signIn, signUp } from '@/lib/authClient'
 import { fetchProfile } from '@/api/profile.api'
 import { fetchAuthMethods } from '@/api/auth.api'
+import type { SessionUser } from '@/stores/authStore'
 
 export interface AuthPageProps {
   mode: 'signin' | 'signup'
@@ -24,6 +27,7 @@ export function AuthPage({ mode }: AuthPageProps) {
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
   const loadGroups = useGroupsStore((s) => s.load)
+  const setSessionUser = useAuthStore((s) => s.setSessionUser)
   const isSignup = mode === 'signup'
 
   const [fullName, setFullName] = useState('')
@@ -34,6 +38,10 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // After credentials succeed, the async forward (profile + groups fetch) runs
+  // while we navigate into the app. Show the branded splash for that window so
+  // the sign-in form never lingers behind the destination screen.
+  const [forwarding, setForwarding] = useState(false)
   // Set when the entered email belongs to a Google-only account — we stop the
   // password attempt and emphasize the Google button instead.
   const [googleHint, setGoogleHint] = useState(false)
@@ -83,6 +91,7 @@ export function AuthPage({ mode }: AuthPageProps) {
     }
 
     let authError
+    let authData
     if (isSignup) {
       if (!email || !password || !username) {
         setError('Username, email, and password are required.')
@@ -90,7 +99,7 @@ export function AuthPage({ mode }: AuthPageProps) {
         return
       }
       // Better Auth client methods resolve with { data, error } (no throw).
-      ;({ error: authError } = await signUp.email({
+      ;({ data: authData, error: authError } = await signUp.email({
         email,
         password,
         name: fullName,
@@ -103,7 +112,7 @@ export function AuthPage({ mode }: AuthPageProps) {
         return
       }
       // Detect which credential the user typed: an "@" means it's an email.
-      ;({ error: authError } = identifier.includes('@')
+      ;({ data: authData, error: authError } = identifier.includes('@')
         ? await signIn.email({ email: identifier, password })
         : await signIn.username({ username: identifier, password }))
     }
@@ -113,6 +122,17 @@ export function AuthPage({ mode }: AuthPageProps) {
       setError(authError.message ?? 'Something went wrong. Please try again.')
       return
     }
+
+    // Sync the auth store from the sign-in response *now*, before navigating.
+    // App's useSession effect only mirrors the session on its next refetch, so
+    // without this the auth guard would briefly see user===null on the
+    // destination screen and bounce back to the sign-in form (a visible flash).
+    const authedUser = (authData as { user?: SessionUser } | null)?.user
+    if (authedUser) setSessionUser(authedUser)
+
+    // Hold the branded splash while the profile/groups fetch resolves so the
+    // form doesn't sit behind the app screen mid-forward.
+    setForwarding(true)
     await onAuthed()
   }
 
@@ -126,6 +146,10 @@ export function AuthPage({ mode }: AuthPageProps) {
     })
     if (authError) setError('Google sign-in failed. Please try again.')
   }
+
+  // Credentials accepted — keep the branded loader up through the forward so the
+  // sign-in form never flashes behind the app screen we're navigating to.
+  if (forwarding) return <AppSplash />
 
   return (
     <div className="flex h-screen bg-surface-raised">
