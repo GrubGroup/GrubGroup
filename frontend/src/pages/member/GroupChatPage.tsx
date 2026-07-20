@@ -11,7 +11,11 @@ import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { TypingIndicator } from '@/components/session/TypingIndicator'
 import { cn } from '@/utils/cn'
 import { USE_MOCK } from '@/lib/env'
-import { SESSION_STARTED_BY } from '@/api/mock/groupChat.mock'
+import {
+  SESSION_STARTED_BY,
+  MOCK_GROUP_MESSAGES,
+  MOCK_GROUP_MESSAGES_AFTER,
+} from '@/api/mock/groupChat.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { nameForMember } from '@/utils/memberName'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -51,6 +55,9 @@ export function GroupChatPage() {
   const messages = useGroupChatStore(selectGroupMessages(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
+  const receiveHistory = useGroupChatStore((s) => s.receiveHistory)
+  const receiveMessage = useGroupChatStore((s) => s.receiveMessage)
+  const receiveSessionStart = useGroupChatStore((s) => s.receiveSessionStart)
   const setTyping = useGroupChatStore((s) => s.setTyping)
   const typers = useGroupChatStore(selectTypers(groupId))
 
@@ -76,6 +83,30 @@ export function GroupChatPage() {
     if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
   }, [members.length, loadSession, currentUserId])
 
+  useEffect(() => {
+    // Mock demo bootstrap: the socket is disabled offline, so nothing seeds the
+    // group chat or fires receiveSessionStart (which normally arrives from the
+    // gateway). Seed the demo backlog once and place the session card inline —
+    // Sophie's "started a session" — so the whole Join → session → results flow
+    // is walkable without a backend. Live mode gets all of this from the socket.
+    if (!USE_MOCK) return
+    if (messages.length > 0) return
+    const toWire = (m: { id: string; userId: number; text: string }) => ({
+      id: m.id,
+      groupId,
+      userId: m.userId,
+      name: MOCK_MEMBER_NAMES[m.userId] ?? null,
+      text: m.text,
+      at: new Date().toISOString(),
+      type: 'text' as const,
+    })
+    // Seed the pre-session backlog, drop the session card at that point, then
+    // append the post-start messages so the card lands inline between them.
+    receiveHistory(groupId, MOCK_GROUP_MESSAGES.map(toWire))
+    receiveSessionStart(groupId)
+    MOCK_GROUP_MESSAGES_AFTER.forEach((m) => receiveMessage(toWire(m)))
+  }, [groupId, messages.length, receiveHistory, receiveMessage, receiveSessionStart])
+
   const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
   const total = members.length || 6
@@ -90,6 +121,9 @@ export function GroupChatPage() {
   const handleSessionCreated = (session: Session) => {
     setSession(session, currentUserId)
     startSession(groupId, session.id)
+    // Live: the card appears via the server's session:start echo. Mock: the
+    // socket is null, so drop the card inline locally.
+    if (USE_MOCK) receiveSessionStart(groupId)
     setHostModalOpen(false)
   }
 

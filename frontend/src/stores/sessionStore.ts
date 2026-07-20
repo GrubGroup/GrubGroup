@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
 import { fetchRecommendation, fetchSession } from '@/api/session.api'
+import { MOCK_RECOMMENDATION } from '@/api/mock/session.mock'
 
 interface SessionState {
   session: Session | null
@@ -46,6 +47,10 @@ interface SessionState {
     items: Recommendation['items']
   }) => void
   loadRecommendation: () => Promise<void>
+  // MOCK-ONLY demo helper: flip every remaining member to done and adopt the mock
+  // recommendation, standing in for the gateway's server-side auto-complete (which
+  // isn't reachable offline, where the socket is disabled).
+  simulateAutoComplete: () => void
   castVote: (restaurantId: number, userId: number) => void
   chooseRestaurant: (restaurantId: number) => void
   close: () => void
@@ -155,6 +160,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (id == null) return
     const recommendation = await fetchRecommendation(id)
     set({ recommendation, phase: 'picks' })
+  },
+
+  simulateAutoComplete: () => {
+    const { session, activeSessionId, recommendation } = get()
+    if (recommendation != null) return // already have results — don't regenerate
+    set((s) => ({
+      members: s.members.map((m) => ({ ...m, status: true })),
+      recommendation: {
+        ...structuredClone(MOCK_RECOMMENDATION),
+        session_id: activeSessionId ?? session?.id ?? MOCK_RECOMMENDATION.session_id,
+      },
+    }))
   },
 
   castVote: (restaurantId, userId) => {

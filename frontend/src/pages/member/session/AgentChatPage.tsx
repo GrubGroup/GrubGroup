@@ -29,6 +29,7 @@ export function AgentChatPage() {
   const phase = useSessionStore((s) => s.phase)
   const setPhase = useSessionStore((s) => s.setPhase)
   const setMemberDone = useSessionStore((s) => s.setMemberDone)
+  const simulateAutoComplete = useSessionStore((s) => s.simulateAutoComplete)
   const members = useSessionStore((s) => s.members)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const loadSession = useSessionStore((s) => s.load)
@@ -94,9 +95,25 @@ export function AgentChatPage() {
     if (marking) return // guard against a double-click during the REST round-trip
     setMarking(true)
     // Live: mark ready over REST — the gateway broadcasts session:member_done and
-    // every client (incl. this one) reconciles from the echo. Mock: flip locally.
+    // (when this is the last finish) auto-generates results, which arrive via
+    // session:picks. Every client reconciles from the echo. Mock: flip locally.
     if (USE_MOCK || activeSessionId == null) {
       setMemberDone(currentUserId)
+      // Mock demo: the socket is disabled, so nothing drives the other members to
+      // finish. Stand in for the gateway's auto-complete — after a short beat the
+      // remaining members "finish" and results appear, so the waiting state is
+      // shown briefly and then the Results affordance lights up.
+      if (USE_MOCK) {
+        const allOthersDone = useSessionStore
+          .getState()
+          .members.filter((m) => m.user_id !== currentUserId)
+          .every((m) => m.status)
+        if (allOthersDone) {
+          simulateAutoComplete()
+        } else {
+          setTimeout(() => simulateAutoComplete(), 2500)
+        }
+      }
     } else {
       try {
         await setReady(activeSessionId, true)
