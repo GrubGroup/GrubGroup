@@ -19,4 +19,4 @@ export const MOCK_GROUP_MESSAGES_AFTER: GroupMsg[] = [
 ]
 
 // The system line that introduces the session card.
-export const SESSION_STARTED_BY = 2 // Sofia
+export const SESSION_STARTED_BY = 2 // Sophie

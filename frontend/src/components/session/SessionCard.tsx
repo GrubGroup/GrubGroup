@@ -1,12 +1,14 @@
+import type { SessionMember } from '@/types'
 import { Avatar, Button, Icon } from '@/components/ui'
 import { SegmentedProgress } from './SegmentedProgress'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { nameForMember } from '@/utils/memberName'
 
 type SessionCardState = 'not-joined' | 'continue' | 'waiting' | 'complete'
 
 export interface SessionCardProps {
   state: SessionCardState
-  memberIds: number[]
+  members: SessionMember[]
   readyCount: number
   total: number
   onJoin?: () => void
@@ -19,7 +21,7 @@ export interface SessionCardProps {
 // waiting label (user done).
 export function SessionCard({
   state,
-  memberIds,
+  members,
   readyCount,
   total,
   onJoin,
@@ -62,12 +64,12 @@ export function SessionCard({
 
       <div className="mt-3 flex items-center gap-2">
         <div className="flex -space-x-1.5">
-          {memberIds.slice(0, 6).map((id) => (
+          {members.slice(0, 6).map((m) => (
             <Avatar
-              key={id}
-              name={MOCK_MEMBER_NAMES[id] ?? '?'}
+              key={m.user_id}
+              name={nameForMember(m.user_id, members)}
               size="sm"
-              colorClass={MOCK_MEMBER_COLORS[id]}
+              colorClass={MOCK_MEMBER_COLORS[m.user_id]}
               className="h-5 w-5 border-2 border-surface-raised text-[8px]"
             />
           ))}

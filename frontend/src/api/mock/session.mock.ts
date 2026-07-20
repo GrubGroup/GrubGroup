@@ -11,20 +11,22 @@ export const MOCK_SESSION: Session = {
   closed_at: null,
 }
 
-// The signed-in mock user is id 1 (Dev). Host is id 2 (Sofia).
+// The signed-in mock user is id 1 (Dev). Host is id 2 (Sophie). display_name is
+// carried on each row so the roster shows real names offline exactly like the
+// live getSession/listMembers responses (which return display_name per member).
 export const MOCK_MEMBERS: SessionMember[] = [
-  { session_id: 42, user_id: 1, status: false, joined_at: now }, // Dev (you)
-  { session_id: 42, user_id: 2, status: true, joined_at: now }, // Sofia (host)
-  { session_id: 42, user_id: 3, status: true, joined_at: now }, // Priya
-  { session_id: 42, user_id: 4, status: false, joined_at: now }, // Maya
-  { session_id: 42, user_id: 5, status: false, joined_at: now }, // Carlos
-  { session_id: 42, user_id: 6, status: false, joined_at: now }, // Tomás
+  { session_id: 42, user_id: 1, display_name: 'Dev', status: false, joined_at: now }, // Dev (you)
+  { session_id: 42, user_id: 2, display_name: 'Sophie', status: true, joined_at: now }, // Sophie (host)
+  { session_id: 42, user_id: 3, display_name: 'Priya', status: true, joined_at: now }, // Priya
+  { session_id: 42, user_id: 4, display_name: 'Maya', status: false, joined_at: now }, // Maya
+  { session_id: 42, user_id: 5, display_name: 'Carlos', status: false, joined_at: now }, // Carlos
+  { session_id: 42, user_id: 6, display_name: 'Tomás', status: false, joined_at: now }, // Tomás
 ]
 
 // Display names for members (User records would supply these server-side).
 export const MOCK_MEMBER_NAMES: Record<number, string> = {
   1: 'Dev',
-  2: 'Sofia',
+  2: 'Sophie',
   3: 'Priya',
   4: 'Maya',
   5: 'Carlos',

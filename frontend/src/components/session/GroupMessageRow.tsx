@@ -1,7 +1,7 @@
 import type { GroupMessage } from '@/types'
 import { Avatar } from '@/components/ui'
-import { SessionPicksBlock } from './SessionPicksBlock'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { nameForMember } from '@/utils/memberName'
 
 export interface GroupMessageRowProps {
   message: GroupMessage
@@ -16,13 +16,14 @@ function formatTime(iso: string): string {
 }
 
 export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps) {
-  // The top-5 picks card, delivered into the chat as a SESSION_BLOCK message
-  // (live via session:picks, or replayed from persisted history on reload).
-  if (message.type === 'session_block' && message.block) {
-    return <SessionPicksBlock block={message.block} currentUserId={currentUserId} />
+  // Restaurant recommendations no longer appear in the group chat — they live in
+  // the session/results flow only. Swallow any legacy SESSION_BLOCK row (its text
+  // is empty, so falling through would render a blank bubble).
+  if (message.type === 'session_block') {
+    return null
   }
 
-  // System lines (e.g. "Sofia has left the group") render as a centered divider,
+  // System lines (e.g. "Sophie has left the group") render as a centered divider,
   // matching the "… started a session" style.
   if (message.type === 'system') {
     return (
@@ -35,8 +36,7 @@ export function GroupMessageRow({ message, currentUserId }: GroupMessageRowProps
   }
 
   const isOwn = message.userId === currentUserId
-  const name =
-    message.name ?? MOCK_MEMBER_NAMES[message.userId ?? -1] ?? `User ${message.userId}`
+  const name = message.name ?? nameForMember(message.userId)
   const time = formatTime(message.at)
 
   if (isOwn) {

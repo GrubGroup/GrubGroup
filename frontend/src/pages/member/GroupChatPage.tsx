@@ -13,6 +13,7 @@ import { cn } from '@/utils/cn'
 import { USE_MOCK } from '@/lib/env'
 import { SESSION_STARTED_BY } from '@/api/mock/groupChat.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { nameForMember } from '@/utils/memberName'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
@@ -125,7 +126,7 @@ export function GroupChatPage() {
                 {memberIds.slice(0, 5).map((id) => (
                   <Avatar
                     key={id}
-                    name={MOCK_MEMBER_NAMES[id] ?? '?'}
+                    name={nameForMember(id, members)}
                     size="sm"
                     colorClass={MOCK_MEMBER_COLORS[id]}
                     className="h-4 w-4 border border-surface-raised text-[7px]"
@@ -172,7 +173,7 @@ export function GroupChatPage() {
               </div>
               <SessionCard
                 state={cardState}
-                memberIds={memberIds}
+                members={members}
                 readyCount={cardState === 'complete' ? total : doneCount}
                 total={total}
                 onJoin={handleJoin}
