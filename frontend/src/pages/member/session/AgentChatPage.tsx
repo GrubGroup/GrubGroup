@@ -5,7 +5,7 @@ import { GroupProgressPanel } from '@/components/session/GroupProgressPanel'
 import { NotedSoFarPanel } from '@/components/session/NotedSoFarPanel'
 import { SessionTopBar } from '@/components/session/SessionTopBar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
-import { Icon } from '@/components/ui'
+import { Button, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
 import { USE_MOCK } from '@/lib/env'
@@ -31,6 +31,9 @@ export function AgentChatPage() {
   const setMemberDone = useSessionStore((s) => s.setMemberDone)
   const simulateAutoComplete = useSessionStore((s) => s.simulateAutoComplete)
   const members = useSessionStore((s) => s.members)
+  const doneCount = useSessionStore((s) => s.doneCount())
+  const progressTotal = useSessionStore((s) => s.progressTotal())
+  const recommendation = useSessionStore((s) => s.recommendation)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const loadSession = useSessionStore((s) => s.load)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
@@ -155,7 +158,7 @@ export function AgentChatPage() {
           {/* Conversation always visible; the done pill renders in-stream. */}
           <ChatStream done={isDone} />
 
-          {!isDone && (
+          {!isDone ? (
             <>
               {/* Quick-reply chips — follow the question the agent just asked. */}
               {quickReplies.length > 0 && (
@@ -173,14 +176,47 @@ export function AgentChatPage() {
                 </div>
               )}
               <VoiceComposer onSend={handleSend} disabled={sending} privacyNote />
-              <button
-                onClick={() => void handleDone()}
-                disabled={marking}
-                className="flex items-center justify-center gap-1 border-t border-border bg-surface-raised py-2 text-center text-xs font-medium text-primary hover:text-primary-hover disabled:opacity-50"
-              >
-                I'm done sharing preferences <Icon name="arrow-right" size={12} />
-              </button>
+              {/* Prominent finish CTA — the primary way to end the conversation. */}
+              <div className="border-t border-border bg-surface-raised p-4">
+                <Button
+                  fullWidth
+                  size="lg"
+                  variant="primary"
+                  isLoading={marking}
+                  rightIcon={<Icon name="arrow-right" size={16} />}
+                  onClick={() => void handleDone()}
+                >
+                  I'm Finished
+                </Button>
+              </div>
             </>
+          ) : (
+            // Done: the conversation + noted panel stay visible for review. The
+            // footer shows a waiting state until the group's results are ready,
+            // then a prominent way into them.
+            <div className="border-t border-border bg-surface-raised p-4">
+              {recommendation != null ? (
+                <Button
+                  fullWidth
+                  size="lg"
+                  variant="accent"
+                  rightIcon={<Icon name="arrow-right" size={16} />}
+                  onClick={() => go('top-picks')}
+                >
+                  See the group's results
+                </Button>
+              ) : (
+                <div className="flex flex-col items-center gap-1 py-1 text-center">
+                  <span className="flex items-center gap-2 text-sm font-medium text-text">
+                    <Spinner size="sm" /> Waiting for others
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {doneCount} of {progressTotal} finished · you can review your
+                    answers while you wait
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

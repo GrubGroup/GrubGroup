@@ -27,7 +27,7 @@ export function ChatStream({ done = false }: ChatStreamProps) {
             <span className="text-success">
               <Icon name="check" size={14} />
             </span>
-            You're done · waiting for the group
+            You're finished · waiting for others
           </span>
         </div>
       )}
