@@ -114,6 +114,36 @@ export function EventsPage() {
                   {active.time_slot ? ` · ${active.time_slot}` : ''}.
                 </p>
               </div>
+
+              {/* Participants — everyone who was in the session this event came
+                  from (gateway joins Event.attendees). */}
+              {active.attendees && active.attendees.length > 0 && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      Who's going
+                    </p>
+                    <span className="text-xs text-text-muted">
+                      {active.attendees.length}{' '}
+                      {active.attendees.length === 1 ? 'person' : 'people'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    {active.attendees.map((a) => {
+                      const name = a.display_name ?? a.username
+                      return (
+                        <div
+                          key={a.id}
+                          className="flex items-center gap-3 border-b border-border py-2.5 last:border-b-0"
+                        >
+                          <Avatar name={name} size="sm" colorClass={MOCK_MEMBER_COLORS[a.id]} />
+                          <span className="flex-1 text-sm text-text">{name}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (

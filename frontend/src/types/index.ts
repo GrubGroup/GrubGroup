@@ -15,4 +15,5 @@ export type {
   AnalyzeResponse,
   CreateSessionBody,
   EventRecord,
+  EventAttendee,
 } from './analyze'
