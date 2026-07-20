@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Button, Icon, Wordmark, type IconName } from '@/components/ui'
+import { Button, Icon, MicPop, Wordmark, type IconName } from '@/components/ui'
 import { EASE, viewport, useFadeUp, makeFloat } from '@/lib/motion'
 import { useNavStore } from '@/stores/navStore'
 import { cn } from '@/utils/cn'
@@ -68,7 +68,7 @@ export function LandingPage() {
   const float = makeFloat(!!reduce)
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-surface font-sans text-text">
+    <div className="min-h-screen overflow-x-clip bg-surface font-sans text-text">
       <Nav toSignIn={toSignIn} toSignUp={toSignUp} />
       <Hero toSignUp={toSignUp} float={float} reduce={!!reduce} />
       <SocialBand />
@@ -120,8 +120,8 @@ function Nav({ toSignIn, toSignUp }: { toSignIn: () => void; toSignUp: () => voi
           <Button
             variant="primary"
             onClick={toSignUp}
-            leftIcon={<Icon name="mic" size={16} />}
-            className="rounded-pill"
+            leftIcon={<MicPop size={16} />}
+            className="group rounded-pill"
           >
             Start a session
           </Button>
@@ -185,8 +185,8 @@ function Hero({
               variant="primary"
               size="lg"
               onClick={toSignUp}
-              leftIcon={<Icon name="mic" size={18} />}
-              className="rounded-pill"
+              leftIcon={<MicPop size={18} />}
+              className="group rounded-pill"
             >
               Start a session
             </Button>
@@ -461,7 +461,7 @@ function HowItWorks() {
   const reduce = useReducedMotion()
   const fadeUp = useFadeUp()
   return (
-    <section id="how-it-works" className="scroll-mt-24 bg-surface-raised px-6 py-20 lg:px-8 lg:py-24">
+    <section id="how-it-works" className="scroll-mt-[72px] bg-surface-raised px-6 py-20 lg:px-8 lg:py-24">
       <SectionHeader eyebrow="HOW IT WORKS" title="Three steps to one table." />
       <div className="mx-auto mt-14 grid max-w-[1100px] gap-6 sm:grid-cols-3">
         {STEPS.map((s, i) => (
@@ -513,7 +513,7 @@ function FeatureShowcase() {
     ["Nonna's Table", 10, false],
   ] as const
   return (
-    <section id="features" className="scroll-mt-24 bg-surface-sunken px-6 py-20 lg:px-8 lg:py-24">
+    <section id="features" className="scroll-mt-[72px] bg-surface-sunken px-6 py-20 lg:px-8 lg:py-24">
       <div className="mx-auto max-w-[1200px]">
         <SectionHeader eyebrow="WHY GRUBGROUP" title="Private agents. One shared decision." align="left" />
         <div className="mt-12 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -658,7 +658,7 @@ function ProductInUse() {
   const cards = ['Verde Cocina', 'Casa Verde', "Nonna's", 'Sakura', 'Olive & Ash', 'Fuego']
   const pcts = ['98%', '94%', '91%', '88%', '85%', '82%']
   return (
-    <section id="discover" className="scroll-mt-24 relative overflow-hidden bg-surface-inverse px-6 py-20 text-white lg:px-8 lg:py-24">
+    <section id="discover" className="scroll-mt-[72px] relative overflow-hidden bg-surface-inverse px-6 py-20 text-white lg:px-8 lg:py-24">
       <div className="absolute left-1/2 top-40 h-96 w-[42rem] -translate-x-1/2 rounded-pill bg-primary/15 blur-[160px]" />
       <div className="relative mx-auto max-w-[1100px]">
         <SectionHeader eyebrow="SEE IT IN MOTION" title="Watch a group land on dinner." dark />
@@ -770,8 +770,8 @@ function FinalCta({ toSignUp }: { toSignUp: () => void }) {
           variant="accent"
           size="lg"
           onClick={toSignUp}
-          leftIcon={<Icon name="mic" size={18} />}
-          className="relative mt-8 rounded-pill"
+          leftIcon={<MicPop size={18} hoverClass="group-hover:text-surface-inverse" />}
+          className="group relative mt-8 rounded-pill"
         >
           Start a session
         </Button>

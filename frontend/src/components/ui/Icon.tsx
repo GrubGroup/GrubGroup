@@ -159,6 +159,16 @@ const PATHS: Record<IconName, ReactSvgContent> = {
 // purpose-built filled variants for those; everything else just fills its stroke
 // path. Only the rail tab icons (users, calendar) need this today.
 const FILLED_PATHS: Partial<Record<IconName, ReactSvgContent>> = {
+  // Solid mic: filled capsule head + a solid "cradle" wedge (the u-shaped stand
+  // ring, drawn as a closed shape so no open arc self-intersects) + a short
+  // filled stem/base. Built purpose-first so the outline's open base tick
+  // (M12 18v4M8 22h8) doesn't auto-close into artifacts under fill.
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 6 6.93V21H8.5a1 1 0 0 0 0 2h7a1 1 0 0 0 0-2H13v-3.07A7 7 0 0 0 19 11v-1a1 1 0 0 0-2 0v1a5 5 0 0 1-10 0v-1a1 1 0 0 0-2 0Z" />
+    </>
+  ),
   users: (
     // Back person drawn FIRST (behind), its body sharing the SAME y=21 baseline
     // as the front person so no corner protrudes; the front body then covers the

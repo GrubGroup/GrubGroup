@@ -157,3 +157,53 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Radiating sound-wave ring — a gentle expand-and-fade, softer than Tailwind's
+ * built-in `animate-ping`. Used by the voice-first mic affordances: the landing
+ * "Start a session" CTA (MicPop, on hover) and the VoiceComposer mic button
+ * (while listening). The reduced-motion backstop above neutralizes it for users
+ * who opt out.
+ */
+@keyframes wave {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@utility animate-wave {
+  animation: wave 1.4s ease-out infinite;
+}
+
+/*
+ * Mic "liquid fill" for the landing "Start a session" CTA (MicPop). The fill
+ * rests low (empty) and RISES to fill the mic silhouette on the parent button's
+ * hover; its top edge ripples sideways so it reads as liquid, not a hard fill.
+ * The reduced-motion backstop above snaps the rise and freezes the ripple.
+ */
+@keyframes mic-ripple {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-12px);
+  }
+}
+
+.mic-fill {
+  transform: translateY(14px); /* rest: pushed below the mic (empty) */
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mic-fill-wave {
+  animation: mic-ripple 1.1s linear infinite;
+}
+
+.group:hover .mic-fill {
+  transform: translateY(-2px); /* hover: liquid rises up into the mic */
+}
