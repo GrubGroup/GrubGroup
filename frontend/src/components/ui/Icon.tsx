@@ -154,6 +154,30 @@ const PATHS: Record<IconName, ReactSvgContent> = {
   ),
 }
 
+// A few icons only make sense as a clean SOLID glyph when `filled` (their stroke
+// paths have open arcs/ticks that auto-close into artifacts under fill). Provide
+// purpose-built filled variants for those; everything else just fills its stroke
+// path. Only the rail tab icons (users, calendar) need this today.
+const FILLED_PATHS: Partial<Record<IconName, ReactSvgContent>> = {
+  users: (
+    // Back person drawn FIRST (behind), its body sharing the SAME y=21 baseline
+    // as the front person so no corner protrudes; the front body then covers the
+    // seam, leaving a clean shoulder peeking on the right.
+    <>
+      <circle cx="17" cy="7" r="3.5" />
+      <path d="M16 14h2a4 4 0 0 1 4 4v2a1 1 0 0 1-1 1h-4Z" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M15 14H6a4 4 0 0 0-4 4v2a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1v-2a4 4 0 0 0-4-4Z" />
+    </>
+  ),
+  calendar: (
+    <>
+      <path d="M8 2a1 1 0 0 0-1 1v1H6a3 3 0 0 0-3 3v1h18V7a3 3 0 0 0-3-3h-1V3a1 1 0 1 0-2 0v1H9V3a1 1 0 0 0-1-1Z" />
+      <path d="M3 10v8a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-8H3Z" />
+    </>
+  ),
+}
+
 type ReactSvgContent = React.ReactNode
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
@@ -163,6 +187,8 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
 }
 
 export function Icon({ name, size = 16, filled = false, ...props }: IconProps) {
+  // Prefer a purpose-built solid glyph when filling an icon that has one.
+  const content = filled ? (FILLED_PATHS[name] ?? PATHS[name]) : PATHS[name]
   return (
     <svg
       width={size}
@@ -176,7 +202,7 @@ export function Icon({ name, size = 16, filled = false, ...props }: IconProps) {
       aria-hidden="true"
       {...props}
     >
-      {PATHS[name]}
+      {content}
     </svg>
   )
 }

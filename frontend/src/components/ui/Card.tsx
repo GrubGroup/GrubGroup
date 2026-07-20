@@ -28,7 +28,7 @@ export function Card({
         'rounded-card border border-border bg-surface-raised',
         paddingClasses[padding],
         interactive &&
-          'cursor-pointer transition-[box-shadow,transform] duration-200 ease-out hover:shadow-md motion-safe:hover:-translate-y-0.5',
+          'cursor-pointer transition-colors duration-150 ease-out hover:bg-surface-sunken/50',
         className,
       )}
       {...props}

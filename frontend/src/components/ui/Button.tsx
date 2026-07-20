@@ -46,10 +46,10 @@ export function Button({
     <button
       className={cn(
         'inline-flex items-center justify-center rounded-input font-sans font-medium',
-        'transition-[color,background-color,box-shadow,transform] duration-200 ease-out',
+        'transition-[color,background-color,border-color,opacity] duration-150 ease-out',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
-        'motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 active:scale-[0.98]',
-        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0',
+        'active:brightness-95 disabled:active:brightness-100',
+        'disabled:cursor-not-allowed disabled:opacity-50',
         variantClasses[variant],
         sizeClasses[size],
         fullWidth && 'w-full',
