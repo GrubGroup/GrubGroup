@@ -32,6 +32,11 @@ export function mostRecentGroup(groups: Group[]): Group | undefined {
 
 interface GroupsState {
   groups: Group[]
+  // True once load() has settled at least once (success OR failure). Lets the UI
+  // distinguish "no groups" from "not loaded yet" so it never redirects a valid
+  // member off a chat while the list is still in flight. Mock mode is seeded, so
+  // it starts true.
+  loaded: boolean
   load: () => Promise<void>
   reset: () => void
   addGroup: (name: string, memberIds?: number[]) => Promise<Group>
@@ -46,21 +51,23 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
   // MOCK_GROUPS here would leak the mock seed into a real (or freshly signed-up)
   // account's sidebar. Mock mode seeds the demo groups directly.
   groups: USE_MOCK ? MOCK_GROUPS : [],
+  loaded: USE_MOCK,
 
   // Refresh the list from the backend. In mock mode a failure keeps the current
   // list (never blanks the demo). In live mode we clear on failure so one
-  // account never shows another account's (or the mock) groups.
+  // account never shows another account's (or the mock) groups. Either way,
+  // mark loaded so membership becomes knowable.
   load: async () => {
     try {
-      set({ groups: await fetchGroups() })
+      set({ groups: await fetchGroups(), loaded: true })
     } catch {
-      if (!USE_MOCK) set({ groups: [] })
+      if (!USE_MOCK) set({ groups: [], loaded: true })
     }
   },
 
   // Drop the current account's groups (call on sign-out so the next account
   // never sees the previous one's list before load() runs).
-  reset: () => set({ groups: USE_MOCK ? MOCK_GROUPS : [] }),
+  reset: () => set({ groups: USE_MOCK ? MOCK_GROUPS : [], loaded: USE_MOCK }),
 
   // Create a real group via POST /api/groups (with the picked member ids; the
   // caller is added server-side), then refresh the list so previews and counts

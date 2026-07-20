@@ -19,6 +19,10 @@ export function useSocket(groupId: number) {
     // cosmetic display name.
     const socket = getSocket({ name: name ?? undefined })
     if (!socket) return
+    // Never join a room for the no-group sentinel / an invalid id (groupId 0 is
+    // "no group selected" — see navStore). groupId is in the effect deps, so this
+    // re-runs once a real id arrives.
+    if (groupId <= 0) return
 
     socket.emit('group:join', { groupId })
 

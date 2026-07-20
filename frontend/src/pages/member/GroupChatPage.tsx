@@ -45,8 +45,21 @@ export function GroupChatPage() {
   const setSession = useSessionStore((s) => s.setSession)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
-  // Live group chat: connect + join the selected room (no-op in mock mode).
-  useSocket(groupId)
+  // Resolve membership BEFORE connecting the socket, so we never join a room the
+  // user isn't in. In mock mode every seeded group is "yours"; in live mode a
+  // group counts only if it's in the loaded list. groupId 0 is the no-group
+  // sentinel (see navStore).
+  const groups = useGroupsStore((s) => s.groups)
+  const groupsLoaded = useGroupsStore((s) => s.loaded)
+  const loadGroups = useGroupsStore((s) => s.load)
+  const group = groups.find((g) => g.id === groupId)
+  const groupName = group?.name ?? 'Group'
+  const isMember = USE_MOCK || (groupId > 0 && !!group)
+
+  // Live group chat: connect + join the selected room (no-op in mock mode). Only
+  // join a room the user actually belongs to — pass 0 otherwise (useSocket skips
+  // the join for a non-positive id).
+  useSocket(isMember ? groupId : 0)
   const messages = useGroupChatStore(selectGroupMessages(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
@@ -58,15 +71,17 @@ export function GroupChatPage() {
   // client shows the card inline at the same point. Broadcasts to the whole room.
   const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
 
-  const groups = useGroupsStore((s) => s.groups)
-  const loadGroups = useGroupsStore((s) => s.load)
-  const group = groups.find((g) => g.id === groupId)
-  const groupName = group?.name ?? 'Group'
-
   // Group-detail (edit) panel visibility.
   const [editing, setEditing] = useState(false)
   // Host pre-session setup modal.
   const [hostModalOpen, setHostModalOpen] = useState(false)
+
+  // Redirect a user who has no valid selected group to the empty-groups screen —
+  // but only once the list has loaded, so an in-flight/empty list doesn't bounce
+  // a valid member off their chat.
+  useEffect(() => {
+    if (groupsLoaded && !isMember) go('empty-groups')
+  }, [groupsLoaded, isMember, go])
 
   useEffect(() => {
     // Mock mode seeds a demo session/roster (id 42) so the card renders offline.
@@ -110,6 +125,10 @@ export function GroupChatPage() {
     }
   }
 
+  // Paint guard (after all hooks): don't render group 7 / a foreign room for the
+  // frame before the redirect effect fires.
+  if (!isMember) return null
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface-raised">
       <GroupsSidebar />
@@ -120,7 +139,7 @@ export function GroupChatPage() {
         <div className={cn('flex items-center justify-between border-b border-border px-5', COLUMN_HEADER_H)}>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-display text-[15px] font-bold text-text">{groupName}</span>
+              <span className="font-display text-item-title font-bold text-text">{groupName}</span>
               <div className="flex -space-x-1.5">
                 {memberIds.slice(0, 5).map((id) => (
                   <Avatar
@@ -133,21 +152,21 @@ export function GroupChatPage() {
                 ))}
               </div>
             </div>
-            <p className="text-xs text-text-muted">
+            <p className="text-caption text-text-muted">
               {memberCount} members · <span className="text-primary">session active</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setEditing(true)}
-              className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken"
+              className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-caption font-medium text-text hover:bg-surface-sunken"
             >
               <Icon name="users" size={12} /> Edit group
             </button>
             {sessionStartIndex === null && (
               <button
                 onClick={() => setHostModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
+                className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-caption font-medium text-white"
               >
                 <Icon name="sparkles" size={12} /> Start session
               </button>
@@ -165,7 +184,7 @@ export function GroupChatPage() {
           {/* Session-started divider + card — inline at the point the user started it */}
           {sessionStartIndex !== null && (
             <>
-              <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
+              <div className="flex items-center gap-3 py-1 text-caption text-text-muted">
                 <span className="h-px flex-1 bg-border" />
                 {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
                 <span className="h-px flex-1 bg-border" />
