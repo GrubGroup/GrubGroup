@@ -45,6 +45,10 @@ export function GroupChatPage() {
   const groupId = useNavStore((s) => s.groupId)
   const members = useSessionStore((s) => s.members)
   const doneCount = useSessionStore((s) => s.doneCount())
+  const progressTotal = useSessionStore((s) => s.progressTotal())
+  const sessionObj = useSessionStore((s) => s.session)
+  const recommendation = useSessionStore((s) => s.recommendation)
+  const phase = useSessionStore((s) => s.phase)
   const join = useSessionStore((s) => s.join)
   const loadSession = useSessionStore((s) => s.load)
   const setSession = useSessionStore((s) => s.setSession)
@@ -107,9 +111,26 @@ export function GroupChatPage() {
     MOCK_GROUP_MESSAGES_AFTER.forEach((m) => receiveMessage(toWire(m)))
   }, [groupId, messages.length, receiveHistory, receiveMessage, receiveSessionStart])
 
-  const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
-  const total = members.length || 6
+  const total = progressTotal || members.length || 6
+
+  // The card state is derived from SESSION STATE, not just the screen, so it
+  // reflects reality regardless of how the user navigated here:
+  //   complete → results exist / everyone finished / the host already closed the
+  //     session. Shows the "Results" button and blocks re-joining (#7, #12).
+  //   waiting  → this user finished but the group hasn't. Shows "Waiting for
+  //     others" (#6).
+  //   else     → the screen-derived state (continue if mid-session, else Join).
+  const allDone = total > 0 && doneCount === total
+  const isComplete = recommendation != null || allDone || sessionObj?.closed_at != null
+  const iAmDone =
+    phase === 'done' || members.find((m) => m.user_id === currentUserId)?.status === true
+  const cardState = isComplete
+    ? 'complete'
+    : iAmDone
+      ? 'waiting'
+      : (CARD_STATE[screen] ?? 'not-joined')
+
   // Header "X members" reflects the real group membership from GET /api/groups
   // (member_count); falls back to the session total in mock mode, where
   // MOCK_GROUPS carry no member_count.
@@ -169,7 +190,12 @@ export function GroupChatPage() {
               </div>
             </div>
             <p className="text-xs text-text-muted">
-              {memberCount} members · <span className="text-primary">session active</span>
+              {memberCount} members
+              {/* "Session active" only while a live session is in progress — not
+                  before one starts, and not once it's complete. */}
+              {sessionStartIndex !== null && !isComplete && (
+                <> · <span className="text-primary">session active</span></>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
