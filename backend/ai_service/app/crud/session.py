@@ -91,14 +91,14 @@ _QA_UPDATABLE_FIELDS = (
     "location_lat",
     "location_lon",
     "radius_miles",
-    "time_slot",
     "budget_min",
     "budget_max",
 )
 
-# Qa columns only the session host may set (the event's occasion + timing). A
-# non-host member's turn never writes these, even if the LLM extracted them.
-_QA_HOST_ONLY_FIELDS = ("occasion", "time_slot")
+# Qa columns only the session host may set (the event's occasion). A non-host
+# member's turn never writes these, even if the LLM extracted them. The event
+# TIME is no longer a Qa field — it lives on Session.scheduled_for.
+_QA_HOST_ONLY_FIELDS = ("occasion",)
 
 
 async def upsert_qa_signals(
@@ -115,9 +115,9 @@ async def upsert_qa_signals(
     caller's row and creates one (session_id + user_id) when absent — every
     signal column is nullable. Only keys present in `signals` with a non-None
     value are written, so a partial turn never clears a previously-captured Qa
-    field. `occasion` / `time_slot` are HOST-ONLY: when `is_host` is False they
-    are dropped here as a data-layer backstop, even if an earlier layer let them
-    through. Mirrors the commit/refresh pattern in crud/recommendation.py — no
+    field. `occasion` is HOST-ONLY: when `is_host` is False it is dropped here as
+    a data-layer backstop, even if an earlier layer let it through. Mirrors the
+    commit/refresh pattern in crud/recommendation.py — no
     DDL, just inserts/updates a Prisma-owned table like the Recommendation writes.
     """
     qa = await get_qa_for_user(db, session_id, user_id)

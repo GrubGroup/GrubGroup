@@ -86,12 +86,17 @@ model Profile {
 
 model Session {
   // -- Fields (columns) --
-  id           Int       @id @default(autoincrement())
-  host_user_id Int
-  group_id     Int? // originating group; server reads this to stamp the Event
-  time_limit   Int
-  created_at   DateTime  @default(now())
-  closed_at    DateTime?
+  id            Int       @id @default(autoincrement())
+  host_user_id  Int
+  group_id      Int? // originating group; server reads this to stamp the Event
+  time_limit    Int
+  // The host's chosen event time (from the pre-session modal): "Now" -> now() at
+  // create, or a custom Day+hh:mm. Drives restaurant open/closed evaluation and
+  // is snapshotted onto Event.date at session close. Replaces the removed host
+  // Qa.time_slot free-text field with a real datetime.
+  scheduled_for DateTime?
+  created_at    DateTime  @default(now())
+  closed_at     DateTime?
   // NOTE: no avg_budget column. The averaged group budget is computed on demand
   // (mean of members' effective budget_max) by the ai_service orchestrator and
   // is never persisted — see orchestrator_agent._reconcile.
@@ -125,10 +130,14 @@ model Event {
   id              Int      @id @default(autoincrement())
   date            DateTime
   address         String
+  // Geocoded coordinates of the host's chosen location, snapshotted from the
+  // host's Qa row at close (nullable: a geocode miss leaves them null).
+  lat             Float?
+  lon             Float?
   restaurant_id   Int
   restaurant_name String
   occasion        String? // host-only; snapshot from the host's Qa row at close
-  time_slot       String? // host-only; snapshot from the host's Qa row at close
+  time_slot       String? // host-only display label; snapshot from the host's Qa row at close
   group_id        Int?
   group_name      String? // snapshot of Group.name at creation; persists after group deletion
 
@@ -140,7 +149,7 @@ model Event {
 
 model Restaurant {
   // -- Fields (columns) --
-  id           Int      @id @default(autoincrement())
+  id           Int                          @id @default(autoincrement())
   name         String
   description  String?
   cuisine_tags String[]
@@ -150,8 +159,8 @@ model Restaurant {
   lat          Float?
   long         Float?
   hours        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  created_at   DateTime                     @default(now())
+  updated_at   DateTime                     @updatedAt
   avg_rating   Float?
   embedding    Unsupported("vector(1024)")?
 
@@ -165,8 +174,12 @@ model Qa {
   // One row per (session, member): each member's TEMPORARY, session-scoped
   // preference overrides captured by their QA sub-agent. These outrank the
   // durable Profile for this session only and are deleted when the Event is
-  // created. occasion / time_slot are HOST-ONLY (the host_user_id row) — a
-  // non-host's row leaves them null.
+  // created. occasion is HOST-ONLY (the host_user_id row) — a non-host's row
+  // leaves it null. The host's chosen event TIME is no longer a Qa field: it
+  // lives on Session.scheduled_for (a real datetime). location_* are per-member:
+  // the host's row carries the group's primary location; each member may add a
+  // preferred (closer-to-them) location the orchestrator weights as a secondary
+  // anchor.
   id                 Int      @id @default(autoincrement())
   session_id         Int
   user_id            Int
@@ -178,7 +191,6 @@ model Qa {
   location_lat       Float?
   location_lon       Float?
   radius_miles       Float?
-  time_slot          String? // host-only
   budget_min         Int?
   budget_max         Int?
   member_status      String?

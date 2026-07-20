@@ -11,6 +11,8 @@ import groupsRouter from './groupsRoutes.js';
 import usersRouter from './usersRoutes.js';
 import eventsRouter from './eventsRoutes.js';
 import { getAuthMethods } from '../controllers/authMethodsController.js';
+import { validateGeocode } from '../controllers/sessionsController.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
@@ -21,6 +23,10 @@ router.get('/health', (req, res) => {
 
 // Public: which auth providers an email has (used pre-login by the sign-in form).
 router.get('/auth-methods', getAuthMethods);
+
+// Validate + geocode a free-text address (host pre-session modal). Keeps the
+// Geocodio key server-side. Auth-guarded so it isn't an open geocoding proxy.
+router.post('/geocode', requireAuth, validateGeocode);
 
 router.use('/restaurants', restaurantsRouter);
 router.use('/sessions', sessionsRouter);

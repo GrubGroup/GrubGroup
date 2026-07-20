@@ -20,8 +20,9 @@ _PROFILE_SCALAR_FIELDS = ("budget_min", "budget_max")
 # Session-scoped Qa fields. Cuisines live here too: on a SESSION turn the
 # extracted cuisines are the member's temporary override and are written to
 # their Qa row (the Profile is deliberately not touched — see
-# session_service.analyze_member_turn). occasion / time_slot are carried through
-# but host-gated at the CRUD layer, so a non-host's values are dropped there.
+# session_service.analyze_member_turn). occasion is carried through but
+# host-gated at the CRUD layer, so a non-host's value is dropped there. The event
+# time is no longer a Qa field — it lives on Session.scheduled_for.
 _QA_LIST_FIELDS = (
     "preferred_cuisines",
     "disliked_cuisines",
@@ -34,7 +35,6 @@ _QA_FIELDS = (
     "location_lat",
     "location_lon",
     "radius_miles",
-    "time_slot",
     "budget_min",
     "budget_max",
 )
@@ -63,8 +63,8 @@ def qa_diff(signals: ExtractedSignals) -> dict:
     Cuisine lists carry the FULL reconciled list (so a correction that dropped a
     tag is represented), matching profile_diff's list handling. Scalars are
     included only when set, so an unspoken budget/location never overwrites a
-    stored one. Host-only occasion/time_slot pass through here; the CRUD layer
-    drops them for a non-host.
+    stored one. Host-only occasion passes through here; the CRUD layer drops it
+    for a non-host.
     """
     diff: dict = {}
     for field in _QA_LIST_FIELDS:
@@ -103,7 +103,7 @@ async def persist_qa(
     Always writes (get-or-create per (session, member)): a session turn's Qa
     snapshot is AI-produced, session-lifecycle data — the same ownership footing
     as the Recommendation rows ai_service already writes. `is_host` gates the
-    host-only occasion / time_slot fields at the CRUD layer.
+    host-only occasion field at the CRUD layer.
 
     When the LLM extracted a named location (``location_label``) we persist it as
     ``location_address`` and geocode it into coordinates — unless the turn already

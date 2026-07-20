@@ -8,25 +8,30 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { USE_MOCK } from '@/lib/env'
+import { closeSession } from '@/api/session.api'
 
 export function TopPicksPage() {
   const go = useNavStore((s) => s.go)
   const session = useSessionStore((s) => s.session)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const recommendation = useSessionStore((s) => s.recommendation)
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
   const loadSession = useSessionStore((s) => s.load)
   const votes = useSessionStore((s) => s.votes)
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
+  const isHost = useSessionStore((s) => s.isHost())
   const byId = useRestaurantStore((s) => s.byId)
   const restaurantsLoaded = useRestaurantStore((s) => s.loaded)
   const loadRestaurants = useRestaurantStore((s) => s.load)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    if (!session) void loadSession(42, currentUserId)
+    if (USE_MOCK && !session) void loadSession(42, currentUserId)
     if (!restaurantsLoaded) void loadRestaurants()
   }, [session, loadSession, currentUserId, restaurantsLoaded, loadRestaurants])
 
@@ -48,9 +53,21 @@ export function TopPicksPage() {
   const activeId = selectedId ?? picks[0]?.restaurant_id ?? null
   const active = picks.find((p) => p.restaurant_id === activeId)
 
-  const handleConfirm = () => {
-    if (activeId == null) return
+  const handleConfirm = async () => {
+    if (activeId == null || confirming) return
     chooseRestaurant(activeId)
+    const sessionId = activeSessionId ?? session?.id ?? null
+    if (!USE_MOCK && sessionId != null) {
+      setConfirming(true)
+      try {
+        await closeSession(sessionId, activeId)
+      } catch {
+        // Surface nothing fatal — the confirm is idempotent-ish (409 if already
+        // closed). Fall through to the completion screen regardless.
+      } finally {
+        setConfirming(false)
+      }
+    }
     go('session-complete')
   }
 
@@ -75,6 +92,7 @@ export function TopPicksPage() {
             hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
             onVote={() => castVote(pick.restaurant_id, currentUserId)}
             onSelect={() => setSelectedId(pick.restaurant_id)}
+            showHours
           />
         ))}
       </div>
@@ -99,12 +117,25 @@ export function TopPicksPage() {
               )}
             </div>
             <div className="mt-auto border-t border-border bg-surface-raised p-4">
-              <Button fullWidth variant="primary" onClick={handleConfirm}>
-                Confirm this restaurant
-              </Button>
-              <p className="mt-2 text-center text-xs text-text-muted">
-                This notifies your whole group
-              </p>
+              {isHost ? (
+                <>
+                  <Button
+                    fullWidth
+                    variant="primary"
+                    isLoading={confirming}
+                    onClick={() => void handleConfirm()}
+                  >
+                    Confirm this restaurant
+                  </Button>
+                  <p className="mt-2 text-center text-xs text-text-muted">
+                    This creates the event and notifies your whole group
+                  </p>
+                </>
+              ) : (
+                <p className="text-center text-xs text-text-muted">
+                  Vote for your favorite — the host confirms the final pick.
+                </p>
+              )}
             </div>
           </>
         ) : (

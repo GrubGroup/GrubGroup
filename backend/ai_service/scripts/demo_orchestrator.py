@@ -47,11 +47,15 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 # Real pipeline building blocks — the demo drives these directly so the narrated
-# steps are the *actual* logic, not a reimplementation. Only the three providers
-# (embed / retrieve / re-rank) are swapped for local mocks in offline mode.
+# steps are the *actual* logic, not a reimplementation. Only the four providers
+# (the analyze-turn LLM, embed, retrieve, re-rank) are swapped for local mocks in
+# offline mode.
+import app.ai.agents.conversation_agent as conversation_agent
+from app.ai.agents.conversation_agent import analyze_turn
 from app.ai.agents.orchestrator_agent import (
     _CANDIDATE_LIMIT,
     _build_query_text,
@@ -68,6 +72,7 @@ from app.ai.graph.state import (
     ReconciledConstraints,
 )
 from app.ai.llm.prompts import build_group_rerank_messages
+from app.schemas.ai import ConversationTurn, ExtractedSignals
 
 # ---------------------------------------------------------------------------
 # Terminal styling (ANSI). Auto-disabled when piped, NO_COLOR set, or --no-color.
@@ -187,101 +192,151 @@ def _kv(ink: Ink, key: str, value: str) -> None:
 
 MockMember = dict[str, Any]
 
+# Each member has a durable `profile` (their saved Profile columns — the pipeline
+# fan-out reads these, and dietary_restrictions hard-filters from HERE since Qa
+# has no dietary column) and a scripted `analyze_turns` conversation with their
+# QA sub-agent. Every turn is (agent_question, spoken_answer, offline_delta):
+#   * agent_question / spoken_answer — narration; the answer is what --live sends
+#     verbatim to the real gateway.
+#   * offline_delta — a compact description of what the OFFLINE LLM stand-in
+#     "extracts" from that answer, in the analyze-turn JSON contract's terms.
+#     The REAL analyze_turn then runs its reconcile/expand/removal/reply logic
+#     over it, so cuisine GROUPS expand ("asian" -> its members), STYLES are
+#     recorded ("steakhouse"), and corrections/adds/removals apply for real.
+# Delta keys (all optional): preferred / disliked / dietary (ADD these terms);
+#   set_preferred / set_disliked (REPLACE the list — a correction); remove_*
+#   (drop these terms); budget_min / budget_max (ints). Cuisines here are the
+#   member's SESSION overrides (-> their Qa row's qa_* fields); dietary is asked
+#   for realism but is NOT persisted to Qa (it lives on the durable Profile).
 _MEMBERS: list[MockMember] = [
     {
         "username": "demo_alice",
         "display_name": "Alice",
-        "persona": "strict vegan, loves bold Thai + fresh Californian food",
+        "persona": "host; comfort-food fan, speaks in broad strokes + changes her mind",
         "profile": {
             "user_id": 1,
-            "dietary_restrictions": ["vegan"],
-            "preferred_cuisines": ["thai", "californian"],
-            "disliked_cuisines": ["steakhouse"],
+            "dietary_restrictions": [],
+            "preferred_cuisines": ["thai"],  # durable baseline; QA adds/overrides
+            "disliked_cuisines": [],
             "budget_min": 15,
             "budget_max": 40,
             "liked_restaurant_ids": [],
         },
-        "qa_turns": [
-            ("Hi Alice! Any dietary needs I should lock in for the group search?",
-             "I'm fully vegan — that one's non-negotiable."),
-            ("Got it, vegan it is. Which cuisines make you happiest?",
-             "Thai for sure, and fresh Californian bowls."),
-            ("Noted. Anything you'd rather the group avoided?",
-             "Please, no steakhouses."),
-            ("And your comfortable price range per person?",
-             "Somewhere between $15 and $40 works."),
+        # The feature-spec showcase: a broad-group answer ("German and American"),
+        # then a cross-question ADD ("also add steakhouse") while answering the
+        # avoid question, then a budget.
+        "analyze_turns": [
+            ("Hi Alice! First — any dietary needs I should lock in for the group?",
+             "Don't have any.",
+             {"dietary": []}),
+            ("Which cuisines make you happiest? What sounds good today?",
+             "German and American food.",
+             {"preferred": ["german", "american"]}),
+            ("Anything you'd rather the group avoided tonight?",
+             "I'd like to avoid Chinese. Also add steakhouse as a preference for me.",
+             {"disliked": ["chinese"], "preferred": ["steakhouse"]}),
+            ("Sure thing, I updated your preferences. Your comfortable price per person?",
+             "Let's do $20.",
+             {"budget_max": 20}),
         ],
     },
     {
         "username": "demo_bob",
         "display_name": "Bob",
-        "persona": "budget-tight, eats anything, wants cheap + tasty",
+        "persona": "budget-tight, talks in broad cravings ('something Asian')",
         "profile": {
             "user_id": 2,
             "dietary_restrictions": [],
-            "preferred_cuisines": ["mexican", "vietnamese"],
-            "disliked_cuisines": ["fine_dining"],
+            "preferred_cuisines": ["mexican"],
+            "disliked_cuisines": [],
             "budget_min": 8,
             "budget_max": 20,
             "liked_restaurant_ids": [],
         },
-        "qa_turns": [
+        # Broad cuisine GROUP ("Asian") + a STYLE dislike ("nothing fine-dining")
+        # + a PREFERRED LOCATION relative to the host (a spot closer to Bob), which
+        # becomes the secondary anchor for the between-host-and-member ranking.
+        "analyze_turns": [
             ("Hey Bob — any dietary restrictions?",
-             "Nope, I'll eat anything."),
-            ("Nice and easy. What are you craving?",
-             "Something cheap and tasty — tacos, or a good banh mi."),
+             "Nope, I'll eat anything.",
+             {"dietary": []}),
+            ("What are you craving?",
+             "Honestly something Asian sounds great right now.",
+             {"preferred": ["asian"]}),
             ("Anything off the table?",
-             "Nothing fancy or fine-dining, I'm on a budget."),
+             "Nothing fancy — skip the fine-dining spots, I'm on a budget.",
+             {"disliked": ["fine_dining"]}),
             ("What's your budget per head?",
-             "Keep it under $20 — like $8 to $20."),
+             "Keep it under $20.",
+             {"budget_max": 20}),
+            ("The host set the spot around downtown SF — anywhere more convenient "
+             "for you, or is that good?",
+             "I'm over by the Mission, could we lean that way?",
+             {"location_label": "Mission District, San Francisco",
+              "location_mode": "named",
+              "location_lat": 37.7599, "location_lon": -122.4148}),
         ],
     },
     {
         "username": "demo_carol",
         "display_name": "Carol",
-        "persona": "adventurous omnivore, bold flavors",
+        "persona": "adventurous, but changes her mind mid-conversation",
         "profile": {
             "user_id": 3,
             "dietary_restrictions": [],
-            "preferred_cuisines": ["italian", "thai"],
-            "disliked_cuisines": ["steakhouse", "german"],
+            "preferred_cuisines": ["italian"],
+            "disliked_cuisines": [],
             "budget_min": 20,
             "budget_max": 60,
             "liked_restaurant_ids": [],
         },
-        "qa_turns": [
+        # Broad group ("Mediterranean") then a CORRECTION that REPLACES it with a
+        # style ("actually make it a seafood spot") — proves the reconcile drops
+        # the whole prior group when the user changes their mind.
+        "analyze_turns": [
             ("Carol, any dietary needs on your end?",
-             "No restrictions here."),
-            ("Great. Favorite cuisines?",
-             "Italian and Thai — I love bold flavors."),
-            ("Anything to avoid tonight?",
-             "No steakhouses, and no German food tonight."),
-            ("Budget range?",
-             "I'm flexible — $20 to $60."),
+             "No restrictions here.",
+             {"dietary": []}),
+            ("Favorite cuisines? What sounds good?",
+             "Let's do Mediterranean food.",
+             {"preferred": ["mediterranean"]}),
+            ("Mediterranean it is. Anything else, or shall we lock cuisines in?",
+             "Actually, change that — I'd rather do a good seafood place instead.",
+             {"set_preferred": ["seafood"],
+              "remove_preferred": ["mediterranean"]}),
+            ("Got it, seafood instead. Your budget range?",
+             "I'm flexible — up to $60.",
+             {"budget_max": 60}),
         ],
     },
     {
         "username": "demo_dan",
         "display_name": "Dan",
-        "persona": "health-conscious, no restrictions but eats light",
+        "persona": "vegetarian (from profile); likes Italian, adds a style",
         "profile": {
             "user_id": 4,
-            "dietary_restrictions": [],
-            "preferred_cuisines": ["healthy", "vietnamese", "californian"],
-            "disliked_cuisines": ["bbq"],
+            "dietary_restrictions": ["vegetarian"],  # HARD filter, from Profile
+            "preferred_cuisines": ["indian"],
+            "disliked_cuisines": [],
             "budget_min": 12,
             "budget_max": 35,
             "liked_restaurant_ids": [],
         },
-        "qa_turns": [
+        # Dietary comes from the durable Profile (hard filter for the whole group);
+        # session adds a cuisine + a STYLE ("add pizza"), and a style dislike.
+        "analyze_turns": [
             ("Dan, any dietary needs?",
-             "No hard restrictions, but I like to eat healthy."),
+             "I'm vegetarian — already on my profile.",
+             {"dietary": ["vegetarian"]}),
             ("Which cuisines are you feeling?",
-             "Something healthy — Vietnamese, or a Californian bowl."),
+             "Italian, and add a pizza place to the mix.",
+             {"preferred": ["italian", "pizza"]}),
             ("Anything you'd skip?",
-             "I'll pass on heavy BBQ tonight."),
+             "I'll pass on heavy BBQ tonight.",
+             {"disliked": ["bbq"]}),
             ("And your budget?",
-             "Around $12 to $35."),
+             "Around $12 to $35.",
+             {"budget_min": 12, "budget_max": 35}),
         ],
     },
 ]
@@ -295,21 +350,32 @@ _SESSION_QA_TURNS: list[tuple[str, str]] = [
     ("Where should we look, and how far out?",
      "Around downtown San Francisco, within about 10 miles."),
     ("What time slot?", "Dinner, tonight."),
-    ("Any overall group budget ceiling?", "Let's cap it around $45 a person."),
 ]
 
+# Session-level (host-authored) signals only. NOTE: budget is per-MEMBER (each
+# member states their own in their analyze conversation → their Qa budget cap);
+# there is no session-level budget on QaSignals, so none is set here.
 _SESSION_QA = QaSignals(
     occasion="casual group dinner",
     location_mode="manual",
     location_lat=37.7749,   # downtown San Francisco (matches the seed cluster)
     location_lon=-122.4194,
     radius_miles=10.0,
-    time_slot="dinner",
-    budget_min=8,
-    budget_max=45,
 )
 
 _DEMO_SESSION_ID = 9001  # cosmetic only — offline mode never touches the DB.
+
+# The host's chosen event time (would be Session.scheduled_for). A fixed Monday
+# 7pm so the open/closed hard filter is deterministic run-to-run (scripts cannot
+# call datetime.now()). Most seed dinner spots are open at this time; lunch-only
+# spots get filtered out, demonstrating the hours hard filter.
+_DEMO_SCHEDULED_FOR = datetime(2026, 7, 13, 19, 0)  # Mon 7:00pm
+
+# Set once in _run: when False (offline), each analyze_turn call is fed a scripted
+# LLM completion; when True (--live), analyze_turn hits the real gateway. Threaded
+# as a module global so the reused-by-interactive_session narration helpers don't
+# each need a `live` parameter.
+_LIVE_MODE = False
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +404,7 @@ class _MockRestaurant:
     avg_rating: float | None = None
     lat: float | None = None
     long: float | None = None
+    hours: str | None = None
 
 
 def _load_mock_catalog() -> list[_MockRestaurant]:
@@ -357,6 +424,7 @@ def _load_mock_catalog() -> list[_MockRestaurant]:
                 avg_rating=row["avg_rating"],
                 lat=row["lat"],
                 long=row["long"],
+                hours=row.get("hours"),
             )
         )
     return catalog
@@ -524,11 +592,13 @@ def _print_intro(ink: Ink, live: bool) -> None:
     if not live:
         _note(
             ink,
-            "Real pipeline logic runs (normalize_member, _reconcile, "
-            "_build_query_text,",
+            "Real logic runs: analyze_turn (parse/expand/reconcile), "
+            "normalize_member, _reconcile,",
         )
-        _note(ink, "  _parse_ranked) over the real seed catalog; only embed / "
-                   "pgvector / LLM are mocked.")
+        _note(ink, "  _build_query_text, _parse_ranked over the real seed catalog; "
+                   "only the analyze LLM,")
+        _note(ink, "  embed, pgvector, and re-rank LLM are swapped for "
+                   "deterministic stand-ins.")
 
 
 def _print_roster(ink: Ink) -> None:
@@ -553,56 +623,210 @@ def _print_session_qa(ink: Ink) -> None:
         _agent_says(ink, "Session Agent", q)
         _user_says(ink, host, a)
     print()
-    _substep(ink, "Parsed session signals (QaSignals):")
+    _substep(ink, "Parsed session signals (QaSignals — host-only occasion + location):")
     _kv(ink, "occasion", str(_SESSION_QA.occasion))
     _kv(ink, "location", f"({_SESSION_QA.location_lat}, {_SESSION_QA.location_lon}) "
                          f"mode={_SESSION_QA.location_mode}")
     _kv(ink, "radius_miles", str(_SESSION_QA.radius_miles))
-    _kv(ink, "time_slot", str(_SESSION_QA.time_slot))
-    _kv(ink, "budget (min/max)", f"${_SESSION_QA.budget_min} / ${_SESSION_QA.budget_max}")
+    _note(ink, "budget is per-member (each states their own in their QA chat), "
+               "not a session field. The event time lives on Session.scheduled_for, "
+               "not QaSignals.")
+
+
+def _offline_completion_for(
+    delta: dict[str, Any], current: ExtractedSignals
+) -> str:
+    """Build the strict-JSON an LLM *would* return for one scripted turn.
+
+    Stands in for the analyze-turn model call in offline mode: it applies the
+    turn's `offline_delta` to the running signals in RAW-term space (add / set /
+    remove on the small spoken-term lists) and returns the analyze-turn JSON
+    contract. The REAL `analyze_turn` then runs its own reconcile — group/style
+    EXPANSION, removal enforcement, dedupe, reply + missing computation — over
+    this, so the offline path exercises the actual agent logic (only the model's
+    text is scripted). Mirrors ``analyze_turn_demo._install_offline_llm``.
+    """
+    signals: dict[str, Any] = {}
+
+    # preferred_cuisines: set_ REPLACES (a correction), else ADD onto the prior.
+    if "set_preferred" in delta:
+        signals["preferred_cuisines"] = list(delta["set_preferred"])
+    elif "preferred" in delta:
+        signals["preferred_cuisines"] = list(current.preferred_cuisines) + list(
+            delta["preferred"]
+        )
+    if "set_disliked" in delta:
+        signals["disliked_cuisines"] = list(delta["set_disliked"])
+    elif "disliked" in delta:
+        signals["disliked_cuisines"] = list(current.disliked_cuisines) + list(
+            delta["disliked"]
+        )
+    if "dietary" in delta:
+        signals["dietary_restrictions"] = list(delta["dietary"])
+
+    # Explicit per-turn removals (the belt-and-suspenders correction signal).
+    if "remove_preferred" in delta:
+        signals["removed_preferred"] = list(delta["remove_preferred"])
+    if "remove_disliked" in delta:
+        signals["removed_disliked"] = list(delta["remove_disliked"])
+
+    for key in ("budget_min", "budget_max"):
+        if key in delta:
+            signals[key] = delta[key]
+
+    # Location: a member's preferred spot (the secondary ranking anchor). The
+    # label + optional coords stand in for what the LLM would extract; the real
+    # analyze_turn maps location_label -> Qa.location_address and (live) geocodes,
+    # while offline we pass explicit coords so ranking has something to work with.
+    for key in ("location_label", "location_mode", "location_lat", "location_lon"):
+        if key in delta:
+            signals[key] = delta[key]
+
+    # No agent_reply / missing_signals here on purpose — let the REAL analyze_turn
+    # generate them (its confirm-then-ask fallback + missing computation), so the
+    # narrated reply and the group-summary of an expanded cuisine list are real.
+    return json.dumps({"extracted_signals": signals})
+
+
+def _install_offline_turn(delta: dict[str, Any], current: ExtractedSignals) -> None:
+    """Patch conversation_agent.chat_completion to return this turn's canned JSON.
+
+    One-shot per turn: analyze_turn calls chat_completion exactly once, so we
+    swap in a closure returning the JSON for this specific turn right before the
+    call. Live mode never installs this — it uses the real gateway.
+    """
+    canned = _offline_completion_for(delta, current)
+
+    async def _scripted(messages, **kwargs):  # noqa: ANN001, ARG001
+        return canned
+
+    conversation_agent.chat_completion = _scripted
+
+
+def _build_member_pref(
+    profile: dict[str, Any], signals: ExtractedSignals
+) -> dict[str, Any]:
+    """Assemble the merged Profile+Qa dict the pipeline feeds into normalize_member.
+
+    Mirrors ``pipeline.run_pipeline`` exactly: the durable Profile columns are
+    the base, and the session's reconciled signals become the ``qa_*`` overrides
+    via the REAL ``profile_service.qa_diff`` split. Returns the plain merged dict
+    (``normalize_member`` accepts a dict) — the caller normalizes it into the real
+    MemberPref. Crucially, dietary is taken from the durable Profile, NOT from the
+    QA turn — the Qa table has no dietary column (``qa_diff`` omits it), so dietary
+    hard-filters from Profile while cuisines/budget are the session override. This
+    is the production contract.
+    """
+    from app.services import profile_service
+
+    qa = profile_service.qa_diff(signals)
+    merged = {
+        **profile,
+        "qa_preferred_cuisines": qa.get("preferred_cuisines", []),
+        "qa_disliked_cuisines": qa.get("disliked_cuisines", []),
+        "qa_budget_min": qa.get("budget_min"),
+        "qa_budget_max": qa.get("budget_max"),
+        # A member's preferred location becomes the SECONDARY anchor the
+        # orchestrator ranks between host and member on. Offline the coords come
+        # straight from the scripted signals (live, persist_qa geocodes the label).
+        "qa_location_lat": qa.get("location_lat"),
+        "qa_location_lon": qa.get("location_lon"),
+    }
+    return merged
 
 
 async def _print_preference_agents(ink: Ink) -> list[MemberPref]:
-    """Narrate each member's sub-agent conversation; return normalized prefs.
+    """Narrate each member's REAL QA sub-agent conversation; return normalized prefs.
 
-    This is the pipeline's fan-out step: one preference sub-agent per member
-    (`_preference_node` -> `normalize_member` via a LangGraph `Send`). Here we
-    run them sequentially so the terminal output is readable; in the real graph
-    they run concurrently and converge via the additive `members` reducer.
+    This is the pipeline's fan-out step: one preference sub-agent per member. Each
+    member's spoken answers are driven through the REAL
+    ``conversation_agent.analyze_turn`` (offline: a scripted per-turn LLM stand-in;
+    --live: the real Salesforce/Claude gateway), so arbitrary wording, broad
+    cuisine GROUPS, restaurant STYLES, and mid-conversation corrections/adds/
+    removals are all parsed by production code. The reconciled per-member signals
+    become that member's Qa overrides (``qa_*``), merged over their durable
+    Profile exactly as ``pipeline.run_pipeline`` does, then normalized via the
+    REAL ``normalize_member``. Sequential here for readable output; the live graph
+    fans out concurrently and converges via the additive ``members`` reducer.
     """
-    _step(ink, "3/6", "PREFERENCE SUB-AGENTS (fan-out: one agent per member)")
-    _note(ink, "LangGraph fans out a `Send` per member → preference_agent."
-               "normalize_member().")
-    _note(ink, "Each diner speaks; their agent normalizes the answers into a "
-               "structured MemberPref.")
+    _step(ink, "3/6", "PREFERENCE SUB-AGENTS (fan-out: one analyze_turn agent per member)")
+    _note(ink, "Each diner talks to conversation_agent.analyze_turn(); answers are "
+               "parsed into")
+    _note(ink, "reconciled signals → the member's Qa override, merged over their "
+               "durable Profile.")
+    _note(ink, "Broad terms expand (asian → its cuisines), styles are captured "
+               "(steakhouse), and")
+    _note(ink, "corrections/adds/removals apply live. Dietary hard-filters from "
+               "Profile (Qa has none).")
+
+    from app.services import profile_service
 
     prefs: list[MemberPref] = []
-    for m in _MEMBERS:
+    for i, m in enumerate(_MEMBERS):
         name = m["display_name"]
+        is_host = i == 0
         print()
         _rule(ink, "·")
-        print(f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))} "
+        role = ink.dim(" (host)") if is_host else ""
+        print(f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))}{role} "
               f"{ink.dim('(' + m['persona'] + ')')}")
         print()
-        for q, a in m["qa_turns"]:
-            _agent_says(ink, f"{name}'s Agent", q)
-            _user_says(ink, name, a)
 
-        # The REAL agent turns the structured profile into a MemberPref. (The
-        # scripted answers above map onto exactly these Profile columns.)
-        pref = await normalize_member(m["profile"])
+        signals = ExtractedSignals()
+        history: list[ConversationTurn] = []
+        for question, answer, delta in m["analyze_turns"]:
+            _agent_says(ink, f"{name}'s Agent", question)
+            _user_says(ink, name, answer)
+
+            if not _LIVE_MODE:
+                _install_offline_turn(delta, signals)
+
+            result = await analyze_turn(
+                answer,
+                current_signals=signals,
+                conversation_history=history,
+                is_host=is_host,
+            )
+            signals = result.signals
+            # The agent's real confirm-then-ask reply (or graceful fallback).
+            print(f"    {ink.dim('↳ agent:')} {ink.dim(result.agent_reply)}")
+            history += [
+                ConversationTurn(role="user", content=answer),
+                ConversationTurn(role="assistant", content=result.agent_reply),
+            ]
+
+        # What the service would persist for this member's session (the Qa row).
+        qa = profile_service.qa_diff(signals)
+        print()
+        _substep(ink, f"RECONCILED SESSION SIGNALS → {name}'s Qa override:")
+        _kv(ink, "preferred_cuisines", _fmt_tags(signals.preferred_cuisines))
+        _kv(ink, "disliked_cuisines", _fmt_tags(signals.disliked_cuisines))
+        _kv(ink, "budget (min/max)",
+            f"${qa.get('budget_min')} / ${qa.get('budget_max')}")
+        _note(ink, f"dietary (from durable Profile, NOT Qa): "
+                   f"{m['profile']['dietary_restrictions'] or '[]'}")
+
+        # Merge Profile + Qa overrides exactly like the pipeline, then normalize.
+        merged = _build_member_pref(m["profile"], signals)
+        pref = await normalize_member(merged)
         prefs.append(pref)
 
-        print()
-        _substep(ink, f"SUB-AGENT OUTPUT → normalized MemberPref for {name}:")
-        _kv(ink, "user_id", str(pref.user_id))
-        _kv(ink, "dietary_restrictions", str(pref.dietary_restrictions) or "[]")
-        _kv(ink, "preferred_cuisines", str(pref.preferred_cuisines))
-        _kv(ink, "disliked_cuisines", str(pref.disliked_cuisines))
-        _kv(ink, "budget (min/max)", f"${pref.budget_min} / ${pref.budget_max}")
+        _substep(ink, f"NORMALIZED MemberPref for {name} (Profile + Qa overrides):")
+        _kv(ink, "dietary_restrictions (HARD)", str(pref.dietary_restrictions) or "[]")
+        _kv(ink, "preferred (profile)", str(pref.preferred_cuisines))
+        _kv(ink, "qa_preferred (override)", _fmt_tags(pref.qa_preferred_cuisines))
+        _kv(ink, "qa_disliked (override)", _fmt_tags(pref.qa_disliked_cuisines))
+        _kv(ink, "effective budget_max", f"${pref.effective_budget_max}")
         print(f"    {ink.agent('✔ END OF SUB-AGENT CONVERSATION for ' + name)}")
 
     return prefs
+
+
+def _fmt_tags(tags: list[str], *, limit: int = 8) -> str:
+    """Compact list rendering so an expanded cuisine group stays readable."""
+    if len(tags) <= limit:
+        return str(tags)
+    return f"[{', '.join(repr(t) for t in tags[:limit])}, … +{len(tags) - limit}]"
 
 
 def _print_reconcile(
@@ -622,6 +846,9 @@ def _print_reconcile(
     _kv(ink, "price_max (tightest cap)", ink.warn(price))
     _kv(ink, "center / radius",
         f"{reconciled.center} / {reconciled.radius_miles} mi")
+    _kv(ink, "host anchor (primary)", str(reconciled.host_location))
+    _kv(ink, "member anchors (secondary)",
+        str(reconciled.member_locations) or "[]")
     # Show cuisine weights sorted most-preferred first.
     weights = sorted(
         reconciled.cuisine_weights.items(), key=lambda kv: kv[1], reverse=True
@@ -687,27 +914,26 @@ async def _print_orchestrate_and_rank(
                       f"restaurants")
         hits = _mock_similarity_search(catalog, reconciled, limit=_CANDIDATE_LIMIT)
 
-    candidates = [
-        CandidateRestaurant(
-            id=r.id,
-            name=r.name,
-            cuisine_tags=list(r.cuisine_tags or []),
-            dietary_tags=list(r.dietary_tags or []),
-            price_avg=r.price_avg,
-            avg_rating=r.avg_rating,
-            distance=distance,
-        )
-        for r, distance in hits
-        if r.id is not None
-    ]
-    _db_line(ink, f"retrieved {len(candidates)} candidate(s) that passed all "
-                  f"hard filters:")
+    # Build candidates via the REAL orchestrator helper: it attaches each
+    # candidate's proximity tier (between-host-and-member > host > member > far)
+    # and open/closed status at the event time, and HARD-FILTERS confidently-
+    # closed venues out — the exact geo/hours logic the live pipeline runs.
+    from app.ai.agents.orchestrator_agent import _build_candidates
+
+    n_before = len(hits)
+    candidates = _build_candidates(hits, reconciled, state)
+    dropped = n_before - len(candidates)
+    _db_line(ink, f"retrieved {n_before} candidate(s); hours hard-filter dropped "
+                  f"{dropped} closed at the event time, leaving {len(candidates)}:")
     for c in candidates:
         dist = f"{c.distance:.4f}" if c.distance is not None else "n/a"
+        openflag = {True: "open", False: "closed", None: "hours?"}[c.is_open]
         print(f"        {ink.db('•')} {c.name}  "
               f"{ink.dim(f'[{', '.join(c.cuisine_tags)}]')}  "
               f"{ink.dim(f'~${c.price_avg:.0f}' if c.price_avg else '')}  "
-              f"{ink.dim('dist=' + dist)}")
+              f"{ink.dim('dist=' + dist)}  "
+              f"{ink.dim('tier=' + (c.proximity_tier or '-'))}  "
+              f"{ink.dim(openflag)}")
     print(f"    {ink.db('✔ END OF DATABASE ACCESS')}")
 
     if not candidates:
@@ -738,29 +964,41 @@ async def _print_orchestrate_and_rank(
     if len(raw.strip().splitlines()) > 14:
         print(f"        {ink.dim('… (truncated)')}")
 
-    # --- Real parsing + real distance-ranked fallback -----------------------
+    # --- Real parsing + real proximity blend + distance-ranked fallback ------
+    from app.ai.agents.orchestrator_agent import _blend_proximity
+
     valid_ids = {c.id for c in candidates}
+    tier_by_id = {c.id: c.proximity_tier for c in candidates}
     ranked = _parse_ranked(raw, valid_ids)
     if ranked:
         _substep(ink, f"_parse_ranked accepted {len(ranked)} of "
-                      f"{len(candidates)} candidates.")
+                      f"{len(candidates)} candidates; blending proximity tiers.")
+        for item in ranked:
+            item.match_score = _blend_proximity(
+                item.match_score, tier_by_id.get(item.restaurant_id)
+            )
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
     else:
         # Same fallback the real orchestrator uses when the LLM returns nothing
-        # parseable — rank by retrieval distance so we still emit valid output.
+        # parseable — rank by retrieval distance + proximity so we still emit
+        # valid, geometry-aware output.
         _substep(ink, ink.warn("LLM returned nothing parseable → "
-                               "distance-ranked FALLBACK engaged."))
+                               "distance+proximity FALLBACK engaged."))
         ordered = sorted(
             candidates, key=lambda c: (c.distance if c.distance is not None else 1.0)
         )
         ranked = [
             RankedItem(
                 restaurant_id=c.id,
-                match_score=round(max(0.0, 1.0 - (c.distance or 0.0)), 4),
-                justification="Ranked by embedding similarity (LLM re-rank "
-                              "unavailable).",
+                match_score=_blend_proximity(
+                    max(0.0, 1.0 - (c.distance or 0.0)), c.proximity_tier
+                ),
+                justification="Ranked by embedding similarity + proximity "
+                              "(LLM re-rank unavailable).",
             )
             for c in ordered
         ]
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
 
     by_id = {c.id: c for c in candidates}
     return [(item, by_id[item.restaurant_id]) for item in ranked]
@@ -857,6 +1095,8 @@ async def _live_preflight(ink: Ink) -> bool:
 
 
 async def _run(live: bool, no_color: bool, top_n: int) -> int:
+    global _LIVE_MODE
+    _LIVE_MODE = live
     ink = _make_ink(no_color)
     _print_intro(ink, live)
 
@@ -877,6 +1117,7 @@ async def _run(live: bool, no_color: bool, top_n: int) -> int:
         session_id=_DEMO_SESSION_ID,
         qa=_SESSION_QA,
         members=prefs,
+        scheduled_for=_DEMO_SCHEDULED_FOR,
     )
 
     # STEP 4: reconcile the group (real _reconcile).

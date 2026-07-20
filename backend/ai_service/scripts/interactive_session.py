@@ -56,23 +56,29 @@ import sys
 from typing import Any
 
 # --- Real pipeline building blocks (the sub-agent output is genuinely real) ---
+import app.ai.agents.conversation_agent as conversation_agent
+from app.ai.agents.conversation_agent import analyze_turn
 from app.ai.agents.preference_agent import normalize_member
 from app.ai.graph.state import MemberPref, PipelineState
-from app.ai.llm.client import chat_completion
-from app.ai.llm.prompts import build_preference_normalize_messages
+from app.schemas.ai import ConversationTurn, ExtractedSignals
 
 # --- Reused verbatim from the demo (single source of truth; no drift) ---------
-# Styling, narration helpers, the offline seed catalog, the shared fixtures, and
-# the whole narrated orchestrator/top-picks/reconcile steps all come from the
-# demo so the two scripts stay identical where they overlap. Cross-``_``-import
-# is an established pattern in this scripts/ package.
+# Styling, narration helpers, the offline seed catalog, the shared fixtures, the
+# analyze-turn offline stand-in + MemberPref assembly, and the whole narrated
+# orchestrator/top-picks/reconcile steps all come from the demo so the two
+# scripts stay identical where they overlap. Cross-``_``-import is an established
+# pattern in this scripts/ package.
 from scripts.demo_orchestrator import (
     Ink,
+    _DEMO_SCHEDULED_FOR,
     _DEMO_SESSION_ID,
     _MEMBERS,
     _SESSION_QA,
     _agent_says,
     _banner,
+    _build_member_pref,
+    _fmt_tags,
+    _install_offline_turn,
     _kv,
     _live_preflight,
     _load_mock_catalog,
@@ -256,82 +262,60 @@ def _extract_budget(answer: str) -> tuple[int | None, int | None]:
 
 
 # ---------------------------------------------------------------------------
-# Live extractor (--live only): real LLM tag extraction. Budget stays local.
+# Offline delta builder — typed answer -> the analyze-turn "extracted_signals"
+# an LLM would return. Feeding this to the demo's offline analyze stand-in makes
+# the REAL analyze_turn run its expansion/reconcile/reply logic over it. In
+# --live mode this is unused: the raw typed answer goes straight to the gateway.
 # ---------------------------------------------------------------------------
 
 
-def _strip_fences(raw: str) -> str:
-    """Strip markdown code fences so json.loads sees a bare payload."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1] if "\n" in text else ""
-        if text.endswith("```"):
-            text = text[: -len("```")]
-        if text.lstrip().lower().startswith("json"):
-            text = text.lstrip()[len("json"):]
-    return text.strip()
+# A few SF neighborhoods -> approximate (lat, lon), so an offline location answer
+# yields a real secondary anchor for the between-host-and-member ranking (offline
+# has no geocoder; --live geocodes the free-text label for real).
+_KNOWN_PLACES: list[tuple[str, float, float]] = [
+    ("mission", 37.7599, -122.4148),
+    ("downtown", 37.7749, -122.4194),
+    ("soma", 37.7785, -122.4056),
+    ("marina", 37.8030, -122.4370),
+    ("oakland", 37.8044, -122.2712),
+    ("berkeley", 37.8715, -122.2730),
+    ("office", 37.7899, -122.4000),
+]
 
 
-async def _extract_tags_live(answer: str, ink: Ink) -> dict[str, list[str]] | None:
-    """Call the real preference-normalize LLM; return the three tag lists.
+def _extract_delta(answer: str, field: str, vocab: set[str]) -> dict[str, Any]:
+    """Offline extractor: one typed `answer` for `field` -> an analyze-turn delta.
 
-    Returns None on any failure so the caller can fall back to the offline
-    extractor for that answer (same graceful-degrade spirit as the smoke test).
+    Produces the SAME delta shape ``demo_orchestrator`` feeds its offline analyze
+    stand-in (keys ``dietary`` / ``preferred`` / ``disliked`` / ``budget_*`` /
+    ``location_*``), so ``_install_offline_turn`` can turn it into canned LLM JSON
+    and the real ``analyze_turn`` then expands broad terms ("asian" -> its
+    cuisines), records styles ("steakhouse"), and reconciles. The extractor
+    matches against the real seed-catalog vocabulary, so any tag it finds is one
+    the retriever can match; broad group words (asian / latin / mediterranean) and
+    style words (steakhouse / bbq / cafe) are catalog tags too, so they extract
+    then expand.
     """
-    try:
-        messages = build_preference_normalize_messages(answer)
-        raw = await chat_completion(messages, temperature=0.2) or ""
-        data = json.loads(_strip_fences(raw))
-    except Exception:  # noqa: BLE001 — any parse/transport failure -> offline fallback.
-        _note(
-            ink,
-            "live extractor returned nothing parseable — using the offline "
-            "extractor for this answer.",
-        )
-        return None
-
-    def _clean(key: str) -> list[str]:
-        value = data.get(key, []) if isinstance(data, dict) else []
-        if not isinstance(value, list):
-            return []
-        out: list[str] = []
-        for item in value:
-            tag = str(item).strip().lower().replace(" ", "_")
-            if tag and tag not in out:
-                out.append(tag)
-        return out
-
-    return {
-        "dietary": _clean("dietary_restrictions"),
-        "preferred": _clean("preferred_cuisines"),
-        "disliked": _clean("disliked_cuisines"),
-    }
-
-
-async def _extract_field(
-    answer: str,
-    field: str,
-    vocab: set[str],
-    *,
-    live: bool,
-    ink: Ink,
-) -> dict[str, Any]:
-    """Extract the signal(s) for the question `field` from one typed `answer`."""
     if field == "budget":
         bmin, bmax = _extract_budget(answer)
         return {"budget_min": bmin, "budget_max": bmax}
-
     if _is_skip(answer):
         return {field: []}
-
-    if live:
-        tags = await _extract_tags_live(answer, ink)
-        if tags is not None:
-            return {field: tags[field]}
-        # fall through to offline on live-extractor failure.
-
     if field == "dietary":
         return {"dietary": _extract_dietary(answer)}
+    if field == "location":
+        # Match a known neighborhood to coords (the offline stand-in for geocoding
+        # the member's preferred spot). No match -> no anchor (happy with host's).
+        text = _normalize(answer)
+        for name, lat, lon in _KNOWN_PLACES:
+            if name in text:
+                return {
+                    "location_label": answer.strip(),
+                    "location_mode": "named",
+                    "location_lat": lat,
+                    "location_lon": lon,
+                }
+        return {}
     # preferred / disliked both draw from the cuisine vocabulary.
     return {field: _extract_cuisines(answer, vocab)}
 
@@ -396,9 +380,12 @@ def _stdin_is_tty() -> bool:
 # The interactive sub-agent conversation.
 # ---------------------------------------------------------------------------
 
-# Ordered questions: dietary -> preferred -> disliked -> budget. Order matches
-# the personas' qa_turns and the reconcile inputs. Chips mirror AgentChatPage's
-# quick-reply affordances.
+# Ordered questions: dietary -> preferred -> disliked -> budget -> location.
+# Order matches the personas' analyze_turns and the reconcile inputs. Answer in
+# your OWN words — broad groups ("Asian food"), styles ("a steakhouse"), and
+# mid-chat corrections ("actually, change chinese to korean") are all understood
+# by the real agent. The location question is per-member and optional (relative
+# to the host's spot). Chips mirror AgentChatPage's quick-reply affordances.
 _QUESTIONS: list[dict[str, Any]] = [
     {
         "field": "dietary",
@@ -410,18 +397,33 @@ _QUESTIONS: list[dict[str, Any]] = [
     },
     {
         "field": "preferred",
-        "prompt": "Which cuisines make you happiest? What sounds good today?",
-        "chips": ["Thai", "Italian", "Mexican", "Anything works"],
+        "prompt": (
+            "What sounds good today? Name a cuisine, a whole vibe (\"Asian\", "
+            "\"something Mediterranean\"), or a kind of spot (\"a steakhouse\")."
+        ),
+        "chips": ["Asian food", "Italian", "A steakhouse", "Anything works"],
     },
     {
         "field": "disliked",
-        "prompt": "Anything you'd rather the group avoided tonight?",
+        "prompt": (
+            "Anything you'd rather the group avoided tonight? (You can also revise "
+            "an earlier answer here — e.g. \"actually, swap chinese for korean\".)"
+        ),
         "chips": ["No steakhouses", "Nothing fancy", "No BBQ", "Nothing to avoid"],
     },
     {
         "field": "budget",
         "prompt": "And your comfortable price range per person?",
         "chips": ["$15–20pp", "Under $20", "$20–40", "I'm flexible"],
+    },
+    {
+        "field": "location",
+        "prompt": (
+            "The host set the meeting spot for this event. Want to name a place "
+            "that's more convenient for you (so we can find somewhere in between), "
+            "or are you happy with theirs?"
+        ),
+        "chips": ["Near the Mission", "Downtown's fine", "By the office", "Wherever works"],
     },
 ]
 
@@ -430,65 +432,23 @@ def _print_chips(ink: Ink, chips: list[str]) -> None:
     print(f"    {ink.dim('quick replies: [ ' + '  ·  '.join(chips) + ' ]')}")
 
 
-def _reply_text(field: str, captured: dict[str, Any]) -> str:
-    """Deterministic sub-agent reply confirming what was captured (UX stand-in)."""
-    if field == "dietary":
-        tags = captured["dietary"]
-        if tags:
-            return (
-                f"Got it: {', '.join(tags)}. That's a HARD filter, so every pick "
-                "will satisfy it. Next — what cuisines are you feeling?"
-            )
-        return (
-            "No dietary restrictions — noted, you're flexible there. Next — what "
-            "cuisines are you feeling?"
-        )
-    if field == "preferred":
-        tags = captured["preferred"]
-        if tags:
-            return f"Love it — I'll steer the group toward {', '.join(tags)}. Anything to avoid?"
-        return "No strong favorites — I'll keep your options open. Anything to avoid?"
-    if field == "disliked":
-        tags = captured["disliked"]
-        if tags:
-            return (
-                f"Understood — I'll penalize {', '.join(tags)} in the ranking. "
-                "Last one: your price range per person?"
-            )
-        return "Nothing off the table — easy. Last one: your price range per person?"
-    # budget
-    bmin, bmax = captured["budget_min"], captured["budget_max"]
-    if bmin and bmax:
-        span = f"${bmin}–{bmax}"
-    elif bmax:
-        span = f"up to ${bmax}"
-    elif bmin:
-        span = f"from ${bmin}"
-    else:
-        span = None
-    if span:
-        return (
-            f"Locked in: {span} per person. I'll take the tightest cap across the "
-            "group. That's everything — thanks!"
-        )
-    return (
-        "No budget cap from you — I'll lean on the group's ceiling. That's "
-        "everything — thanks!"
-    )
+def _render_noted(ink: Ink, signals: ExtractedSignals, answered: set[str]) -> None:
+    """Print the running 'noted so far' panel (✓ captured / ○ pending).
 
-
-def _render_noted(ink: Ink, captured: dict[str, Any], answered: set[str]) -> None:
-    """Print the running 'noted so far' panel (✓ captured / ○ pending)."""
+    Reads the REAL reconciled ExtractedSignals (post group/style expansion), so
+    a broad "Asian" answer shows its expanded member cuisines here, capped by
+    ``_fmt_tags`` so the panel stays readable.
+    """
 
     def _row(field: str, label: str, value: str) -> str:
         if field not in answered:
             return f"      {ink.dim('○ ' + label + ': pending')}"
         return f"      {ink.good('✓')} {ink.dim(label + ':')} {value}"
 
-    diet = ", ".join(captured["dietary"]) or "no restrictions"
-    pref = ", ".join(captured["preferred"]) or "open"
-    dis = ", ".join(captured["disliked"]) or "nothing"
-    bmin, bmax = captured["budget_min"], captured["budget_max"]
+    diet = ", ".join(signals.dietary_restrictions) or "no restrictions"
+    pref = _fmt_tags(signals.preferred_cuisines) if signals.preferred_cuisines else "open"
+    dis = _fmt_tags(signals.disliked_cuisines) if signals.disliked_cuisines else "nothing"
+    bmin, bmax = signals.budget_min, signals.budget_max
     if bmin and bmax:
         budget = f"${bmin}–{bmax}"
     elif bmax:
@@ -498,11 +458,57 @@ def _render_noted(ink: Ink, captured: dict[str, Any], answered: set[str]) -> Non
     else:
         budget = "group ceiling"
 
+    if signals.location_label:
+        loc = signals.location_label
+        if signals.location_lat is not None and signals.location_lon is not None:
+            loc += f" ({signals.location_lat:.4f}, {signals.location_lon:.4f})"
+    else:
+        loc = "host's spot"
+
     print(f"    {ink.dim('— noted so far —')}")
     print(_row("dietary", "dietary", diet))
     print(_row("preferred", "likes", pref))
     print(_row("disliked", "avoids", dis))
     print(_row("budget", "budget", budget))
+    print(_row("location", "your spot", loc))
+
+
+async def _drive_turn(
+    ink: Ink,
+    name: str,
+    answer: str,
+    field: str,
+    prior: ExtractedSignals,
+    history: list[ConversationTurn],
+    *,
+    live: bool,
+    is_host: bool,
+    vocab: set[str],
+) -> ExtractedSignals:
+    """Run ONE answer through the REAL analyze_turn; print its reply; return signals.
+
+    Offline: the deterministic extractor turns the typed answer into an
+    analyze-turn delta, installed as the LLM stand-in so the real agent expands
+    groups/styles and reconciles. Live: the raw answer goes to the real gateway.
+    Either way, analyze_turn owns the parse/reconcile/reply — this is exactly the
+    production path a single member turn takes.
+    """
+    if not live:
+        delta = _extract_delta(answer, field, vocab)
+        _install_offline_turn(delta, prior)
+
+    result = await analyze_turn(
+        answer,
+        current_signals=prior,
+        conversation_history=history,
+        is_host=is_host,
+    )
+    history += [
+        ConversationTurn(role="user", content=answer),
+        ConversationTurn(role="assistant", content=result.agent_reply),
+    ]
+    _agent_says(ink, f"{name}'s Agent", result.agent_reply)
+    return result.signals
 
 
 async def _run_interactive_member(
@@ -511,25 +517,29 @@ async def _run_interactive_member(
     source: _AnswerSource,
     *,
     live: bool,
+    is_host: bool,
     vocab: set[str],
 ) -> MemberPref:
-    """Drive one member's typed conversation, then run the REAL normalize_member."""
+    """Drive one member's typed conversation through analyze_turn -> MemberPref.
+
+    Each typed answer is reconciled by the REAL analyze_turn against everything
+    said so far, so a broad "Asian" answer expands, a style ("a steakhouse") is
+    captured, and a mid-conversation correction ("swap chinese for korean")
+    drops the stale tag. The accumulated ExtractedSignals becomes this member's
+    Qa override, merged over their durable Profile exactly as the pipeline does.
+    """
     name = member["display_name"]
-    persona_answers = [answer for _q, answer in member["qa_turns"]]
-    captured: dict[str, Any] = {
-        "dietary": [],
-        "preferred": [],
-        "disliked": [],
-        "budget_min": None,
-        "budget_max": None,
-    }
+    persona_answers = [answer for _q, answer, *_ in member["analyze_turns"]]
+    signals = ExtractedSignals()
+    history: list[ConversationTurn] = []
     answered: set[str] = set()
     fallback_noted = False
 
     print()
     _rule(ink, "·")
+    role = ink.dim(" (host)") if is_host else ""
     print(
-        f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))} "
+        f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))}{role} "
         f"{ink.dim('(' + member['persona'] + ')')}"
     )
     print(f"    {ink.dim('Type your answer, or use :skip / :done / :quit / :help.')}")
@@ -578,78 +588,94 @@ async def _run_interactive_member(
         if origin != "typed":
             _user_says(ink, name, answer or "(skipped)")
 
-        signals = await _extract_field(answer, field, vocab, live=live, ink=ink)
-        captured.update(signals)
+        # Skips / pure "no preference" turns capture nothing — don't bother the
+        # agent (offline it would extract []; keep the transcript honest instead).
+        if answer.strip() and not _is_skip(answer):
+            signals = await _drive_turn(
+                ink, name, answer, field, signals, history,
+                live=live, is_host=is_host, vocab=vocab,
+            )
         answered.add(field)
 
-        # Honest note when a substantive answer matched no known catalog tag.
-        if (
-            field in ("dietary", "preferred", "disliked")
-            and not _is_skip(answer)
-            and not captured[field]
-        ):
-            _note(
-                ink,
-                f"didn't match a known catalog {field} tag — leaving it open "
-                "(offline extractor; try --live for free-form phrasing).",
-            )
-
-        _render_noted(ink, captured, answered)
-        _agent_says(ink, f"{name}'s Agent", _reply_text(field, captured))
+        _render_noted(ink, signals, answered)
         idx += 1
 
-    # Build the structured Profile dict from the typed answers and hand it to the
-    # REAL preference agent — the resulting MemberPref is genuinely its output.
-    profile = {
-        "user_id": member["profile"]["user_id"],
-        "dietary_restrictions": captured["dietary"],
-        "preferred_cuisines": captured["preferred"],
-        "disliked_cuisines": captured["disliked"],
-        "budget_min": captured["budget_min"] or 0,
-        "budget_max": captured["budget_max"] or 0,
-        "liked_restaurant_ids": [],
-    }
-    pref = await normalize_member(profile)
+    # Merge the reconciled session signals over the durable Profile exactly as
+    # the pipeline does (dietary stays on Profile — Qa has no dietary column),
+    # then normalize via the REAL preference agent.
+    merged = _build_member_pref(member["profile"], signals)
+    pref = await normalize_member(merged)
 
     print()
-    _substep(ink, f"SUB-AGENT OUTPUT → normalized MemberPref for {name}:")
+    _substep(ink, f"SUB-AGENT OUTPUT → MemberPref for {name} (Profile + Qa overrides):")
     _kv(ink, "user_id", str(pref.user_id))
-    _kv(ink, "dietary_restrictions", str(pref.dietary_restrictions))
-    _kv(ink, "preferred_cuisines", str(pref.preferred_cuisines))
-    _kv(ink, "disliked_cuisines", str(pref.disliked_cuisines))
-    _kv(ink, "budget (min/max)", f"${pref.budget_min} / ${pref.budget_max}")
-    if not pref.budget_max:
+    _kv(ink, "dietary_restrictions (HARD, Profile)", str(pref.dietary_restrictions))
+    _kv(ink, "preferred (profile)", str(pref.preferred_cuisines))
+    _kv(ink, "qa_preferred (override)", _fmt_tags(pref.qa_preferred_cuisines))
+    _kv(ink, "qa_disliked (override)", _fmt_tags(pref.qa_disliked_cuisines))
+    _kv(ink, "effective budget_max", f"${pref.effective_budget_max}")
+    if not pref.effective_budget_max:
         _note(
             ink,
             "no personal budget cap — reconcile ignores a 0 cap and uses the "
-            "session's group ceiling instead.",
+            "other members' caps instead.",
         )
     print(f"    {ink.agent('✔ END OF SUB-AGENT CONVERSATION for ' + name)}")
     return pref
 
 
-async def _run_scripted_member(ink: Ink, member: dict[str, Any]) -> MemberPref:
-    """Auto-fill a non-played member from their persona (canned Q&A), normalized."""
+async def _run_scripted_member(
+    ink: Ink, member: dict[str, Any], *, live: bool, is_host: bool
+) -> MemberPref:
+    """Auto-fill a non-played member: their scripted answers still run analyze_turn.
+
+    Same real agent path as the interactive member — each canned answer is
+    reconciled by analyze_turn — so an auto-filled diner exercises the identical
+    expansion/correction logic. Offline, the fixture's own ``offline_delta`` is
+    fed to the analyze stand-in (exactly as ``demo_orchestrator`` does), which is
+    more faithful than re-running the keyword extractor over canned prose; live,
+    the raw answer hits the gateway.
+    """
     name = member["display_name"]
     print()
     _rule(ink, "·")
+    role = ink.dim(" (host)") if is_host else ""
     print(
-        f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))} "
+        f"    {ink.agent(ink.bold('▷ Preference sub-agent for ' + name))}{role} "
         f"{ink.dim('(' + member['persona'] + ')')} {ink.dim('· auto-filled')}"
     )
     print()
-    for question, answer in member["qa_turns"]:
+
+    signals = ExtractedSignals()
+    history: list[ConversationTurn] = []
+    for question, answer, delta in member["analyze_turns"]:
         _agent_says(ink, f"{name}'s Agent", question)
         _user_says(ink, name, answer)
+        if not live:
+            _install_offline_turn(delta, signals)
+        result = await analyze_turn(
+            answer,
+            current_signals=signals,
+            conversation_history=history,
+            is_host=is_host,
+        )
+        signals = result.signals
+        history += [
+            ConversationTurn(role="user", content=answer),
+            ConversationTurn(role="assistant", content=result.agent_reply),
+        ]
+        print(f"    {ink.dim('↳ agent:')} {ink.dim(result.agent_reply)}")
 
-    pref = await normalize_member(member["profile"])
+    merged = _build_member_pref(member["profile"], signals)
+    pref = await normalize_member(merged)
 
     print()
-    _substep(ink, f"SUB-AGENT OUTPUT → normalized MemberPref for {name}:")
-    _kv(ink, "dietary_restrictions", str(pref.dietary_restrictions))
-    _kv(ink, "preferred_cuisines", str(pref.preferred_cuisines))
-    _kv(ink, "disliked_cuisines", str(pref.disliked_cuisines))
-    _kv(ink, "budget (min/max)", f"${pref.budget_min} / ${pref.budget_max}")
+    _substep(ink, f"SUB-AGENT OUTPUT → MemberPref for {name} (Profile + Qa overrides):")
+    _kv(ink, "dietary_restrictions (HARD, Profile)", str(pref.dietary_restrictions))
+    _kv(ink, "preferred (profile)", str(pref.preferred_cuisines))
+    _kv(ink, "qa_preferred (override)", _fmt_tags(pref.qa_preferred_cuisines))
+    _kv(ink, "qa_disliked (override)", _fmt_tags(pref.qa_disliked_cuisines))
+    _kv(ink, "effective budget_max", f"${pref.effective_budget_max}")
     print(f"    {ink.agent('✔ END OF SUB-AGENT CONVERSATION for ' + name)}")
     return pref
 
@@ -667,27 +693,34 @@ async def _collect_member_prefs(
     _step(ink, "3/6", "PREFERENCE SUB-AGENTS (you type; others auto-fill)")
     _note(
         ink,
-        "Each diner's structured answers feed the REAL normalize_member; only "
-        "the agent's phrasing is scripted.",
+        "Each diner's answers run through the REAL analyze_turn (parse/expand/"
+        "reconcile) then normalize_member.",
     )
     if not live:
         _note(
             ink,
-            "Offline: your typed answers are parsed by a deterministic keyword/"
-            "regex extractor over the seed-catalog vocabulary.",
+            "Offline: your typed answers are turned into the analyze-turn signals "
+            "an LLM would return via a deterministic keyword/regex extractor over "
+            "the seed-catalog vocabulary, then the real agent expands + reconciles.",
         )
 
     prefs: list[MemberPref] = []
-    for member in _MEMBERS:
+    for i, member in enumerate(_MEMBERS):
+        # Member #1 (index 0) is the host — only they may set the occasion.
+        is_host = i == 0
         interactive_here = all_interactive or member["username"] == played["username"]
         if interactive_here:
             prefs.append(
                 await _run_interactive_member(
-                    ink, member, source, live=live, vocab=vocab
+                    ink, member, source, live=live, is_host=is_host, vocab=vocab
                 )
             )
         else:
-            prefs.append(await _run_scripted_member(ink, member))
+            prefs.append(
+                await _run_scripted_member(
+                    ink, member, live=live, is_host=is_host
+                )
+            )
     return prefs
 
 
@@ -751,9 +784,9 @@ def _print_outro(ink: Ink, live: bool) -> None:
             "  "
             + ink.dim(
                 "When wired to the frontend, your typed answers arrive as real "
-                "voice/text,\n  the offline extractor is replaced by the real LLM, "
-                "and the mock catalog by\n  the seeded Postgres. Run --live to "
-                "exercise the real path (needs DB + keys)."
+                "voice/text and go\n  straight to analyze_turn on the real LLM "
+                "(no offline stand-in), with the mock\n  catalog replaced by the "
+                "seeded Postgres. Run --live to exercise that path."
             )
         )
     print()
@@ -838,7 +871,12 @@ async def _run(args: argparse.Namespace) -> int:
         _note(ink, "Session aborted (:quit). No picks generated.")
         return 0
 
-    state = PipelineState(session_id=_DEMO_SESSION_ID, qa=_SESSION_QA, members=prefs)
+    state = PipelineState(
+        session_id=_DEMO_SESSION_ID,
+        qa=_SESSION_QA,
+        members=prefs,
+        scheduled_for=_DEMO_SCHEDULED_FOR,
+    )
 
     reconciled = _print_reconcile(ink, state)  # reused (STEP 4/6)
     state.reconciled = reconciled

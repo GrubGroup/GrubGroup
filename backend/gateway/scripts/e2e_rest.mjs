@@ -216,9 +216,21 @@ const run = async () => {
   check('outsider GET /api/groups/:id -> 403', (await carol.client.get(`/api/groups/${groupId}`)).status, 403);
 
   console.log('\n== Sessions ==');
-  const sCreate = await alice.client.post('/api/sessions', { group_id: groupId, time_limit: 30 });
+  // The host answers the pre-session modal at create time: occasion, a chosen
+  // scheduled_for (drives Event.date/time_slot + open/closed), and a primary
+  // location (geocoded server-side, seeded onto the host's Qa row).
+  const SCHEDULED_FOR = '2026-08-01T19:30:00.000Z';
+  const sCreate = await alice.client.post('/api/sessions', {
+    group_id: groupId,
+    time_limit: 30,
+    occasion: 'Birthday dinner',
+    scheduled_for: SCHEDULED_FOR,
+    location_address: 'Downtown San Francisco, CA',
+  });
   check('POST /api/sessions from group -> 201', sCreate.status, 201);
   const sessionId = sCreate.data?.id;
+  assert('created session has scheduled_for', Boolean(sCreate.data?.scheduled_for),
+    `got ${sCreate.data?.scheduled_for}`);
   check('GET /api/sessions/:id -> 200', (await alice.client.get(`/api/sessions/${sessionId}`)).status, 200);
   check('carol GET /api/sessions/:id -> 403', (await carol.client.get(`/api/sessions/${sessionId}`)).status, 403);
   check('PATCH members/me ready (alice) -> 200',
@@ -227,17 +239,18 @@ const run = async () => {
     (await bob.client.patch(`/api/sessions/${sessionId}/members/me`, { status: true })).status, 200);
   check('GET members -> 200', (await alice.client.get(`/api/sessions/${sessionId}/members`)).status, 200);
 
-  // QA: host sets occasion/time_slot (kept); non-host sets them (dropped + flagged).
+  // QA: host sets occasion (kept); non-host sets it (dropped + flagged). The
+  // event time is no longer a Qa field — it lives on Session.scheduled_for.
   const hostQa = await alice.client.post(`/api/sessions/${sessionId}/qa`, {
     preferred_cuisines: ['thai'], budget_min: 20, budget_max: 60,
-    occasion: 'Birthday dinner', time_slot: 'evening',
+    occasion: 'Birthday dinner',
   });
   check('POST qa host -> 201', hostQa.status, 201);
   assert('host qa host_only_ignored=false', hostQa.data?.host_only_ignored === false,
     `got ${hostQa.data?.host_only_ignored}`);
   const bobQa = await bob.client.post(`/api/sessions/${sessionId}/qa`, {
     preferred_cuisines: ['mexican'], budget_min: 10, budget_max: 30,
-    occasion: 'should be ignored', time_slot: 'ignored',
+    occasion: 'should be ignored',
   });
   check('POST qa non-host -> 201', bobQa.status, 201);
   assert('non-host qa host_only_ignored=true', bobQa.data?.host_only_ignored === true,
@@ -252,21 +265,32 @@ const run = async () => {
   assert('GET latest recommendation -> 200 or 404', latestRec.status === 200 || latestRec.status === 404,
     `got ${latestRec.status}`);
 
-  console.log('\n== Close -> Event (validates occasion/time_slot persistence) ==');
+  console.log('\n== Close -> Event (host confirm: date/time/location from session) ==');
+  // Non-host cannot confirm. The confirm body only needs restaurant_id now —
+  // date/address/time default from the session's scheduled_for + host location.
   check('non-host close -> 403',
     (await bob.client.post(`/api/sessions/${sessionId}/close`, {
-      restaurant_id: restaurantId, date: new Date(0).toISOString(), address: '123 Test St',
+      restaurant_id: restaurantId,
     })).status, 403);
   const closeRes = await alice.client.post(`/api/sessions/${sessionId}/close`, {
     restaurant_id: restaurantId,
-    date: '2026-08-01T19:30:00.000Z',
-    address: '123 Test St',
   });
   check('host close -> 200', closeRes.status, 200);
   assert('closed Event has occasion = host value',
     closeRes.data?.event?.occasion === 'Birthday dinner', `got ${closeRes.data?.event?.occasion}`);
-  assert('closed Event has time_slot = host value',
-    closeRes.data?.event?.time_slot === 'evening', `got ${closeRes.data?.event?.time_slot}`);
+  // Event.date is sourced from Session.scheduled_for; time_slot is its label.
+  assert('closed Event date = scheduled_for',
+    new Date(closeRes.data?.event?.date).toISOString() === SCHEDULED_FOR,
+    `got ${closeRes.data?.event?.date}`);
+  assert('closed Event has a time_slot label',
+    typeof closeRes.data?.event?.time_slot === 'string' && closeRes.data.event.time_slot.length > 0,
+    `got ${closeRes.data?.event?.time_slot}`);
+  // Event.lat/lon snapshotted from the host's geocoded location (present when the
+  // geocode succeeded; may be null if GEOCODIO_API is unset — tolerate both).
+  assert('closed Event lat/lon are number-or-null',
+    (typeof closeRes.data?.event?.lat === 'number' || closeRes.data?.event?.lat === null) &&
+    (typeof closeRes.data?.event?.lon === 'number' || closeRes.data?.event?.lon === null),
+    `got lat=${closeRes.data?.event?.lat} lon=${closeRes.data?.event?.lon}`);
   check('GET summary after close -> 200', (await alice.client.get(`/api/sessions/${sessionId}/summary`)).status, 200);
 
   console.log('\n== Events ==');
@@ -278,8 +302,18 @@ const run = async () => {
   assert('dining history includes the new event', Boolean(created));
   assert('event.occasion surfaced in history', created?.occasion === 'Birthday dinner',
     `got ${created?.occasion}`);
-  assert('event.time_slot surfaced in history', created?.time_slot === 'evening',
+  assert('event.time_slot surfaced in history',
+    typeof created?.time_slot === 'string' && created.time_slot.length > 0,
     `got ${created?.time_slot}`);
+
+  console.log('\n== Geocode validate ==');
+  const geoOk = await alice.client.post('/api/geocode', { address: 'San Francisco, CA' });
+  check('POST /api/geocode -> 200', geoOk.status, 200);
+  // ok:true with coords when GEOCODIO_API is set; ok:false (still 200) otherwise.
+  assert('geocode returns an ok flag', typeof geoOk.data?.ok === 'boolean',
+    `got ${JSON.stringify(geoOk.data)}`);
+  const geoBad = await alice.client.post('/api/geocode', {});
+  check('POST /api/geocode missing address -> 400', geoBad.status, 400);
 
   console.log('\n== AI proxy (recommendation generate) ==');
   if (await isReachable(AI_SERVICE_URL)) {

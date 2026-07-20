@@ -19,7 +19,7 @@ async def analyze_member_turn(
     Workflow (mirrors recommendation_service's load -> compute -> persist shape):
       1. Resolve the caller's role for this session: is_host = (the session's
          host_user_id == payload.user_id). Only the host may set the event-level
-         occasion / time_slot; a member's turn never captures or writes them.
+         occasion; a member's turn never captures or writes it.
       2. Run the conversational agent (LLM parse + reconcile against prior
          signals; graceful degradation is handled inside analyze_turn), passing
          is_host so it asks the host-only questions of the host alone.
@@ -38,13 +38,24 @@ async def analyze_member_turn(
     The returned dict maps 1:1 onto schemas.ai.AnalyzeResponse.
     """
     # Resolve host role from the DB (never trust a client-supplied flag). Only a
-    # real session with a matching host_user_id makes this member the host.
+    # real session with a matching host_user_id makes this member the host. Also
+    # read the host's chosen location so a NON-host member's agent can frame its
+    # location question relative to it ("the host set downtown SF — want a spot
+    # closer to you?").
     is_host = False
+    host_location_label: str | None = None
     if session_id is not None:
         async with async_session_factory() as db:
             session = await session_crud.get_session(db, session_id)
-        if session is not None and session.host_user_id == payload.user_id:
-            is_host = True
+            if session is not None:
+                if session.host_user_id == payload.user_id:
+                    is_host = True
+                else:
+                    host_qa = await session_crud.get_qa_for_user(
+                        db, session_id, session.host_user_id
+                    )
+                    if host_qa is not None:
+                        host_location_label = host_qa.location_address
 
     result = await analyze_turn(
         payload.message,
@@ -52,6 +63,7 @@ async def analyze_member_turn(
         message_source=payload.message_source,
         conversation_history=payload.conversation_history,
         is_host=is_host,
+        host_location_label=host_location_label,
     )
 
     qa_updated = False

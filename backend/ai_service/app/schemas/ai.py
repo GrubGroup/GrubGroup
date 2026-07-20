@@ -25,12 +25,21 @@ class RecommendationRequest(BaseModel):
 
 
 class RecommendationItemOut(BaseModel):
-    """A single ranked restaurant pick within a recommendation."""
+    """A single ranked restaurant pick within a recommendation.
+
+    The persisted RecommendationItem row carries only restaurant_id / match_score
+    / justification; `name`, `hours`, and `is_open` are enriched from the pipeline
+    candidates so the picks payload is self-contained (e.g. when delivered into
+    the group chat). `is_open` is the venue's open/closed status at the session's
+    chosen event time — None when no time was set (unknown, not filtered).
+    """
 
     restaurant_id: int
     match_score: float | None
     justification: str | None
     name: str | None = None
+    hours: str | None = None
+    is_open: bool | None = None
 
 
 class RecommendationOut(BaseModel):
@@ -76,14 +85,15 @@ class ExtractedSignals(BaseModel):
     disliked_cuisines: list[str] = Field(default_factory=list)
     budget_min: int | None = None
     budget_max: int | None = None
-    # Session-scoped Qa signals (QaSignals shape).
+    # Session-scoped Qa signals (QaSignals shape). occasion is host-only; the
+    # host's event TIME is no longer a signal here — it lives on
+    # Session.scheduled_for (set in the pre-session modal, not the chat turn).
     occasion: str | None = None
     location_mode: Literal["named", "realtime", "unset"] | None = None
     location_label: str | None = None
     location_lat: float | None = None
     location_lon: float | None = None
     radius_miles: float | None = None
-    time_slot: str | None = None
 
 
 class AnalyzeRequest(BaseModel):

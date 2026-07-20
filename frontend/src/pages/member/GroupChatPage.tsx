@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
+import type { Session } from '@/types'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
 import { GroupDetailPanel } from '@/components/session/GroupDetailPanel'
+import { HostSessionModal } from '@/components/session/HostSessionModal'
 import { Avatar, Icon } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { TypingIndicator } from '@/components/session/TypingIndicator'
 import { cn } from '@/utils/cn'
+import { USE_MOCK } from '@/lib/env'
 import { SESSION_STARTED_BY } from '@/api/mock/groupChat.mock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -39,6 +42,7 @@ export function GroupChatPage() {
   const doneCount = useSessionStore((s) => s.doneCount())
   const join = useSessionStore((s) => s.join)
   const loadSession = useSessionStore((s) => s.load)
+  const setSession = useSessionStore((s) => s.setSession)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
   // Live group chat: connect + join the selected room (no-op in mock mode).
@@ -61,9 +65,14 @@ export function GroupChatPage() {
 
   // Group-detail (edit) panel visibility.
   const [editing, setEditing] = useState(false)
+  // Host pre-session setup modal.
+  const [hostModalOpen, setHostModalOpen] = useState(false)
 
   useEffect(() => {
-    if (members.length === 0) void loadSession(42, currentUserId)
+    // Mock mode seeds a demo session/roster (id 42) so the card renders offline.
+    // In live mode the roster is populated when a session is created/adopted via
+    // the socket, so we don't hit a real session id that the user may not be in.
+    if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
   }, [members.length, loadSession, currentUserId])
 
   const cardState = CARD_STATE[screen] ?? 'not-joined'
@@ -74,7 +83,14 @@ export function GroupChatPage() {
   // MOCK_GROUPS carry no member_count.
   const memberCount = group?.member_count ?? total
 
-  const handleStartSession = () => startSession(groupId)
+  // Host finished the pre-session modal: adopt the created session locally, then
+  // broadcast session:start WITH its id so every member's client can adopt it and
+  // share one countdown. The inline card appears via the server echo.
+  const handleSessionCreated = (session: Session) => {
+    setSession(session, currentUserId)
+    startSession(groupId, session.id)
+    setHostModalOpen(false)
+  }
 
   const handleJoin = () => {
     join()
@@ -130,7 +146,7 @@ export function GroupChatPage() {
             </button>
             {sessionStartIndex === null && (
               <button
-                onClick={handleStartSession}
+                onClick={() => setHostModalOpen(true)}
                 className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
               >
                 <Icon name="sparkles" size={12} /> Start session
@@ -192,6 +208,14 @@ export function GroupChatPage() {
         onClose={() => setEditing(false)}
         onMembersChanged={() => void loadGroups()}
         onLeft={handleLeft}
+      />
+
+      {/* Host pre-session setup */}
+      <HostSessionModal
+        open={hostModalOpen}
+        groupId={groupId}
+        onClose={() => setHostModalOpen(false)}
+        onCreated={handleSessionCreated}
       />
     </div>
   )

@@ -56,6 +56,7 @@ erDiagram
     int host_user_id FK
     int group_id FK "nullable, cascade"
     int time_limit
+    datetime scheduled_for "host event time; nullable"
     datetime created_at
     datetime closed_at
   }
@@ -75,10 +76,10 @@ erDiagram
     string[] disliked_cuisines "session override"
     string occasion "host-only"
     string location_mode
+    string location_address "geocoded into lat/lon"
     float location_lat
     float location_lon
     float radius_miles
-    string time_slot "host-only"
     int budget_min
     int budget_max
     string member_status
@@ -88,8 +89,12 @@ erDiagram
     int id PK
     datetime date
     string address
+    float lat "host loc snapshot, nullable"
+    float lon "host loc snapshot, nullable"
     int restaurant_id FK
     string restaurant_name
+    string occasion "host-only snapshot"
+    string time_slot "host-only display label"
     int group_id FK "nullable, set null"
     string group_name "snapshot, persists"
   }
@@ -201,15 +206,23 @@ Access in code via `include`, e.g. `session.members[].user`, `recommendation.ite
   emphasizes that the group has been deleted.
 - **`Qa` is per-member and session-scoped.** Each member's QA sub-agent writes exactly one Qa row
   (`@@unique([session_id, user_id])`) holding that member's **temporary** overrides for this session
-  only — `preferred_cuisines` / `disliked_cuisines` / `budget_*` / `location_*`. These **outrank the
-  durable `Profile`** for the session (e.g. profile likes Japanese but Qa says Mexican → Mexican
-  weighted higher, Japanese still counted). `occasion` and `time_slot` are **host-only**: only the
-  `Session.host_user_id` member's row carries them; a non-host's row leaves them null. There is **no
+  only — `preferred_cuisines` / `disliked_cuisines` / `budget_*` / `location_*` (an address entered
+  as free text in `location_address`, geocoded server-side into `location_lat` / `location_lon`).
+  These **outrank the durable `Profile`** for the session (e.g. profile likes Japanese but Qa says
+  Mexican → Mexican weighted higher, Japanese still counted). `occasion` is **host-only**: only the
+  `Session.host_user_id` member's row carries it; a non-host's row leaves it null. The host's chosen
+  event **time is no longer a Qa field** — it lives on `Session.scheduled_for` (a real datetime set
+  in the pre-session modal, either "Now" → `now()` at create or a scheduled instant), which drives
+  the restaurant open/closed evaluation and is snapshotted onto `Event.date` at close. There is **no
   `Session.avg_budget`** — the averaged group budget is computed on demand from members' effective
   `budget_max` by the ai_service orchestrator.
-- **Event creation flow:** all members fill the Q&A (or the session times out) → AI agent produces
-  recommendations → the host confirms one option → an Event is created, reading `session.group_id`
-  to stamp `group_id` and copy the group's current `name` into `group_name`, and the session's `Qa`
-  rows are **deleted** (temporary session data — see `closeSession`).
+- **Event creation flow:** the host opens the pre-session modal (occasion + `scheduled_for` +
+  geocoded location, seeded onto the host's Qa row) → all members chat with their QA sub-agent (or
+  the session times out) → the AI orchestrator produces the top-5 recommendations → the **host**
+  confirms one option → an Event is created. It reads `session.group_id` (stamping `group_id` +
+  snapshotting the group's `name` into `group_name`), sources `date` from `Session.scheduled_for`
+  and `time_slot` as its display label, and snapshots the host's Qa `occasion` + geocoded
+  `location_lat`/`location_lon` onto `Event.occasion` / `Event.lat` / `Event.lon` — then the
+  session's `Qa` rows are **deleted** (temporary session data — see `closeSession`).
 - `Restaurant`'s `owner_user_id` / `is_published` (whiteboard "stretch" fields) are intentionally
   omitted for now.
