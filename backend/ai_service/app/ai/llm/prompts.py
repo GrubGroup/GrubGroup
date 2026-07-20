@@ -32,9 +32,11 @@ def build_preference_normalize_messages(raw_text: str) -> list[dict[str, Any]]:
 # The bigger sibling of the normalize prompt above: this one drives the back-and-
 # forth where a diner talks to their personal agent. It (a) reads the new message
 # in the context of prior turns + already-known signals, (b) extracts/updates the
-# full signal set including budget / occasion / location / time, (c) handles
-# CORRECTIONS against the prior signals, and (d) writes a natural-language reply
-# that confirms what was captured and asks the next missing question.
+# preference signal set (dietary / cuisines / budget / a member's optional
+# location) — NOT the event's occasion or time, which the host sets in the
+# pre-session modal, (c) handles CORRECTIONS against the prior signals, and (d)
+# writes a natural-language reply that confirms what was captured and asks the
+# next missing question.
 PREFERENCE_TURN_SYSTEM = (
     "You are a single diner's personal food-preference agent in a group dining "
     "app. In each turn the user tells you (by voice or text), in their OWN words, "
@@ -100,7 +102,6 @@ PREFERENCE_TURN_SYSTEM = (
     "tags to drop this turn (see above).\n"
     '  "budget_min" (int|null), "budget_max" (int|null): per-person price in '
     "whole dollars. A lone number is a ceiling -> budget_max.\n"
-    '  "occasion" (str|null): e.g. birthday, casual, date.\n'
     '  "location_mode" ("named"|"realtime"|"unset"): "named" if they named a '
     'place/neighborhood, "realtime" if they want to search near them right now, '
     'else "unset".\n'
@@ -114,18 +115,18 @@ PREFERENCE_TURN_SYSTEM = (
     "to the host's spot (e.g. \"the host set <HOST_LOCATION> — is there somewhere "
     "more convenient for you, or is that good?\"). A member happy with the host's "
     "location can leave it unset.\n\n"
-    "HOST vs MEMBER (see USER_ROLE in the context): occasion describes the shared "
-    "EVENT and is set by the HOST only. If USER_ROLE is HOST, ask about and "
-    "capture occasion normally. If USER_ROLE is MEMBER, do NOT ask about "
-    "occasion, do NOT put it in extracted_signals, and do NOT list it in "
-    "missing_signals — it is the host's to set. If a member volunteers an "
-    "occasion anyway, keep it out of the signals and gently note the host decides "
-    "that. (The event TIME is also host-set, in the pre-session setup — never ask "
-    "about it here.)\n\n"
+    "EVENT-LEVEL FIELDS ARE NOT YOURS TO ASK. The occasion and the event TIME are "
+    "set once by the host in the pre-session setup, never in this conversation. "
+    "Do NOT ask about the occasion or the time, do NOT put an occasion in "
+    "extracted_signals, and do NOT list either in missing_signals — this holds "
+    "for HOST and MEMBER alike. If anyone volunteers an occasion or a time, keep "
+    "it out of the signals and gently note it's already handled in the setup. "
+    "(USER_ROLE is provided only so you can frame the optional location question "
+    "relative to the host's chosen spot for a MEMBER.)\n\n"
     "Also decide missing_signals: of [dietary_restrictions, preferred_cuisines, "
-    "budget, occasion, location], list the ones still unknown after this turn "
-    "(use these exact names; treat an intentional 'no preference' as answered, "
-    "not missing). For a MEMBER, never include occasion in missing_signals.\n\n"
+    "disliked_cuisines, budget, location], list the ones still unknown after this "
+    "turn (use these exact names; treat an intentional 'no preference' / 'nothing "
+    "to avoid' as answered, not missing).\n\n"
     "Return STRICT JSON ONLY — a single object with exactly these keys:\n"
     '  "extracted_signals": { the updated signal fields above, including any '
     'removed_* lists },\n'
@@ -154,9 +155,10 @@ def build_preference_turn_messages(
     multi-turn corrections work. `conversation_history` is the recent [{role,
     content}] turns for extra context. `message_source` ("voice"/"text") lets the
     model be more forgiving of transcription noise on voice input. `is_host`
-    surfaces USER_ROLE so the model only asks the host about occasion.
-    `host_location_label` (for a MEMBER) surfaces the host's chosen location so
-    the agent can frame the optional location question relative to it.
+    surfaces USER_ROLE only so the agent can frame the optional location question
+    relative to the host's chosen spot for a MEMBER (occasion/time are set in the
+    pre-session modal, never here). `host_location_label` (for a MEMBER) surfaces
+    the host's chosen location so the agent can frame that question relative to it.
     """
     history = conversation_history or []
     signals = current_signals or {}

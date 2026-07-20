@@ -3,10 +3,15 @@
 This is the non-deterministic sibling of ``preference_agent.normalize_member``
 (which stays deterministic, copying structured Profile columns). ``analyze_turn``
 drives one turn of the per-member QA conversation: it reads the new message in
-the context of prior turns + already-known signals, extracts/updates the full
-signal set (including budget / occasion / location / time), handles corrections
-against the prior signals, and produces a natural-language reply that confirms
-what was captured and asks the next missing question.
+the context of prior turns + already-known signals, extracts/updates the
+preference signal set (dietary / cuisines / budget / a member's optional
+location), handles corrections against the prior signals, and produces a
+natural-language reply that confirms what was captured and asks the next missing
+question. It walks the same dietary -> likes -> dislikes -> budget -> location
+flow as ``scripts/interactive_session.py``; the event's occasion and time are NOT
+part of this conversation — the host sets them once in the pre-session modal
+(``Session.scheduled_for`` + the host's seeded ``Qa.occasion``), so no chat turn,
+host or member, ever asks for or extracts them.
 
 It degrades gracefully: on any parse/transport failure it returns the prior
 signals unchanged plus a safe reply, so a flaky LLM never turns a turn into a
@@ -28,35 +33,39 @@ from app.ai.taxonomy import (
 )
 from app.schemas.ai import ConversationTurn, ExtractedSignals
 
-# The signal names the reply logic can ask about, in the order we prefer to ask.
-# location is member-visible (each member may add a preferred spot near them);
-# the event TIME is no longer asked here — the host sets it in the pre-session
-# modal (Session.scheduled_for), not in the chat turn.
+# The signal names the reply logic asks about, in the order we prefer to ask.
+# This mirrors the per-member sub-agent conversation in
+# ``scripts/interactive_session.py`` exactly: dietary -> likes -> dislikes ->
+# budget -> location. The event-level fields are NOT asked here — the host sets
+# occasion AND the event TIME once, up front, in the pre-session modal
+# (Qa.occasion via the host's seeded row; Session.scheduled_for). location is
+# per-member and optional (each member may add a spot near them).
 _MISSING_ORDER = [
     "dietary_restrictions",
     "preferred_cuisines",
+    "disliked_cuisines",
     "budget",
-    "occasion",
     "location",
 ]
 
-# occasion describes the EVENT and is set by the host only. A non-host's
-# sub-agent never asks about it, never reports it missing, and never writes it
-# (see _ask_order / _reconcile).
-_HOST_ONLY_SIGNALS = {"occasion"}
+# occasion describes the EVENT and is set by the host in the pre-session modal
+# (seeded onto the host's Qa row by the gateway), never in this chat. No one's
+# sub-agent — host or member — asks about it, reports it missing, or extracts it
+# (see _ask_order / _reconcile). is_host is retained only to frame the optional
+# per-member location question relative to the host's chosen spot.
+_HOST_ONLY_SIGNALS: set[str] = set()
 
 _VALID_LOCATION_MODES = {"named", "realtime", "unset"}
 
 
 def _ask_order(is_host: bool) -> list[str]:
-    """The signals this member's agent may ask about, in ask-order.
+    """The signals this member's agent asks about, in ask-order.
 
-    Hosts get the full set; non-hosts drop the host-only event signals so they
-    are never prompted for (or told they're missing) the occasion/time.
+    Identical for host and member now that occasion/time are set in the
+    pre-session modal rather than the chat — ``is_host`` is kept in the signature
+    for symmetry with the rest of the turn plumbing (and future host-only asks).
     """
-    if is_host:
-        return _MISSING_ORDER
-    return [name for name in _MISSING_ORDER if name not in _HOST_ONLY_SIGNALS]
+    return _MISSING_ORDER
 
 
 class TurnResult:
@@ -207,9 +216,7 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
-def _reconcile(
-    prior: ExtractedSignals, parsed: dict[str, Any], *, is_host: bool
-) -> ExtractedSignals:
+def _reconcile(prior: ExtractedSignals, parsed: dict[str, Any]) -> ExtractedSignals:
     """Merge the LLM's updated signals over the prior set, field by field.
 
     The prompt asks the model to return the FULL updated set (prior + this turn,
@@ -217,9 +224,8 @@ def _reconcile(
     that is how a correction drops a stale tag. Fields the model omits are
     carried through from `prior`. Scalars are only overwritten when the model
     supplies a non-null value, so a partial turn never nulls out earlier answers.
-    occasion is HOST-ONLY: for a non-host it is never taken from the parse
-    (defense-in-depth on top of the prompt not asking), so a defiant non-host
-    still cannot set the event's occasion.
+    occasion is never read from the parse at all: it's a pre-session modal field
+    (host's Qa row), not a conversational one, so no chat turn can set it.
 
     Cuisine lists are additionally EXPANDED through the taxonomy (broad group
     terms like "asian" -> their member cuisines; style terms like "bbq" ->
@@ -272,11 +278,11 @@ def _reconcile(
     if bmax is not None:
         signals.budget_max = bmax
 
-    # location_label is always allowed; occasion only for the host.
-    text_fields = ["location_label"]
-    if is_host:
-        text_fields += ["occasion"]
-    for field in text_fields:
+    # location_label is the only free-text field this conversation captures.
+    # occasion is deliberately NOT read here — it's set once in the pre-session
+    # modal (host's Qa row), never in a chat turn, so it is never overwritten by
+    # a stray LLM extraction regardless of who is speaking.
+    for field in ("location_label",):
         value = parsed.get(field)
         if isinstance(value, str) and value.strip():
             setattr(signals, field, value.strip())
@@ -296,17 +302,19 @@ def _reconcile(
 def _compute_missing(signals: ExtractedSignals, *, is_host: bool) -> list[str]:
     """Local fallback for which core signals are still unknown, in ask-order.
 
-    Used when the LLM's own missing_signals list is absent/unusable, and to keep
-    the reply logic honest. A budget counts as present if either bound is set;
-    location counts as present once a mode is chosen. Non-hosts never see the
-    host-only occasion signal in the ask-order, so it is never reported missing
-    for them.
+    Used only when the LLM's own missing_signals list is absent/unusable. A
+    budget counts as present if either bound is set; location once a mode is
+    chosen. disliked_cuisines counts as present only once non-empty — the LLM's
+    own missing_signals (the primary path) treats an intentional "nothing to
+    avoid" as answered, so this deterministic fallback may re-ask dislikes once
+    in the rare fully-degraded turn; that's an accepted degraded-path imperfect.
+    occasion/time are pre-session modal fields, never part of this conversation.
     """
     present: dict[str, bool] = {
         "dietary_restrictions": bool(signals.dietary_restrictions),
         "preferred_cuisines": bool(signals.preferred_cuisines),
+        "disliked_cuisines": bool(signals.disliked_cuisines),
         "budget": signals.budget_min is not None or signals.budget_max is not None,
-        "occasion": bool(signals.occasion),
         "location": signals.location_mode is not None,
     }
     return [name for name in _ask_order(is_host) if not present[name]]
@@ -318,35 +326,21 @@ def _clean_missing(value: Any, signals: ExtractedSignals, *, is_host: bool) -> l
     if isinstance(value, list):
         allowed = set(order)
         out = [str(v).strip() for v in value if str(v).strip() in allowed]
-        # Preserve our canonical ask-order (and drop host-only names for members).
+        # Preserve our canonical ask-order.
         return [name for name in order if name in out]
     return _compute_missing(signals, is_host=is_host)
 
 
+# One next-question per signal, in ask-order — mirrors the per-question prompts
+# in scripts/interactive_session.py so the degraded (LLM-reply-unusable) path
+# still walks the same dietary -> likes -> dislikes -> budget -> location flow.
 _QUESTION_FOR = {
-    "dietary_restrictions": "Any dietary needs I should lock in?",
-    "preferred_cuisines": "What kind of food are you in the mood for?",
-    "budget": "What is your budget per person?",
-    "occasion": "What is the occasion?",
+    "dietary_restrictions": "Any dietary needs I should lock in for the group?",
+    "preferred_cuisines": "What sounds good today — a cuisine, a vibe, or a kind of spot?",
+    "disliked_cuisines": "Anything you'd rather the group avoided?",
+    "budget": "What is your comfortable price range per person?",
     "location": "Any spot that's more convenient for you? I can factor it in.",
 }
-
-
-# Appended to a non-host's reply when they tried to set a host-only event field,
-# so they learn why it didn't take (the host owns the occasion).
-_NON_HOST_NUDGE = (
-    " Just so you know, only the host sets the occasion for this event, so I've "
-    "left that to them."
-)
-
-
-def _non_host_touched_host_field(parsed: dict[str, Any]) -> bool:
-    """True if a non-host's parsed turn tried to set the host-only occasion."""
-    for field in ("occasion",):
-        value = parsed.get(field)
-        if isinstance(value, str) and value.strip():
-            return True
-    return False
 
 
 def _summarize_tags(tags: list[str], *, limit: int = 4) -> str:
@@ -403,14 +397,15 @@ async def analyze_turn(
     strict-JSON prompt + local fence strip), reconciles the parsed signals over
     the prior set (corrections replace lists; partial turns carry the rest
     through), and returns the updated ExtractedSignals, a confirm-then-ask reply,
-    and the still-missing signals. `is_host` gates the event-level signal: only
-    the host is asked about (and can set) occasion — a non-host is never prompted
-    for it, never has it extracted, and is gently told the host owns it if they
-    try. `host_location_label` (for a non-host) is the host's chosen location, so
-    the agent can frame the optional per-member location question relative to it
-    ("the host set X — want somewhere closer to you?"). On any LLM/parse failure
-    it degrades to the prior signals + a safe deterministic reply
-    (TurnResult.degraded == True).
+    and the still-missing signals. The conversation walks the same
+    dietary -> likes -> dislikes -> budget -> location flow as
+    ``scripts/interactive_session.py`` for host and member alike; occasion and
+    the event time are NOT asked here (they're set once in the pre-session
+    modal). `is_host` is kept only to pass ``host_location_label`` framing to the
+    prompt: for a non-host it's the host's chosen location, so the agent can
+    frame the optional per-member location question relative to it ("the host set
+    X — want somewhere closer to you?"). On any LLM/parse failure it degrades to
+    the prior signals + a safe deterministic reply (TurnResult.degraded == True).
     """
     prior = current_signals or ExtractedSignals()
     history = [t.model_dump() for t in (conversation_history or [])]
@@ -448,7 +443,7 @@ async def analyze_turn(
         # Tolerate a model that put the signal fields at the top level.
         raw_signals = parsed
 
-    signals = _reconcile(prior, raw_signals, is_host=is_host)
+    signals = _reconcile(prior, raw_signals)
     missing = _clean_missing(parsed.get("missing_signals"), signals, is_host=is_host)
 
     reply = parsed.get("agent_reply")
@@ -456,12 +451,6 @@ async def analyze_turn(
         reply = _fallback_reply(signals, missing)
     else:
         reply = reply.strip()
-
-    # If a non-host tried to set the host-only event fields, append a short note
-    # so they understand why it didn't take (belt-and-suspenders: the prompt
-    # already tells the model not to, and _reconcile dropped the values).
-    if not is_host and _non_host_touched_host_field(raw_signals):
-        reply = f"{reply}{_NON_HOST_NUDGE}"
 
     return TurnResult(
         signals=signals,
