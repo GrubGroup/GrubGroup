@@ -380,34 +380,30 @@ def _stdin_is_tty() -> bool:
 # The interactive sub-agent conversation.
 # ---------------------------------------------------------------------------
 
-# Ordered questions: dietary -> preferred -> disliked -> budget -> location.
-# Order matches the personas' analyze_turns and the reconcile inputs. Answer in
-# your OWN words — broad groups ("Asian food"), styles ("a steakhouse"), and
-# mid-chat corrections ("actually, change chinese to korean") are all understood
-# by the real agent. The location question is per-member and optional (relative
-# to the host's spot). Chips mirror AgentChatPage's quick-reply affordances.
+# Ordered questions: preferred -> disliked -> budget -> location. Order matches
+# the personas' analyze_turns and the reconcile inputs. Dietary is NOT asked here
+# — it's captured once in onboarding (durable Profile) and feeds the ranking hard
+# filter directly. Answer in your OWN words — broad groups ("Asian food"), styles
+# ("a steakhouse"), and mid-chat corrections ("actually, change chinese to
+# korean") are all understood by the real agent. The location question is
+# per-member and optional (relative to the host's spot). Chips mirror
+# AgentChatPage's quick-reply affordances.
 _QUESTIONS: list[dict[str, Any]] = [
-    {
-        "field": "dietary",
-        "prompt": (
-            "Hi {name}! I'm your food agent for this session. First — any dietary "
-            "needs I should lock in for the group search?"
-        ),
-        "chips": ["Vegan", "Gluten-free", "No nuts", "No restrictions"],
-    },
     {
         "field": "preferred",
         "prompt": (
-            "What sounds good today? Name a cuisine, a whole vibe (\"Asian\", "
-            "\"something Mediterranean\"), or a kind of spot (\"a steakhouse\")."
+            "Hi {name}! I'm your food agent for this session. First — what sounds "
+            "good today? Name a cuisine, a whole vibe (\"Asian\", \"something "
+            "Mediterranean\"), or a kind of spot (\"a steakhouse\")."
         ),
         "chips": ["Asian food", "Italian", "A steakhouse", "Anything works"],
     },
     {
         "field": "disliked",
         "prompt": (
-            "Anything you'd rather the group avoided tonight? (You can also revise "
-            "an earlier answer here — e.g. \"actually, swap chinese for korean\".)"
+            "Are there any cuisines you dislike or want to avoid? (You can also "
+            "revise an earlier answer here — e.g. \"actually, swap chinese for "
+            "korean\".)"
         ),
         "chips": ["No steakhouses", "Nothing fancy", "No BBQ", "Nothing to avoid"],
     },

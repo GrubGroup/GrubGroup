@@ -40,10 +40,10 @@ export function AgentChatPage() {
 
   // Quick-reply chips follow the question the agent just asked (its first
   // still-missing signal), mirroring interactive_session.py's per-question chips.
-  // Before the first turn (nothing asked/missing yet) show the dietary chips —
-  // the opening greeting asks about dietary needs first.
+  // Before the first turn (nothing asked/missing yet) show the cuisine chips —
+  // the opening greeting asks about preferred cuisines first.
   const quickReplies = chipsForMissing(
-    missingSignals.length ? missingSignals : ['dietary_restrictions'],
+    missingSignals.length ? missingSignals : ['preferred_cuisines'],
   )
 
   // Keep the live socket subscribed while the member chats, so session:member_done

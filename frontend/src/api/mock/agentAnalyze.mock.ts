@@ -23,28 +23,6 @@ import { CUISINES, RESTAURANT_STYLES } from '@/constants/dietary'
 
 // --- Vocabulary -------------------------------------------------------------
 
-// Dietary synonyms → the six controlled tags the seed catalog carries. Multi-word
-// keys first so "no nuts" wins over a bare "nuts". Mirrors interactive_session's
-// _DIETARY_SYNONYMS.
-const DIETARY_SYNONYMS: [string, string][] = [
-  ['gluten free', 'gluten_free'],
-  ['gluten-free', 'gluten_free'],
-  ['no gluten', 'gluten_free'],
-  ['celiac', 'gluten_free'],
-  ['tree nut', 'nut_free'],
-  ['tree nuts', 'nut_free'],
-  ['nut allergy', 'nut_free'],
-  ['nut-free', 'nut_free'],
-  ['nut free', 'nut_free'],
-  ['no nuts', 'nut_free'],
-  ['peanut', 'nut_free'],
-  ['vegan', 'vegan'],
-  ['vegetarian', 'vegetarian'],
-  ['veggie', 'vegetarian'],
-  ['halal', 'halal'],
-  ['kosher', 'kosher'],
-]
-
 // Broad cuisine GROUP words → their member cuisines (a lean mirror of the backend
 // taxonomy's group expansion). A group answer expands so the stored tags match
 // real restaurants.
@@ -106,18 +84,6 @@ const CUISINE_VOCAB: string[] = [
 
 const normalize = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' ')
 const isSkip = (answer: string) => SKIP_ANSWERS.has(normalize(answer))
-
-function extractDietary(answer: string): string[] {
-  const text = normalize(answer)
-  const found: string[] = []
-  for (const [phrase, tag] of DIETARY_SYNONYMS) {
-    if (found.includes(tag)) continue
-    if (new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text)) {
-      found.push(tag)
-    }
-  }
-  return found
-}
 
 function extractCuisines(answer: string): string[] {
   const text = normalize(answer)
@@ -228,9 +194,8 @@ const prettify = (tags: string[], limit = 4): string => {
 }
 
 const NEXT_QUESTION: Record<string, string> = {
-  dietary_restrictions: 'Any dietary needs I should lock in for the group?',
   preferred_cuisines: 'What sounds good today — a cuisine, a vibe, or a kind of spot?',
-  disliked_cuisines: "Anything you'd rather the group avoided?",
+  disliked_cuisines: 'Are there any cuisines you dislike or want to avoid?',
   budget: 'What is your comfortable price range per person?',
   location: "The host set the meeting spot — anywhere more convenient for you, or is that good?",
 }
@@ -275,14 +240,6 @@ export function mockAnalyzeTurn(
   // captures nothing but still advances the flow past this question.
   if (!skipped) {
     switch (question) {
-      case 'dietary_restrictions': {
-        const diet = extractDietary(answer)
-        if (diet.length) {
-          next.dietary_restrictions = uniq([...prior.dietary_restrictions, ...diet])
-          captured.push(`dietary: ${prettify(diet)}`)
-        }
-        break
-      }
       case 'preferred_cuisines': {
         const cuisines = extractCuisines(answer)
         if (cuisines.length) {
