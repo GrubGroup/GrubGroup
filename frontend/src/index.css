@@ -92,6 +92,29 @@
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', monospace;
 
+  /* ------------------------------------------------------------------
+   * Type scale — semantic roles (the SINGLE hierarchy for the whole app).
+   * Size + line-height are baked into each `text-*` utility; apply WEIGHT
+   * separately (font-medium/semibold/bold), as the rest of the system does.
+   * All one family (--font-sans == --font-display); font-display only signals
+   * "title" intent. Functional micro-glyphs (avatar initials, emoji-in-tile)
+   * and the Wordmark logotype are intentionally OUT of this scale.
+   * ------------------------------------------------------------------ */
+  --text-overline: 0.6875rem; /* 11px — eyebrows/overlines (uppercase tracking) */
+  --text-overline--line-height: 1.35;
+  --text-caption: 0.75rem; /* 12px — timestamps, previews, meta, sub-rows */
+  --text-caption--line-height: 1.4;
+  --text-body: 0.875rem; /* 14px — THE body size: chat, panels, forms, modals */
+  --text-body--line-height: 1.5;
+  --text-item-title: 0.9375rem; /* 15px — inline entity title (group name, event row) */
+  --text-item-title--line-height: 1.35;
+  --text-section-title: 1.125rem; /* 18px — modal titles, panel/section headers */
+  --text-section-title--line-height: 1.3;
+  --text-panel-title: 1.25rem; /* 20px — group-detail identity hero name */
+  --text-panel-title--line-height: 1.25;
+  --text-display: 1.875rem; /* 30px — page/detail hero <h1> */
+  --text-display--line-height: 1.15;
+
   /* Radius (semantic; wireframe uses generous 12-16px rounding) */
   --radius-input: 0.75rem;
   --radius-card: 1rem;
