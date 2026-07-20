@@ -44,6 +44,45 @@ const broadcastPicks = (io, groupId, sessionId, recommendation) => {
   }
 };
 
+// In-flight auto-complete guard: session ids currently generating results, so two
+// members finishing near-simultaneously don't both kick off the pipeline in this
+// process. Paired with a DB check (a prior Recommendation row) below; a
+// multi-instance deploy would want an advisory lock, but this closes the common
+// single-process race and never blocks the status write.
+const autoCompleting = new Set();
+
+/**
+ * Auto-complete a session the moment EVERY member has finished: generate the
+ * group recommendation and broadcast it — no host click, no timer wait. Fire-
+ * and-forget (never awaited by the request) so the member's "I'm Finished" PATCH
+ * returns immediately rather than blocking on the ≤120s pipeline. Best-effort:
+ * any failure is logged and the timer fallback can still force picks later.
+ *
+ * Guarded three ways so it runs once: only when this turn is the LAST finish
+ * (doneCount === total), an in-process lock, and a DB check for an existing
+ * Recommendation row.
+ */
+const maybeAutoComplete = async (io, sessionId, groupId) => {
+  if (autoCompleting.has(sessionId)) return;
+  autoCompleting.add(sessionId);
+  try {
+    const existing = await prisma.recommendation.findFirst({
+      where: { session_id: sessionId },
+      select: { id: true },
+    });
+    if (existing) return; // already generated (timer/manual/another finisher)
+
+    const recommendation = await fetchRecommendations(sessionId, { forcePartial: false });
+    broadcastPicks(io, groupId, sessionId, recommendation);
+  } catch (err) {
+    // 409 (not all confirmed — shouldn't happen here), 502 (upstream), etc. The
+    // timer fallback / manual generate remain as recovery paths.
+    console.error(`auto-complete generation failed for session ${sessionId}`, err);
+  } finally {
+    autoCompleting.delete(sessionId);
+  }
+};
+
 /**
  * POST /api/sessions/:session_id/recommendations — proxy the group orchestrator.
  *
@@ -348,6 +387,10 @@ const listMembers = async (req, res, next) => {
  * every client's live progress bar updates when a member finishes (the frontend
  * renders solely from this broadcast — no optimistic local flip). The payload
  * carries the fresh done/total counts so a late joiner or reload can reconcile.
+ *
+ * AUTO-COMPLETE: when this turn is the one that makes EVERY member done, we kick
+ * off recommendation generation server-side (fire-and-forget, after responding)
+ * so the group flips to results without waiting for the timer or a host click.
  */
 const setReady = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -373,16 +416,23 @@ const setReady = async (req, res, next) => {
       data: { status },
     });
 
-    // Broadcast live progress to the group room. Load the session (for group_id)
-    // + the fresh member counts in one go; best-effort so a socket hiccup never
-    // fails the status write.
+    // Broadcast live progress to the group room. Load the session (for group_id
+    // + closed_at) and the fresh member counts in one go; best-effort so a socket
+    // hiccup never fails the status write.
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      select: { group_id: true, members: { select: { user_id: true, status: true } } },
+      select: {
+        group_id: true,
+        closed_at: true,
+        members: { select: { user_id: true, status: true } },
+      },
     });
+
+    const total = session?.members.length ?? 0;
+    const doneCount = session?.members.filter((m) => m.status).length ?? 0;
+    const allDone = total > 0 && doneCount === total;
+
     if (session?.group_id != null) {
-      const total = session.members.length;
-      const doneCount = session.members.filter((m) => m.status).length;
       broadcastToGroup(req, session.group_id, 'session:member_done', {
         groupId: session.group_id,
         sessionId,
@@ -390,11 +440,23 @@ const setReady = async (req, res, next) => {
         status,
         doneCount,
         total,
+        // Let clients flip the card to a completed state without a separate fetch.
+        allDone,
+        closedAt: session.closed_at ?? null,
         at: new Date().toISOString(),
       });
     }
 
-    return res.status(200).json(member);
+    // Respond BEFORE generating so the member's "I'm Finished" button never hangs
+    // on the pipeline. Auto-complete only when THIS turn was the last finish
+    // (existing status was false, now true, and everyone is done) and the session
+    // isn't already closed.
+    res.status(200).json(member);
+
+    if (existing.status === false && status === true && allDone && !session?.closed_at) {
+      void maybeAutoComplete(req.app.get('io'), sessionId, session?.group_id ?? null);
+    }
+    return;
   } catch (err) {
     return next(err);
   }
