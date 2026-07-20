@@ -48,6 +48,8 @@ export function TopPicksPage() {
     })
     .filter((p): p is NonNullable<typeof p> => p !== null)
     .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+    // The results screen shows the group's Top 5.
+    .slice(0, 5)
 
   // Default the detail panel to the top pick.
   const activeId = selectedId ?? picks[0]?.restaurant_id ?? null

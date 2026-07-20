@@ -44,8 +44,9 @@ export const MOCK_MEMBER_COLORS: Record<number, string> = {
   6: 'member-amber',
 }
 
-// Restaurant ids reference the real seed (2 La Taqueria, 23 Souvla, 16 Dosa, 38 El Sur) —
-// all nut-free-friendly, matching Dev's allergy and the group's ~$20pp budget.
+// Restaurant ids reference the real seed (2 La Taqueria, 23 Souvla, 16 Dosa,
+// 38 El Sur, 22 Kokkari) — all nut-free-friendly, matching Dev's allergy and the
+// group's ~$20pp budget. Five picks so the results screen shows a full Top 5.
 export const MOCK_RECOMMENDATION: Recommendation = {
   id: 1,
   session_id: 42,
@@ -55,5 +56,6 @@ export const MOCK_RECOMMENDATION: Recommendation = {
     { id: 2, recommendation_id: 1, restaurant_id: 23, match_score: 0.88, justification: 'Halal, gluten-free rotisserie with strong veg options. Covers Maya’s plant-forward preference; a short walk from Market St.' },
     { id: 3, recommendation_id: 1, restaurant_id: 16, match_score: 0.85, justification: 'Vegan and gluten-free South Indian. Great dietary coverage, slightly above budget at ~$35pp.' },
     { id: 4, recommendation_id: 1, restaurant_id: 38, match_score: 0.79, justification: 'Nut-free Argentine empanadas, cheapest option at ~$15pp. Limited variety beyond empanadas.' },
+    { id: 5, recommendation_id: 1, restaurant_id: 22, match_score: 0.74, justification: 'Halal, gluten-free Aegean-Greek taverna — the group’s highest-rated option. A splurge at ~$65pp, above the budget.' },
   ],
 }
