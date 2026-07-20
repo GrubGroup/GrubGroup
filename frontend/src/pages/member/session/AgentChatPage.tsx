@@ -15,17 +15,16 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useSocket } from '@/hooks/useSocket'
 import { setReady } from '@/api/session.api'
-
-// Quick-reply suggestion chips shown under the latest agent message — mirror the
-// interactive_session.py location/budget prompts the sub-agent asks.
-const QUICK_REPLIES = ['Near the office', "I'll type a place", 'Anywhere works', '$15–20pp']
+import { chipsForMissing } from '@/constants/agentChat'
 
 export function AgentChatPage() {
   const messages = useChatStore((s) => s.messages)
   const seed = useChatStore((s) => s.seed)
   const chatSessionId = useChatStore((s) => s.sessionId)
   const sendUserMessage = useChatStore((s) => s.sendUserMessage)
+  const adoptSessionId = useChatStore((s) => s.adoptSessionId)
   const sending = useChatStore((s) => s.sending)
+  const missingSignals = useChatStore((s) => s.missingSignals)
 
   const phase = useSessionStore((s) => s.phase)
   const setPhase = useSessionStore((s) => s.setPhase)
@@ -34,9 +33,18 @@ export function AgentChatPage() {
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const loadSession = useSessionStore((s) => s.load)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
+  const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
   const screen = useNavStore((s) => s.screen)
   const groupId = useNavStore((s) => s.groupId)
   const go = useNavStore((s) => s.go)
+
+  // Quick-reply chips follow the question the agent just asked (its first
+  // still-missing signal), mirroring interactive_session.py's per-question chips.
+  // Before the first turn (nothing asked/missing yet) show the dietary chips —
+  // the opening greeting asks about dietary needs first.
+  const quickReplies = chipsForMissing(
+    missingSignals.length ? missingSignals : ['dietary_restrictions'],
+  )
 
   // Keep the live socket subscribed while the member chats, so session:member_done
   // progress + a session:picks delivery still update this page (the group-chat page
@@ -46,18 +54,31 @@ export function AgentChatPage() {
   useEffect(() => {
     // Mock mode seeds the demo roster; live adopts the session via the socket.
     if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
-    // (Re)seed the conversation when there's none yet, or when it belongs to a
-    // different session — so a new session never inherits the prior transcript.
-    if (messages.length === 0 || chatSessionId !== activeSessionId) seed(activeSessionId)
+
+    // Seed the conversation when there's none yet, or re-seed when it belongs to
+    // a GENUINELY DIFFERENT session — so a new session never inherits the prior
+    // transcript. Refining an unknown id into the real one (chatSessionId null →
+    // activeSessionId concrete) is NOT a session change: adopt the id onto the
+    // in-progress transcript instead of re-seeding, so a turn sent during that
+    // window is never wiped.
+    const isDifferentSession =
+      chatSessionId != null && activeSessionId != null && chatSessionId !== activeSessionId
+    if (messages.length === 0 || isDifferentSession) {
+      seed(activeSessionId, displayName)
+    } else if (chatSessionId == null && activeSessionId != null) {
+      adoptSessionId(activeSessionId)
+    }
     if (phase === 'joining' || phase === 'waiting') setPhase('chatting')
   }, [
     members.length,
     loadSession,
     currentUserId,
+    displayName,
     messages.length,
     chatSessionId,
     activeSessionId,
     seed,
+    adoptSessionId,
     phase,
     setPhase,
   ])
@@ -119,19 +140,21 @@ export function AgentChatPage() {
 
           {!isDone && (
             <>
-              {/* Quick-reply chips */}
-              <div className="flex flex-wrap gap-2 px-5 pb-1 pt-2">
-                {QUICK_REPLIES.map((q) => (
-                  <button
-                    key={q}
-                    disabled={sending}
-                    onClick={() => handleSend(q)}
-                    className="rounded-pill border border-border-strong bg-surface-raised px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken disabled:opacity-50"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              {/* Quick-reply chips — follow the question the agent just asked. */}
+              {quickReplies.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-5 pb-1 pt-2">
+                  {quickReplies.map((q) => (
+                    <button
+                      key={q}
+                      disabled={sending}
+                      onClick={() => handleSend(q)}
+                      className="rounded-pill border border-border-strong bg-surface-raised px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
               <VoiceComposer onSend={handleSend} disabled={sending} privacyNote />
               <button
                 onClick={() => void handleDone()}

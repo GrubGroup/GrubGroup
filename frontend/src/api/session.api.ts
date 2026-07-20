@@ -8,6 +8,7 @@ import type {
 } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
+import { mockAnalyzeTurn } from './mock/agentAnalyze.mock'
 import {
   MOCK_MEMBERS,
   MOCK_RECOMMENDATION,
@@ -85,12 +86,15 @@ export async function generateRecommendation(
 }
 
 // One QA sub-agent turn. `user_id` is intentionally NOT sent — the gateway
-// injects the server-verified identity.
+// injects the server-verified identity. In mock mode this runs the offline
+// analyze stand-in (a real deterministic parse + reconcile — see
+// agentAnalyze.mock), so the conversation is agent-reply-driven and occasion-free
+// exactly like the live path, with no fabricated transcript.
 export async function analyzeTurn(
   sessionId: number,
   body: AnalyzeTurnBody,
 ): Promise<AnalyzeResponse> {
-  if (USE_MOCK) return mockAnalyze(sessionId, body)
+  if (USE_MOCK) return mockAnalyzeTurn(sessionId, body)
   const { data } = await api.post<AnalyzeResponse>(`/sessions/${sessionId}/analyze`, body)
   return data
 }
@@ -130,50 +134,4 @@ export async function closeSession(
     { restaurant_id: restaurantId },
   )
   return data
-}
-
-// --- Mock analyze -----------------------------------------------------------
-// Cycles canned replies (preserving the offline UX) while returning a plausible
-// extracted-signals set so the "Noted so far" panel populates. Kept module-local
-// so the live path stays a thin axios call.
-const MOCK_REPLIES = [
-  "Got it — I'm syncing that with the group now.",
-  'Noted. Anything on the vibe — quick bite or sit-down?',
-  'The host set the meeting spot. Want somewhere more convenient for you, or is theirs fine?',
-  "Thanks! I think I have enough. I'll factor everything in.",
-]
-let mockReplyIdx = 0
-
-// Reset the canned-reply cursor so a fresh session's mock conversation restarts
-// from the opening prompt (called by chatStore.seed in mock mode).
-export function resetMockAnalyze(): void {
-  mockReplyIdx = 0
-}
-
-function mockAnalyze(sessionId: number, body: AnalyzeTurnBody): AnalyzeResponse {
-  const reply = MOCK_REPLIES[Math.min(mockReplyIdx, MOCK_REPLIES.length - 1)]
-  mockReplyIdx += 1
-  const prior = body.current_signals ?? {}
-  // Naively fold the message into signals so the noted panel shows progress.
-  return {
-    user_id: 1,
-    session_id: sessionId,
-    extracted_signals: {
-      dietary_restrictions: prior.dietary_restrictions ?? [],
-      preferred_cuisines: prior.preferred_cuisines ?? [],
-      disliked_cuisines: prior.disliked_cuisines ?? [],
-      budget_min: prior.budget_min ?? null,
-      budget_max: prior.budget_max ?? null,
-      occasion: prior.occasion ?? null,
-      location_mode: prior.location_mode ?? null,
-      location_label: prior.location_label ?? null,
-      location_lat: prior.location_lat ?? null,
-      location_lon: prior.location_lon ?? null,
-      radius_miles: prior.radius_miles ?? null,
-    },
-    profile_updated: false,
-    qa_updated: true,
-    agent_reply: reply,
-    missing_signals: mockReplyIdx >= MOCK_REPLIES.length ? [] : ['preferences'],
-  }
 }

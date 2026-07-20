@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, ConversationTurn, ExtractedSignals, NotedPref } from '@/types'
-import { MOCK_CHAT_OPENING, MOCK_NOTED_PREFS } from '@/api/mock/chatScript.mock'
-import { USE_MOCK } from '@/lib/env'
-import { analyzeTurn, resetMockAnalyze } from '@/api/session.api'
+import { openingAgentMessage } from '@/constants/agentChat'
+import { analyzeTurn } from '@/api/session.api'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -15,9 +14,17 @@ interface ChatState {
   currentSignals: ExtractedSignals
   missingSignals: string[]
   sending: boolean
-  // Reset the conversation for a (possibly new) session. Records the sessionId so
-  // the page can detect a stale transcript and re-seed.
-  seed: (sessionId?: number | null) => void
+  // Reset the conversation for a (possibly new) session. Opens with a single
+  // agent greeting that asks the first question (dietary); everything after is
+  // agent-reply-driven by the analyze round-trip. Records the sessionId so the
+  // page can detect a stale transcript and re-seed. `displayName` personalizes
+  // the greeting ("Hi Dev!").
+  seed: (sessionId?: number | null, displayName?: string | null) => void
+  // Attach the now-known session id to the CURRENT transcript WITHOUT wiping it.
+  // Used when the active session id resolves (null → concrete) after seed already
+  // ran — so refining an unknown id into the real one never re-seeds and drops an
+  // in-progress conversation (only a genuinely different session id re-seeds).
+  adoptSessionId: (sessionId: number) => void
   // Send one member turn to the QA sub-agent (analyze). Async: appends the user
   // message immediately, then the agent reply when it returns. `sessionId` is the
   // live session; null falls back to the mock/canned path.
@@ -47,25 +54,28 @@ function signalsToNotedPrefs(sig: ExtractedSignals, missing: string[]): NotedPre
   const prefs: NotedPref[] = []
   const isMissing = (key: string) => missing.includes(key)
 
+  // A field is `confirmed` once the agent stopped listing it in missing_signals.
+  // These keys match the backend's ask-order names exactly (dietary_restrictions
+  // / preferred_cuisines / disliked_cuisines / budget / location).
   if (sig.dietary_restrictions.length) {
     prefs.push({
       id: 'diet',
       label: sig.dietary_restrictions.join(', '),
-      confirmed: !isMissing('dietary'),
+      confirmed: !isMissing('dietary_restrictions'),
     })
   }
   if (sig.preferred_cuisines.length) {
     prefs.push({
       id: 'likes',
       label: `Likes: ${sig.preferred_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('preferred'),
+      confirmed: !isMissing('preferred_cuisines'),
     })
   }
   if (sig.disliked_cuisines.length) {
     prefs.push({
       id: 'avoids',
       label: `Avoids: ${sig.disliked_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('disliked'),
+      confirmed: !isMissing('disliked_cuisines'),
     })
   }
   if (sig.budget_min != null || sig.budget_max != null) {
@@ -103,15 +113,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
   missingSignals: [],
   sending: false,
 
-  seed: (sessionId = null) => {
-    if (USE_MOCK) resetMockAnalyze()
+  seed: (sessionId = null, displayName = null) => {
+    // The conversation always opens with the agent's greeting, which asks the
+    // FIRST question (dietary). No canned user turn, no pre-filled noted prefs —
+    // signals accumulate only from real analyze replies as the member answers.
+    const opening: ChatMessage = {
+      id: nextId(),
+      role: 'agent',
+      text: openingAgentMessage(displayName),
+      at: new Date().toISOString(),
+    }
     set({
-      messages: structuredClone(MOCK_CHAT_OPENING),
-      notedPreferences: structuredClone(MOCK_NOTED_PREFS),
+      messages: [opening],
+      notedPreferences: [],
       sessionId,
       currentSignals: emptySignals(),
       missingSignals: [],
     })
+  },
+
+  adoptSessionId: (sessionId) => {
+    // Only stamp it on — never touch messages/signals. No-op if unchanged.
+    if (get().sessionId !== sessionId) set({ sessionId })
   },
 
   sendUserMessage: async (text, sessionId) => {
