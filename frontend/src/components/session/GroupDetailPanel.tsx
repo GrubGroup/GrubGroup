@@ -4,6 +4,7 @@ import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { fetchGroup, addGroupMember } from '@/api/groups.api'
 import { searchUsers } from '@/api/users.api'
 import { useGroupsStore } from '@/stores/groupsStore'
+import { memberColor } from '@/utils/memberColor'
 import { cn } from '@/utils/cn'
 import type { GroupDetail, UserSearchResult } from '@/types'
 import { isAxiosError } from 'axios'
@@ -188,27 +189,31 @@ export function GroupDetailPanel({
             COLUMN_HEADER_H,
           )}
         >
-          <h2 className="font-display text-lg font-semibold text-text">Group details</h2>
+          <h2 className="font-display text-section-title font-semibold text-text">Group details</h2>
           <IconButton label="Close" size="sm" icon={<Icon name="x" size={14} />} onClick={handleClose} />
         </div>
 
         <div className="flex flex-1 flex-col overflow-y-auto">
           {/* Group identity: emoji avatar, name, count + created date */}
-          <div className="flex flex-col items-center gap-2 border-b border-border px-5 py-6 text-center">
-            <span className="flex h-20 w-20 items-center justify-center rounded-pill bg-surface-raised text-4xl shadow-sm">
+          <div className="flex flex-col items-center gap-2.5 border-b border-border bg-surface-panel px-5 py-7 text-center">
+            <span className="flex h-20 w-20 items-center justify-center rounded-pill bg-surface-raised text-4xl shadow-sm ring-1 ring-border-strong">
               {detail?.emoji ?? '💬'}
             </span>
-            <p className="font-display text-xl font-bold text-text">{detail?.name ?? 'Group'}</p>
-            <p className="text-sm text-text-muted">
-              {members.length} members{created && ` · Created ${created}`}
+            <p className="font-display text-panel-title font-bold text-text">{detail?.name ?? 'Group'}</p>
+            <p className="text-caption text-text-muted">
+              <span className="font-semibold text-primary">{members.length}</span>{' '}
+              {members.length === 1 ? 'member' : 'members'}
+              {created && ` · Created ${created}`}
             </p>
           </div>
 
           {/* Members */}
           <div className="flex flex-col px-5 py-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Members</p>
-              <span className="text-xs text-text-muted">{members.length}</span>
+              <p className="text-overline font-semibold uppercase tracking-wide text-text-subtle">Members</p>
+              <span className="rounded-pill bg-surface-sunken px-2 py-0.5 text-caption font-medium text-text-muted">
+                {members.length}
+              </span>
             </div>
 
             {/* Add people row → expands into search */}
@@ -216,31 +221,38 @@ export function GroupDetailPanel({
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
-                className="mt-3 flex items-center gap-3 text-left"
+                className="group mt-3 flex items-center gap-3 text-left"
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-pill border border-dashed border-border-strong text-text-muted">
+                <span className="flex h-10 w-10 items-center justify-center rounded-pill border border-dashed border-border-strong text-text-muted transition-colors group-hover:border-primary/50 group-hover:text-primary">
                   <Icon name="plus" size={16} />
                 </span>
-                <span className="text-sm font-medium text-text">Add people</span>
+                <span className="text-body font-medium text-text transition-colors group-hover:text-primary">
+                  Add people
+                </span>
               </button>
             ) : (
               <div className="mt-3 flex flex-col gap-2">
                 <Input
+                  inputSize="sm"
                   placeholder="Search by username"
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
-                  leftIcon={<Icon name="search" size={16} />}
+                  leftIcon={
+                    <span className="text-primary">
+                      <Icon name="search" size={14} />
+                    </span>
+                  }
                   error={error ?? undefined}
                   autoFocus
                 />
                 {query.trim().length >= MIN_QUERY_LENGTH && (
-                  <div className="max-h-52 overflow-y-auto rounded-input border border-border">
+                  <div className="max-h-52 overflow-y-auto rounded-input border border-border bg-surface-raised shadow-sm">
                     {searching ? (
-                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-text-muted">
+                      <div className="flex items-center justify-center gap-2 py-4 text-body text-text-muted">
                         <Spinner size="sm" /> Searching…
                       </div>
                     ) : visibleResults.length === 0 ? (
-                      <p className="py-4 text-center text-sm text-text-muted">No users found.</p>
+                      <p className="py-4 text-center text-body text-text-muted">No users found.</p>
                     ) : (
                       visibleResults.map((u) => (
                         <button
@@ -249,18 +261,25 @@ export function GroupDetailPanel({
                           disabled={adding}
                           onClick={() => handleAdd(u)}
                           className={cn(
-                            'flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0',
-                            'hover:bg-surface-sunken disabled:opacity-50',
+                            'group flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0',
+                            'transition-colors hover:bg-surface-sunken disabled:opacity-50',
                           )}
                         >
-                          <Avatar name={u.display_name ?? u.username} src={u.avatar_url} size="sm" />
+                          <Avatar
+                            name={u.display_name ?? u.username}
+                            src={u.avatar_url}
+                            size="sm"
+                            colorClass={memberColor(u.id)}
+                          />
                           <div className="min-w-0 flex-1">
                             {u.display_name && (
-                              <p className="truncate text-sm font-medium text-text">{u.display_name}</p>
+                              <p className="truncate text-body font-semibold text-text">{u.display_name}</p>
                             )}
-                            <p className="truncate text-xs text-text-muted">@{u.username}</p>
+                            <p className="truncate text-caption text-text-muted">@{u.username}</p>
                           </div>
-                          <Icon name="plus" size={14} />
+                          <span className="text-text-subtle transition-colors group-hover:text-primary">
+                            <Icon name="plus" size={14} />
+                          </span>
                         </button>
                       ))
                     )}
@@ -269,7 +288,7 @@ export function GroupDetailPanel({
                 <button
                   type="button"
                   onClick={resetSearch}
-                  className="self-start text-xs text-text-muted hover:text-text"
+                  className="self-start text-caption text-text-muted hover:text-text"
                 >
                   Done
                 </button>
@@ -283,17 +302,21 @@ export function GroupDetailPanel({
                   <Spinner size="sm" />
                 </div>
               ) : members.length === 0 ? (
-                <p className="py-4 text-sm text-text-muted">No members yet.</p>
+                <p className="py-4 text-body text-text-muted">No members yet.</p>
               ) : (
                 members.map((m) => {
                   const name = m.display_name ?? `User ${m.user_id}`
                   const isYou = m.user_id === currentUserId
                   return (
                     <div key={m.user_id} className="flex items-center gap-3 py-2.5">
-                      <Avatar name={name} src={m.avatar_url} size="md" />
+                      <Avatar name={name} src={m.avatar_url} size="md" colorClass={memberColor(m.user_id)} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-text">{name}</p>
-                        <p className="text-xs text-text-muted">{isYou ? 'You' : 'Member'}</p>
+                        <p className="truncate text-body font-semibold text-text">{name}</p>
+                        {isYou ? (
+                          <p className="text-caption font-semibold text-primary">You</p>
+                        ) : (
+                          <p className="text-caption text-text-muted">Member</p>
+                        )}
                       </div>
                     </div>
                   )
@@ -310,7 +333,7 @@ export function GroupDetailPanel({
             onClick={() => setConfirmingLeave(true)}
             className={cn(
               'flex w-full items-center justify-center gap-2 rounded-input bg-error/10 py-2.5',
-              'text-sm font-semibold text-error hover:bg-error/15',
+              'text-body font-semibold text-error hover:bg-error/15',
             )}
           >
             <Icon name="logout" size={16} />
@@ -329,7 +352,7 @@ export function GroupDetailPanel({
       size="sm"
     >
       <div className="flex flex-col gap-5">
-        <p className="text-sm text-text-muted">
+        <p className="text-body text-text-muted">
           You'll be removed from <span className="font-semibold text-text">{detail?.name ?? 'this group'}</span>{' '}
           and stop receiving its messages. You can be added back by another member.
         </p>

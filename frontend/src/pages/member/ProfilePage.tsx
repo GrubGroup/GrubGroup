@@ -145,7 +145,7 @@ export function ProfilePage() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {disliked.map((v) => (
-                  <PreferenceTag key={v} tone="disliked" dot={false}>
+                  <PreferenceTag key={v} tone="disliked">
                     {labelFor(CUISINES, v)}
                   </PreferenceTag>
                 ))}

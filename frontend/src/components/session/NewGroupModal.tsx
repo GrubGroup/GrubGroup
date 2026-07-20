@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Avatar, Button, Icon, Input, Modal, Spinner } from '@/components/ui'
 import { searchUsers } from '@/api/users.api'
+import { memberColor } from '@/utils/memberColor'
 import { cn } from '@/utils/cn'
 import type { UserSearchResult } from '@/types'
 
@@ -106,15 +107,21 @@ export function NewGroupModal({ open, onClose, onSubmit, pending = false }: NewG
               {selected.map((u) => (
                 <span
                   key={u.id}
-                  className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-surface-sunken py-1 pl-1.5 pr-2 text-sm text-text"
+                  className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-surface-panel py-1 pl-1 pr-2.5 text-body font-medium text-text"
                 >
-                  <Avatar name={u.display_name ?? u.username} src={u.avatar_url} size="sm" className="h-5 w-5 text-[8px]" />
+                  <Avatar
+                    name={u.display_name ?? u.username}
+                    src={u.avatar_url}
+                    size="sm"
+                    colorClass={memberColor(u.id)}
+                    className="h-6 w-6 text-[9px]"
+                  />
                   <span>@{u.username}</span>
                   <button
                     type="button"
                     aria-label={`Remove ${u.username}`}
                     onClick={() => removeMember(u.id)}
-                    className="text-text-muted hover:text-text"
+                    className="text-text-subtle hover:text-text"
                   >
                     <Icon name="x" size={12} />
                   </button>
@@ -125,13 +132,13 @@ export function NewGroupModal({ open, onClose, onSubmit, pending = false }: NewG
 
           {/* Search results dropdown */}
           {query.trim().length >= MIN_QUERY_LENGTH && (
-            <div className="max-h-52 overflow-y-auto rounded-input border border-border">
+            <div className="max-h-52 overflow-y-auto rounded-input border border-border bg-surface-raised shadow-sm">
               {searching ? (
-                <div className="flex items-center justify-center gap-2 py-4 text-sm text-text-muted">
+                <div className="flex items-center justify-center gap-2 py-4 text-body text-text-muted">
                   <Spinner size="sm" /> Searching…
                 </div>
               ) : visibleResults.length === 0 ? (
-                <p className="py-4 text-center text-sm text-text-muted">No users found.</p>
+                <p className="py-4 text-center text-body text-text-muted">No users found.</p>
               ) : (
                 visibleResults.map((u) => (
                   <button
@@ -139,18 +146,25 @@ export function NewGroupModal({ open, onClose, onSubmit, pending = false }: NewG
                     type="button"
                     onClick={() => addMember(u)}
                     className={cn(
-                      'flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0',
-                      'hover:bg-surface-sunken',
+                      'group flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0',
+                      'transition-colors hover:bg-surface-sunken',
                     )}
                   >
-                    <Avatar name={u.display_name ?? u.username} src={u.avatar_url} size="sm" />
+                    <Avatar
+                      name={u.display_name ?? u.username}
+                      src={u.avatar_url}
+                      size="sm"
+                      colorClass={memberColor(u.id)}
+                    />
                     <div className="min-w-0 flex-1">
                       {u.display_name && (
-                        <p className="truncate text-sm font-medium text-text">{u.display_name}</p>
+                        <p className="truncate text-body font-semibold text-text">{u.display_name}</p>
                       )}
-                      <p className="truncate text-xs text-text-muted">@{u.username}</p>
+                      <p className="truncate text-caption text-text-muted">@{u.username}</p>
                     </div>
-                    <Icon name="plus" size={14} />
+                    <span className="text-text-subtle transition-colors group-hover:text-primary">
+                      <Icon name="plus" size={14} />
+                    </span>
                   </button>
                 ))
               )}
