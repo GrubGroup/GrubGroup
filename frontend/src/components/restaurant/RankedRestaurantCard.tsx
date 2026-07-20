@@ -1,7 +1,33 @@
+import { useEffect } from 'react'
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+} from 'framer-motion'
 import type { RankedPick } from '@/types'
 import { Badge, Button, Icon } from '@/components/ui'
+import { EASE } from '@/lib/motion'
 import { cn } from '@/utils/cn'
 import { formatHours, isOpenAt } from '@/utils/hours'
+
+// Counts from 0 up to `value` on mount and whenever `value` changes (e.g. when
+// switching between picks re-renders the detail). Reduced-motion renders the
+// final value directly. Hooks always run — only the output branches — so hook
+// order stays stable.
+function AnimatedPct({ value }: { value: number }) {
+  const reduce = useReducedMotion()
+  const mv = useMotionValue(0)
+  const rounded = useTransform(mv, (v) => Math.round(v))
+  useEffect(() => {
+    if (reduce) return
+    const controls = animate(mv, value, { duration: 0.6, ease: EASE })
+    return () => controls.stop()
+  }, [mv, value, reduce])
+  if (reduce) return <>{value}</>
+  return <motion.span>{rounded}</motion.span>
+}
 
 export interface RankedRestaurantCardProps {
   rank: number
@@ -32,6 +58,7 @@ export function RankedRestaurantCard({
   onConfirm,
   confirming = false,
 }: RankedRestaurantCardProps) {
+  const reduce = useReducedMotion()
   const { restaurant } = pick
   const pct = pick.match_score != null ? Math.round(pick.match_score * 100) : null
   const priceDollars = restaurant.price_avg != null ? '$'.repeat(Math.min(4, Math.ceil(restaurant.price_avg / 15))) : ''
@@ -61,7 +88,7 @@ export function RankedRestaurantCard({
             <span className="font-display text-[15px] font-semibold text-text">{restaurant.name}</span>
             {pct != null && (
               <span className="font-display text-lg font-bold text-primary">
-                {pct}
+                <AnimatedPct value={pct} />
                 <span className="text-xs">%</span>
               </span>
             )}
@@ -76,9 +103,14 @@ export function RankedRestaurantCard({
         </div>
       </div>
 
-      {/* vote progress bar */}
+      {/* vote progress bar — fills from empty on reveal */}
       <div className="ml-6 h-1 overflow-hidden rounded-pill bg-surface-sunken">
-        <div className="h-full rounded-pill bg-primary/40" style={{ width: `${pct ?? 0}%` }} />
+        <motion.div
+          className="h-full rounded-pill bg-primary/40"
+          initial={{ width: reduce ? `${pct ?? 0}%` : 0 }}
+          animate={{ width: `${pct ?? 0}%` }}
+          transition={{ duration: reduce ? 0 : 0.5, ease: EASE }}
+        />
       </div>
 
       <div className="ml-6 flex flex-wrap items-center gap-1.5">

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import type { Session } from '@/types'
+import { EASE } from '@/lib/motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
@@ -34,6 +36,7 @@ const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'comple
 }
 
 export function GroupChatPage() {
+  const reduce = useReducedMotion()
   const screen = useNavStore((s) => s.screen)
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
@@ -184,20 +187,28 @@ export function GroupChatPage() {
           {/* Session-started divider + card — inline at the point the user started it */}
           {sessionStartIndex !== null && (
             <>
-              <div className="flex items-center gap-3 py-1 text-caption text-text-muted">
-                <span className="h-px flex-1 bg-border" />
-                {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              <SessionCard
-                state={cardState}
-                memberIds={memberIds}
-                readyCount={cardState === 'complete' ? total : doneCount}
-                total={total}
-                onJoin={handleJoin}
-                onContinue={() => go('agent-chat')}
-                onViewResults={() => go('top-picks')}
-              />
+              {/* The session announcement rises into the transcript like a message. */}
+              <motion.div
+                className="flex flex-col gap-3"
+                initial={{ opacity: 0, y: reduce ? 0 : 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: reduce ? 0.2 : 0.3, ease: EASE }}
+              >
+                <div className="flex items-center gap-3 py-1 text-caption text-text-muted">
+                  <span className="h-px flex-1 bg-border" />
+                  {MOCK_MEMBER_NAMES[SESSION_STARTED_BY]} started a session
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <SessionCard
+                  state={cardState}
+                  memberIds={memberIds}
+                  readyCount={cardState === 'complete' ? total : doneCount}
+                  total={total}
+                  onJoin={handleJoin}
+                  onContinue={() => go('agent-chat')}
+                  onViewResults={() => go('top-picks')}
+                />
+              </motion.div>
 
               {/* Messages that arrived after the session started */}
               {messages.slice(sessionStartIndex).map((m) => (
