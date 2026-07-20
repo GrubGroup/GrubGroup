@@ -51,7 +51,7 @@ export function TypingIndicator({ typers }: TypingIndicatorProps) {
           />
         ))}
         {overflow > 0 && (
-          <span className="flex h-8 w-8 items-center justify-center rounded-pill border border-surface-raised bg-surface-sunken text-[10px] font-medium text-text-muted">
+          <span className="flex h-8 w-8 items-center justify-center rounded-pill border border-surface-raised bg-surface-sunken text-caption font-medium text-text-muted">
             +{overflow}
           </span>
         )}

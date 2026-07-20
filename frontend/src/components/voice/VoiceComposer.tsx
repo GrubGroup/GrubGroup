@@ -156,7 +156,7 @@ export function VoiceComposer({
       </div>
 
       {privacyNote && (
-        <p className="mt-2 text-center text-[10px] text-text-subtle">
+        <p className="mt-2 text-center text-caption text-text-subtle">
           Only you can see this · your privacy is protected
         </p>
       )}

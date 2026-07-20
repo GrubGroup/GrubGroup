@@ -66,8 +66,8 @@ export function AccountMenu({
       <div className="flex items-center gap-2.5 px-2.5 py-2">
         <Avatar name={displayName} src={avatarUrl} size="sm" colorClass="member-purple" />
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-text">{displayName}</p>
-          <p className="truncate text-xs text-text-muted">@{username}</p>
+          <p className="truncate text-body font-semibold text-text">{displayName}</p>
+          <p className="truncate text-caption text-text-muted">@{username}</p>
         </div>
       </div>
 
@@ -117,7 +117,7 @@ function MenuItem({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm font-medium transition-colors',
+        'flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-body font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
         disabled && 'cursor-not-allowed text-text-subtle',
         !disabled &&

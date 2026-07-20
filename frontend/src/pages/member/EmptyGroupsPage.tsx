@@ -96,12 +96,12 @@ export function EmptyGroupsPage() {
           <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-inverse text-white shadow-lg">
             <Icon name="utensils" size={32} />
           </span>
-          <h1 className="font-display text-[32px] font-bold leading-[40px] tracking-tight text-text">
+          <h1 className="font-display text-display font-bold tracking-tight text-text">
             Find restaurants
             <br />
             your whole group loves
           </h1>
-          <p className="mt-3 max-w-md text-[15px] leading-relaxed text-text-muted">
+          <p className="mt-3 max-w-md text-item-title leading-relaxed text-text-muted">
             Everyone tells their own AI agent what they want. GrubGroup finds the one restaurant
             that works for all of you.
           </p>
@@ -121,7 +121,7 @@ export function EmptyGroupsPage() {
 
         {/* How it works */}
         <section className="border-b border-border px-8 py-10">
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+          <p className="text-center text-overline font-semibold uppercase tracking-[0.1em] text-text-muted">
             How it works
           </p>
           <div className="mx-auto mt-6 grid max-w-2xl gap-8 sm:grid-cols-3">
@@ -130,8 +130,8 @@ export function EmptyGroupsPage() {
                 <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-surface-panel text-xl">
                   {s.emoji}
                 </span>
-                <h3 className="text-[13px] font-semibold text-text">{s.title}</h3>
-                <p className="text-xs leading-relaxed text-text-muted">{s.body}</p>
+                <h3 className="text-item-title font-semibold text-text">{s.title}</h3>
+                <p className="text-caption leading-relaxed text-text-muted">{s.body}</p>
               </div>
             ))}
           </div>
@@ -139,10 +139,10 @@ export function EmptyGroupsPage() {
 
         {/* Works for every group */}
         <section className="border-b border-border px-8 py-10">
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+          <p className="text-center text-overline font-semibold uppercase tracking-[0.1em] text-text-muted">
             Works for every group
           </p>
-          <p className="mt-2 text-center text-xs text-text-muted">
+          <p className="mt-2 text-center text-caption text-text-muted">
             Dietary restrictions, budgets, and location preferences — handled automatically.
           </p>
           <div className="mx-auto mt-6 flex max-w-lg flex-wrap items-center justify-center gap-2.5">
@@ -153,8 +153,8 @@ export function EmptyGroupsPage() {
               >
                 <MemberDot userId={c.userId} name={c.name} />
                 <div className="leading-tight">
-                  <p className="text-[11px] font-semibold text-text">{c.name}</p>
-                  <p className="text-[10px] text-text-muted">{c.pref}</p>
+                  <p className="text-caption font-semibold text-text">{c.name}</p>
+                  <p className="text-caption text-text-muted">{c.pref}</p>
                 </div>
               </div>
             ))}
@@ -163,7 +163,7 @@ export function EmptyGroupsPage() {
 
         {/* Recent community picks */}
         <section className="px-8 py-10">
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+          <p className="text-center text-overline font-semibold uppercase tracking-[0.1em] text-text-muted">
             Recent picks from the community
           </p>
           <div className="mx-auto mt-6 grid max-w-2xl gap-4 sm:grid-cols-3">
@@ -175,14 +175,14 @@ export function EmptyGroupsPage() {
                 <div className="h-28 w-full bg-surface-sunken" />
                 <div className="p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-semibold text-text">{p.name}</p>
-                    <p className="text-[11px] font-bold text-primary">{p.score}%</p>
+                    <p className="text-caption font-semibold text-text">{p.name}</p>
+                    <p className="text-caption font-bold text-primary">{p.score}%</p>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {p.tags.map((t) => (
                       <span
                         key={t}
-                        className="flex items-center gap-1 rounded-pill bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success"
+                        className="flex items-center gap-1 rounded-pill bg-success/10 px-2 py-0.5 text-caption font-medium text-success"
                       >
                         <Icon name="check" size={10} /> {t}
                       </span>

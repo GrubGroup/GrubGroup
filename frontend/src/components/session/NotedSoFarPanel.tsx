@@ -8,7 +8,7 @@ export function NotedSoFarPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+      <h3 className="text-overline font-semibold uppercase tracking-wide text-text-muted">
         Noted so far
       </h3>
       <ul className="flex flex-col gap-1.5">
@@ -17,8 +17,8 @@ export function NotedSoFarPanel() {
             key={n.id}
             className={
               n.confirmed
-                ? 'flex items-center gap-2 rounded-input bg-surface-raised px-2.5 py-2 text-xs text-text'
-                : 'flex items-center gap-2 rounded-input px-2.5 py-2 text-xs text-text-subtle'
+                ? 'flex items-center gap-2 rounded-input bg-surface-raised px-2.5 py-2 text-caption text-text'
+                : 'flex items-center gap-2 rounded-input px-2.5 py-2 text-caption text-text-subtle'
             }
           >
             <span className={n.confirmed ? 'text-success' : 'text-text-subtle'}>

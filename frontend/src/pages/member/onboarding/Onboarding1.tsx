@@ -41,7 +41,7 @@ export function Onboarding1() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Allergies
         </span>
         <div className="flex flex-wrap gap-2">

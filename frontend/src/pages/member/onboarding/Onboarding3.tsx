@@ -54,7 +54,7 @@ export function Onboarding3() {
       <Input label="DEFAULT ADDRESS" value={value} onChange={(e) => setValue(e.target.value)} />
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Max distance
         </span>
         <div className="flex gap-2">
@@ -77,7 +77,7 @@ export function Onboarding3() {
 
       {/* Profile summary card */}
       <div className="flex flex-col gap-1.5 rounded-card bg-surface-sunken p-4 text-sm text-text">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Your profile
         </span>
         {dietary.map((d) => (

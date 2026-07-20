@@ -28,11 +28,11 @@ export function OnboardingLayout({ step, total, title, subtitle, children }: Onb
             ))}
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            <p className="text-overline font-semibold uppercase tracking-wide text-text-muted">
               Step {step} of {total}
             </p>
             <h1 className="mt-1 font-display text-2xl font-bold text-text">{title}</h1>
-            <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
+            <p className="mt-1 text-body text-text-muted">{subtitle}</p>
           </div>
           {children}
         </div>

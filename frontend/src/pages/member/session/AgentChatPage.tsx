@@ -128,7 +128,7 @@ export function AgentChatPage() {
               <Icon name="chevron-left" size={18} />
             </button>
             <div>
-              <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-white/50">
+              <p className="flex items-center gap-1.5 text-overline uppercase tracking-wide text-white/50">
                 <Icon name="lock" size={10} /> Private · only you can see this
               </p>
               <p className="text-sm font-semibold text-white">Your food agent</p>

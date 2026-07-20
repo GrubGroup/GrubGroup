@@ -73,7 +73,7 @@ export function SessionPicksBlock({ block, currentUserId }: SessionPicksBlockPro
 
   if (picks.length === 0) {
     return (
-      <div className="rounded-card border border-primary/40 bg-surface-raised p-4 text-sm text-text-muted">
+      <div className="rounded-card border border-primary/40 bg-surface-raised p-4 text-body text-text-muted">
         Top picks are ready — loading details…
       </div>
     )
@@ -86,8 +86,8 @@ export function SessionPicksBlock({ block, currentUserId }: SessionPicksBlockPro
           🍽
         </span>
         <div>
-          <p className="font-display text-sm font-bold text-text">Top picks for your group</p>
-          <p className="text-[11px] text-text-muted">
+          <p className="font-display text-item-title font-bold text-text">Top picks for your group</p>
+          <p className="text-caption text-text-muted">
             {isHost ? 'Pick one to confirm the event' : 'Vote for your favorite'}
           </p>
         </div>
@@ -112,7 +112,7 @@ export function SessionPicksBlock({ block, currentUserId }: SessionPicksBlockPro
       </div>
 
       {confirmedId != null && (
-        <div className="flex items-center gap-1.5 border-t border-border bg-success/5 px-4 py-2.5 text-xs font-medium text-success">
+        <div className="flex items-center gap-1.5 border-t border-border bg-success/5 px-4 py-2.5 text-caption font-medium text-success">
           Confirmed! Your group event has been created.
         </div>
       )}
