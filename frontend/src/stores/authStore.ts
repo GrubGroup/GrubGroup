@@ -49,6 +49,14 @@ interface AuthState {
   user: User | null
   role: Role | null
   isGuest: boolean
+  // True once the interactive sign-in/up form has successfully handled auth this
+  // session. App uses it to stand down its own post-auth forwarding + splash: the
+  // form routes itself (and a brand-new account SLIDES from sign-up into
+  // onboarding inside AuthFlowShell), so App must not unmount the shell mid-slide.
+  // App's auto-forward is only for the OAuth-return / reload case, where the form
+  // never runs and this stays false.
+  entryFlowActive: boolean
+  setEntryFlowActive: (v: boolean) => void
   // Sync the store from Better Auth's session (called by App on session change).
   setSessionUser: (su: SessionUser | null) => void
   // Merge edited identity fields (display_name/username) after a saved update,
@@ -62,6 +70,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: INITIAL_USER,
   role: INITIAL_USER?.role ?? null,
   isGuest: false,
+  entryFlowActive: false,
+
+  setEntryFlowActive: (v) => set({ entryFlowActive: v }),
 
   setSessionUser: (su) => {
     // Never override the dev ?as= impersonation with the real session.
@@ -104,6 +115,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    set({ user: null, role: null, isGuest: false })
+    set({ user: null, role: null, isGuest: false, entryFlowActive: false })
   },
 }))

@@ -11,10 +11,12 @@ export interface BrandPanelProps {
   onLogoClick?: () => void
 }
 
-// Onboarding renders a fresh OnboardingLayout (and thus BrandPanel) on every
-// step, so the entrance would replay 4×. This module-level flag plays the
-// staggered entrance only on the first mount of the session; later mounts start
-// already-shown (idle float loops still run).
+// BrandPanel appears on both the auth screens and the onboarding shell. This
+// module-level flag plays the staggered entrance only on the FIRST mount of the
+// session; later mounts (e.g. navigating auth → onboarding) start already-shown so
+// the entrance never replays. The panel now stays mounted across the entire entry
+// flow (sign-in/up + all onboarding steps; see AuthFlowShell), so it no longer
+// remounts between those screens at all.
 let hasEntered = false
 
 // The panel's identity avatars (overlapping, member-color coded).
