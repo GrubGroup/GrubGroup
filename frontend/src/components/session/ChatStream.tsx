@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
 import { ChatMessage } from './ChatMessage'
 import { Icon } from '@/components/ui'
 import { useChatStore } from '@/stores/chatStore'
+import { useScrollToBottom } from '@/hooks/useScrollToBottom'
+import { useNewItemIds } from '@/hooks/useNewItemIds'
 
 export interface ChatStreamProps {
   /** When true, appends the "You're done · waiting for the group" pill in-stream. */
@@ -10,16 +11,16 @@ export interface ChatStreamProps {
 
 export function ChatStream({ done = false }: ChatStreamProps) {
   const messages = useChatStore((s) => s.messages)
-  const endRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, done])
+  // +1 on send/reply → smooth; the "done" pill is not a message, so fold it into
+  // the count so appending it still nudges to the bottom.
+  const endRef = useScrollToBottom<HTMLDivElement>(messages.length + (done ? 1 : 0))
+  // Only genuinely new messages pop; the opening history renders static.
+  const newIds = useNewItemIds(messages.map((m) => m.id))
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-gutter">
       {messages.map((m) => (
-        <ChatMessage key={m.id} message={m} />
+        <ChatMessage key={m.id} message={m} isNew={newIds.has(m.id)} />
       ))}
       {done && (
         <div className="flex justify-center pt-1">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import type { Session } from '@/types'
 import { EASE } from '@/lib/motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
@@ -7,7 +7,7 @@ import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
 import { GroupDetailPanel } from '@/components/session/GroupDetailPanel'
 import { HostSessionModal } from '@/components/session/HostSessionModal'
-import { Avatar, Icon } from '@/components/ui'
+import { Avatar, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { TypingIndicator } from '@/components/session/TypingIndicator'
@@ -22,10 +22,13 @@ import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import {
   useGroupChatStore,
   selectGroupMessages,
+  selectHistoryLoaded,
   selectSessionStartIndex,
   selectTypers,
 } from '@/stores/groupChatStore'
 import { useSocket } from '@/hooks/useSocket'
+import { useScrollToBottom } from '@/hooks/useScrollToBottom'
+import { useNewItemIds } from '@/hooks/useNewItemIds'
 
 // Card state derives from which group-chat screen we're on.
 const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'complete'> = {
@@ -64,6 +67,7 @@ export function GroupChatPage() {
   // the join for a non-positive id).
   useSocket(isMember ? groupId : 0)
   const messages = useGroupChatStore(selectGroupMessages(groupId))
+  const historyLoaded = useGroupChatStore(selectHistoryLoaded(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
   const setTyping = useGroupChatStore((s) => s.setTyping)
@@ -73,6 +77,15 @@ export function GroupChatPage() {
   // the message index where the card belongs (null = not started), so every
   // client shows the card inline at the same point. Broadcasts to the whole room.
   const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
+
+  // Auto-scroll to newest. Opening a chat (or switching groups via the groupId
+  // reset key, or the initial socket history bulk-load) jumps to the bottom
+  // instantly; a single new message (echo lands, +1) smooth-scrolls into view.
+  // Fold the typing bubble into the count so it nudges the view when it appears.
+  const endRef = useScrollToBottom<HTMLDivElement>(messages.length + typers.length, groupId)
+  // Only messages that just arrived pop in; opening/switching a group renders the
+  // existing history static (keyed by groupId so a switch resets the "seen" set).
+  const newIds = useNewItemIds(messages.map((m) => m.id), groupId)
 
   // Group-detail (edit) panel visibility.
   const [editing, setEditing] = useState(false)
@@ -92,6 +105,11 @@ export function GroupChatPage() {
     // the socket, so we don't hit a real session id that the user may not be in.
     if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
   }, [members.length, loadSession, currentUserId])
+
+  // History loads async over the socket (chat:history) after joining. Show a
+  // loader until it arrives. Mock mode has no socket / no history event, so it's
+  // never "loading" there (messages appear as they're seeded locally).
+  const loadingHistory = !USE_MOCK && isMember && groupId > 0 && !historyLoaded
 
   const cardState = CARD_STATE[screen] ?? 'not-joined'
   const memberIds = members.map((m) => m.user_id)
@@ -143,16 +161,30 @@ export function GroupChatPage() {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-display text-item-title font-bold text-text">{groupName}</span>
+              {/* Overlapping member stack — a newly added member pops into the
+                  cluster (spring scale-in) when the roster grows. */}
               <div className="flex -space-x-1.5">
-                {memberIds.slice(0, 5).map((id) => (
-                  <Avatar
-                    key={id}
-                    name={MOCK_MEMBER_NAMES[id] ?? '?'}
-                    size="sm"
-                    colorClass={MOCK_MEMBER_COLORS[id]}
-                    className="h-4 w-4 border border-surface-raised text-[7px]"
-                  />
-                ))}
+                <AnimatePresence initial={false}>
+                  {memberIds.slice(0, 5).map((id) => (
+                    <motion.span
+                      key={id}
+                      layout={!reduce}
+                      initial={{ opacity: 0, scale: reduce ? 1 : 0.4 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: reduce ? 1 : 0.4 }}
+                      transition={
+                        reduce ? { duration: 0.15 } : { type: 'spring', stiffness: 520, damping: 26 }
+                      }
+                    >
+                      <Avatar
+                        name={MOCK_MEMBER_NAMES[id] ?? '?'}
+                        size="sm"
+                        colorClass={MOCK_MEMBER_COLORS[id]}
+                        className="h-4 w-4 border border-surface-raised text-[7px]"
+                      />
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
             <p className="text-caption text-text-muted">
@@ -179,9 +211,16 @@ export function GroupChatPage() {
 
         {/* Messages */}
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+          {loadingHistory ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted">
+              <Spinner size="md" />
+              <span className="text-caption">Loading messages…</span>
+            </div>
+          ) : (
+          <>
           {/* Messages that existed before the session started */}
           {(sessionStartIndex === null ? messages : messages.slice(0, sessionStartIndex)).map((m) => (
-            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
+            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} isNew={newIds.has(m.id)} />
           ))}
 
           {/* Session-started divider + card — inline at the point the user started it */}
@@ -212,10 +251,13 @@ export function GroupChatPage() {
 
               {/* Messages that arrived after the session started */}
               {messages.slice(sessionStartIndex).map((m) => (
-                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} />
+                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} isNew={newIds.has(m.id)} />
               ))}
             </>
           )}
+          </>
+          )}
+          <div ref={endRef} />
         </div>
 
         {/* Live "… is typing" bubble, pinned just above the composer */}

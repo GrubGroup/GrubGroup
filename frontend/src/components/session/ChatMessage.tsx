@@ -1,14 +1,13 @@
-import { motion, useReducedMotion } from 'framer-motion'
 import type { ChatMessage as ChatMessageType } from '@/types'
-import { EASE } from '@/lib/motion'
+import { cn } from '@/utils/cn'
 
 export interface ChatMessageProps {
   message: ChatMessageType
+  /** True only for a message that just arrived — triggers the bubble pop. */
+  isNew?: boolean
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
-  const reduce = useReducedMotion()
-
+export function ChatMessage({ message, isNew = false }: ChatMessageProps) {
   let content
   if (message.role === 'system') {
     content = (
@@ -41,14 +40,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )
   }
 
-  // Fade + rise as each message arrives, so streamed agent replies feel alive.
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: reduce ? 0 : 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduce ? 0.2 : 0.3, ease: EASE }}
-    >
-      {content}
-    </motion.div>
-  )
+  // Freshly arrived messages pop in (scale 0→100% with a spring overshoot, via
+  // the animate-bubble-pop CSS utility). History renders static.
+  return <div className={cn(isNew && 'animate-bubble-pop')}>{content}</div>
 }
