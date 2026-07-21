@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Avatar, Button, Icon, IconButton, Input, Modal, Spinner } from '@/components/ui'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { Avatar, Button, Icon, IconButton, Input, Modal, SkeletonRow, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { fetchGroup, addGroupMember } from '@/api/groups.api'
 import { searchUsers } from '@/api/users.api'
@@ -46,6 +47,7 @@ export function GroupDetailPanel({
   onLeft,
 }: GroupDetailPanelProps) {
   const leaveGroup = useGroupsStore((s) => s.leaveGroup)
+  const reduce = useReducedMotion()
 
   const [detail, setDetail] = useState<GroupDetail | null>(null)
   const [adding, setAdding] = useState(false)
@@ -248,8 +250,9 @@ export function GroupDetailPanel({
                 {query.trim().length >= MIN_QUERY_LENGTH && (
                   <div className="max-h-52 overflow-y-auto rounded-input border border-border bg-surface-raised shadow-sm">
                     {searching ? (
-                      <div className="flex items-center justify-center gap-2 py-4 text-body text-text-muted">
-                        <Spinner size="sm" /> Searching…
+                      <div className="py-1">
+                        <SkeletonRow />
+                        <SkeletonRow />
                       </div>
                     ) : visibleResults.length === 0 ? (
                       <p className="py-4 text-center text-body text-text-muted">No users found.</p>
@@ -304,23 +307,35 @@ export function GroupDetailPanel({
               ) : members.length === 0 ? (
                 <p className="py-4 text-body text-text-muted">No members yet.</p>
               ) : (
-                members.map((m) => {
-                  const name = m.display_name ?? `User ${m.user_id}`
-                  const isYou = m.user_id === currentUserId
-                  return (
-                    <div key={m.user_id} className="flex items-center gap-3 py-2.5">
-                      <Avatar name={name} src={m.avatar_url} size="md" colorClass={memberColor(m.user_id)} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-body font-semibold text-text">{name}</p>
-                        {isYou ? (
-                          <p className="text-caption font-semibold text-primary">You</p>
-                        ) : (
-                          <p className="text-caption text-text-muted">Member</p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })
+                <AnimatePresence initial={false}>
+                  {members.map((m) => {
+                    const name = m.display_name ?? `User ${m.user_id}`
+                    const isYou = m.user_id === currentUserId
+                    return (
+                      <motion.div
+                        key={m.user_id}
+                        layout={!reduce}
+                        initial={{ opacity: 0, scale: reduce ? 1 : 0.6, y: reduce ? 0 : 6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: reduce ? 1 : 0.6 }}
+                        transition={
+                          reduce ? { duration: 0.15 } : { type: 'spring', stiffness: 480, damping: 30 }
+                        }
+                        className="flex items-center gap-3 py-2.5"
+                      >
+                        <Avatar name={name} src={m.avatar_url} size="md" colorClass={memberColor(m.user_id)} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-body font-semibold text-text">{name}</p>
+                          {isYou ? (
+                            <p className="text-caption font-semibold text-primary">You</p>
+                          ) : (
+                            <p className="text-caption text-text-muted">Member</p>
+                          )}
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </AnimatePresence>
               )}
             </div>
           </div>

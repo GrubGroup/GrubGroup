@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Icon } from '@/components/ui'
+import { EASE } from '@/lib/motion'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { NewGroupModal } from '@/components/session/NewGroupModal'
 import { useNavStore } from '@/stores/navStore'
@@ -81,6 +83,7 @@ function GroupRow({ group }: { group: Group }) {
 // recent-groups list as its body. Clicking a group selects it as the active
 // chat room; "New group" opens a name prompt and creates one (local-only).
 export function GroupsSidebar() {
+  const reduce = useReducedMotion()
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
   const groups = useGroupsStore((s) => s.groups)
@@ -154,9 +157,20 @@ export function GroupsSidebar() {
       </div>
 
       <div className="flex flex-col gap-0.5 px-2 pt-1">
-        {visibleGroups.map((g) => (
-          <GroupRow key={g.id} group={g} />
-        ))}
+        <AnimatePresence initial={false}>
+          {visibleGroups.map((g) => (
+            <motion.div
+              key={g.id}
+              layout={!reduce}
+              initial={{ opacity: 0, y: reduce ? 0 : -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: reduce ? 0 : -4 }}
+              transition={{ duration: reduce ? 0.12 : 0.2, ease: EASE }}
+            >
+              <GroupRow group={g} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {visibleGroups.length === 0 && (
           <p className="px-2 py-6 text-center text-caption text-text-muted">
             {query.trim() ? 'No groups match your search.' : 'No groups yet.'}
