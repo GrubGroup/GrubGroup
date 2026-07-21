@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCard'
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
@@ -8,10 +9,12 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { EASE } from '@/lib/motion'
 import { USE_MOCK } from '@/lib/env'
 import { closeSession } from '@/api/session.api'
 
 export function TopPicksPage() {
+  const reduce = useReducedMotion()
   const go = useNavStore((s) => s.go)
   const session = useSessionStore((s) => s.session)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
@@ -84,16 +87,22 @@ export function TopPicksPage() {
           </p>
         </div>
         {picks.map((pick, i) => (
-          <RankedRestaurantCard
+          <motion.div
             key={pick.restaurant_id}
-            rank={i + 1}
-            pick={pick}
-            selected={pick.restaurant_id === activeId}
-            hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
-            onVote={() => castVote(pick.restaurant_id, currentUserId)}
-            onSelect={() => setSelectedId(pick.restaurant_id)}
-            showHours
-          />
+            initial={{ opacity: 0, y: reduce ? 0 : 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduce ? 0.2 : 0.4, delay: reduce ? 0 : i * 0.07, ease: EASE }}
+          >
+            <RankedRestaurantCard
+              rank={i + 1}
+              pick={pick}
+              selected={pick.restaurant_id === activeId}
+              hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
+              onVote={() => castVote(pick.restaurant_id, currentUserId)}
+              onSelect={() => setSelectedId(pick.restaurant_id)}
+              showHours
+            />
+          </motion.div>
         ))}
       </div>
 

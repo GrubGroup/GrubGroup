@@ -207,3 +207,50 @@ body {
 .group:hover .mic-fill {
   transform: translateY(-2px); /* hover: liquid rises up into the mic */
 }
+
+/*
+ * Skeleton shimmer — a soft highlight sweeping left→right across placeholder
+ * blocks while search results / lists load (see ui/Skeleton). The reduced-motion
+ * backstop above freezes the sweep to a static tint for users who opt out.
+ */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@utility animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-surface-sunken) 25%,
+    var(--color-surface-panel) 50%,
+    var(--color-surface-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/*
+ * Message "pop": a freshly arrived chat bubble eases up into place with a small
+ * scale + fade — a subtle settle, not a big bounce. Applied ONLY to newly arrived
+ * messages; existing history renders static, so opening a chat doesn't replay it.
+ * The reduced-motion backstop above collapses it.
+ */
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@utility animate-bubble-pop {
+  transform-origin: bottom;
+  animation: bubble-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}

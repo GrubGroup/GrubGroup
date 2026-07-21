@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Avatar, Badge, Button, Icon } from '@/components/ui'
+import { EASE } from '@/lib/motion'
 import { PreferenceTag } from '@/components/profile/PreferenceTag'
 import { CUISINES, DIETARY_RESTRICTIONS, isAllergen, labelFor } from '@/constants/dietary'
 import { useAuthStore } from '@/stores/authStore'
@@ -10,6 +12,7 @@ import { useRestaurantStore } from '@/stores/restaurantStore'
 // Read-only profile view. Composes the domain User (header identity) with the
 // Profile (dining preferences). Mirrors the "[Orange] Profile" wireframe.
 export function ProfilePage() {
+  const reduce = useReducedMotion()
   const go = useNavStore((s) => s.go)
   const returnTo = useNavStore((s) => s.returnTo)
   const user = useAuthStore((s) => s.user)
@@ -36,7 +39,12 @@ export function ProfilePage() {
   const displayName = user?.display_name ?? user?.username ?? 'You'
 
   return (
-    <div className="h-screen overflow-y-auto bg-surface-raised">
+    <motion.div
+      className="h-screen overflow-y-auto bg-surface-raised"
+      initial={{ opacity: 0, y: reduce ? 0 : 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduce ? 0.15 : 0.3, ease: EASE }}
+    >
       <div className="mx-auto max-w-3xl">
         {/* Header bar */}
         <div className="flex items-start justify-between gap-4 border-b border-border px-8 py-6">
@@ -182,7 +190,7 @@ export function ProfilePage() {
           </Section>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 

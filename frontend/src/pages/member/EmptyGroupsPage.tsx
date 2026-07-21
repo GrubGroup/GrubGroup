@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Button, Icon } from '@/components/ui'
+import { makeFloat } from '@/lib/motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { NewGroupModal } from '@/components/session/NewGroupModal'
 import { useNavStore } from '@/stores/navStore'
@@ -64,6 +66,10 @@ function MemberDot({ userId, name }: { userId: number; name: string }) {
 // left (its "+" and the hero CTAs both create a group) plus a marketing-style
 // filler pane on the right, mirroring the no-groups Figma reference.
 export function EmptyGroupsPage() {
+  const reduce = useReducedMotion()
+  // Gentle idle float on the hero icon. Typed as `object` (matching BrandPanel's
+  // FloatCard) so the string easing spreads cleanly onto the motion element.
+  const heroFloat: object = makeFloat(!!reduce)(0)
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
   const addGroup = useGroupsStore((s) => s.addGroup)
@@ -93,9 +99,12 @@ export function EmptyGroupsPage() {
       <div className="flex flex-1 flex-col overflow-y-auto bg-surface-raised">
         {/* Hero */}
         <section className="flex flex-col items-center border-b border-border px-8 pb-12 pt-16 text-center">
-          <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-inverse text-white shadow-lg">
+          <motion.span
+            {...heroFloat}
+            className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-inverse text-white shadow-lg"
+          >
             <Icon name="utensils" size={32} />
-          </span>
+          </motion.span>
           <h1 className="font-display text-display font-bold tracking-tight text-text">
             Find restaurants
             <br />
