@@ -8,7 +8,6 @@ import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { Button, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
-import { USE_MOCK } from '@/lib/env'
 import { useChatStore } from '@/stores/chatStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -25,18 +24,16 @@ export function AgentChatPage() {
   const adoptSessionId = useChatStore((s) => s.adoptSessionId)
   const sending = useChatStore((s) => s.sending)
   const missingSignals = useChatStore((s) => s.missingSignals)
+  const isComplete = useChatStore((s) => s.isComplete)
 
   const phase = useSessionStore((s) => s.phase)
   const setPhase = useSessionStore((s) => s.setPhase)
   const setMemberDone = useSessionStore((s) => s.setMemberDone)
-  const simulateAutoComplete = useSessionStore((s) => s.simulateAutoComplete)
-  const members = useSessionStore((s) => s.members)
   const doneCount = useSessionStore((s) => s.doneCount())
   const progressTotal = useSessionStore((s) => s.progressTotal())
   const recommendation = useSessionStore((s) => s.recommendation)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const loadSession = useSessionStore((s) => s.load)
-  const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
+  const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
   const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
   const screen = useNavStore((s) => s.screen)
   const groupId = useNavStore((s) => s.groupId)
@@ -50,15 +47,21 @@ export function AgentChatPage() {
     missingSignals.length ? missingSignals : ['preferred_cuisines'],
   )
 
+  // "All set": the agent has nothing left to ask. Keyed off the server's
+  // authoritative is_complete flag (chatStore.isComplete), which is only true
+  // after a real analyze turn — so the opening greeting never falsely reads as
+  // complete, and a skipped-but-answered step (empty dislikes) still counts as
+  // done. Once true, we surface a gentle "good to go" banner and keep the
+  // composer open so corrections are still possible.
+  const hasAnswered = messages.some((m) => m.role === 'user')
+  const allSet = hasAnswered && isComplete && !sending
+
   // Keep the live socket subscribed while the member chats, so session:member_done
   // progress + a session:picks delivery still update this page (the group-chat page
   // is unmounted here). The singleton socket makes the room join idempotent.
   useSocket(groupId)
 
   useEffect(() => {
-    // Mock mode seeds the demo roster; live adopts the session via the socket.
-    if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
-
     // Seed the conversation when there's none yet, or re-seed when it belongs to
     // a GENUINELY DIFFERENT session — so a new session never inherits the prior
     // transcript. Refining an unknown id into the real one (chatSessionId null →
@@ -74,9 +77,6 @@ export function AgentChatPage() {
     }
     if (phase === 'joining' || phase === 'waiting') setPhase('chatting')
   }, [
-    members.length,
-    loadSession,
-    currentUserId,
     displayName,
     messages.length,
     chatSessionId,
@@ -97,27 +97,10 @@ export function AgentChatPage() {
   const handleDone = async () => {
     if (marking) return // guard against a double-click during the REST round-trip
     setMarking(true)
-    // Live: mark ready over REST — the gateway broadcasts session:member_done and
-    // (when this is the last finish) auto-generates results, which arrive via
-    // session:picks. Every client reconciles from the echo. Mock: flip locally.
-    if (USE_MOCK || activeSessionId == null) {
-      setMemberDone(currentUserId)
-      // Mock demo: the socket is disabled, so nothing drives the other members to
-      // finish. Stand in for the gateway's auto-complete — after a short beat the
-      // remaining members "finish" and results appear, so the waiting state is
-      // shown briefly and then the Results affordance lights up.
-      if (USE_MOCK) {
-        const allOthersDone = useSessionStore
-          .getState()
-          .members.filter((m) => m.user_id !== currentUserId)
-          .every((m) => m.status)
-        if (allOthersDone) {
-          simulateAutoComplete()
-        } else {
-          setTimeout(() => simulateAutoComplete(), 2500)
-        }
-      }
-    } else {
+    // Mark ready over REST — the gateway broadcasts session:member_done and (when
+    // this is the last finish) auto-generates results, which arrive via
+    // session:picks. Every client reconciles from the echo.
+    if (activeSessionId != null) {
       try {
         await setReady(activeSessionId, true)
       } catch {
@@ -125,6 +108,8 @@ export function AgentChatPage() {
         // stuck; the broadcast reconciles the shared roster when it lands.
         setMemberDone(currentUserId)
       }
+    } else {
+      setMemberDone(currentUserId)
     }
     go('agent-chat-done')
   }
@@ -176,12 +161,26 @@ export function AgentChatPage() {
                 </div>
               )}
               <VoiceComposer onSend={handleSend} disabled={sending} privacyNote />
-              {/* Prominent finish CTA — the primary way to end the conversation. */}
+              {/* "All set" banner: once the agent has nothing left to ask, nudge
+                  the user to finish while making clear they can still make changes. */}
+              {allSet && (
+                <div className="mx-4 mt-2 flex items-start gap-2 rounded-input border border-success/40 bg-success/10 px-3 py-2 text-xs text-text">
+                  <span className="mt-0.5 text-success">
+                    <Icon name="check" size={14} />
+                  </span>
+                  <span>
+                    You're good to go — I have everything I need. Want to change
+                    anything? Just tell me. Otherwise, finish below.
+                  </span>
+                </div>
+              )}
+              {/* Prominent finish CTA — the primary way to end the conversation.
+                  Turns accent once the agent is satisfied, to signal it's ready. */}
               <div className="border-t border-border bg-surface-raised p-4">
                 <Button
                   fullWidth
                   size="lg"
-                  variant="primary"
+                  variant={allSet ? 'accent' : 'primary'}
                   isLoading={marking}
                   rightIcon={<Icon name="arrow-right" size={16} />}
                   onClick={() => void handleDone()}

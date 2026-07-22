@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
 import { fetchRecommendation, fetchSession, generateRecommendation } from '@/api/sessionApi'
-import { MOCK_RECOMMENDATION } from '@/api/mock/sessionMock'
-import { USE_MOCK } from '@/lib/env'
 import { useAuthStore } from '@/stores/authStore'
 
 // Module-level guard so the timer-expiry generation fires at most once even if
@@ -77,10 +75,6 @@ interface SessionState {
   // if the countdown runs out before everyone finishes. No-op for non-hosts or
   // when results already exist. Guarded against concurrent/repeat calls.
   triggerExpiryGeneration: () => Promise<void>
-  // MOCK-ONLY demo helper: flip every remaining member to done and adopt the mock
-  // recommendation, standing in for the gateway's server-side auto-complete (which
-  // isn't reachable offline, where the socket is disabled).
-  simulateAutoComplete: () => void
   castVote: (restaurantId: number, userId: number) => void
   chooseRestaurant: (restaurantId: number) => void
   close: () => void
@@ -137,34 +131,46 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  setSession: (session, currentUserId) =>
+  setSession: (session, currentUserId) => {
+    // A brand-new session clears the once-per-session expiry-generation latch, so
+    // the new session's timer fallback can fire (the prior session may have set it).
+    expiryGenerating = false
     set((s) => {
-      // Seed the host (the current user, who just created the session) into the
-      // roster with their real name, so the roster is never empty/nameless right
-      // after create — hydrateMembers then merges in the rest of the group.
+      // Adopting a session the current user just created is a FRESH START — even
+      // if a prior session ran in this group. Seed the roster with ONLY the host
+      // (their real name), so hydrateMembers can merge in the rest; do NOT carry
+      // over the previous session's roster/total. Clear the previous session's
+      // results + voting state so the new session's card shows 'in progress' (not
+      // an instant 'complete' from a stale recommendation) and Results is empty
+      // until this session generates its own. Guards the "start another session
+      // after one completes" flow (the button re-enables once complete).
       const uid = currentUserId ?? s.currentUserId
-      const hasSelf = s.members.some((m) => m.user_id === uid)
-      const members = hasSelf
-        ? s.members
-        : [
-            ...s.members,
-            {
-              session_id: session.id,
-              user_id: uid,
-              status: false,
-              joined_at: new Date().toISOString(),
-              ...selfNameFields(uid),
-            },
-          ]
+      const members = [
+        {
+          session_id: session.id,
+          user_id: uid,
+          status: false,
+          joined_at: new Date().toISOString(),
+          ...selfNameFields(uid),
+        },
+      ]
       return {
         session,
         members,
-        serverTotal: Math.max(s.serverTotal, members.length),
+        serverTotal: members.length,
         activeSessionId: session.id,
         startedAt: session.created_at ?? new Date().toISOString(),
         currentUserId: uid,
+        // Clear prior-session results/voting so nothing leaks into the new one.
+        recommendation: null,
+        recommendationLoading: false,
+        recommendationError: false,
+        votes: {},
+        chosenRestaurantId: null,
+        phase: 'joining',
       }
-    }),
+    })
+  },
 
   setStartedAt: (at) => set({ startedAt: at }),
 
@@ -259,33 +265,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (expiryGenerating) return
     expiryGenerating = true
     try {
-      const rec = await generateRecommendation(activeSessionId, { forcePartial: true })
-      // Live: the gateway broadcasts session:picks, so results arrive via the
-      // socket. Offline (mock, socket null): adopt the rec so Results appears.
-      if (USE_MOCK) {
-        get().receivePicks({
-          recommendationId: rec.id,
-          sessionId: activeSessionId,
-          items: rec.items,
-        })
-      }
+      await generateRecommendation(activeSessionId, { forcePartial: true })
+      // The gateway broadcasts session:picks, so results arrive via the socket.
     } catch {
       // Generation failure (e.g. 409 not-ready) is surfaced elsewhere; allow a
       // later retry rather than latching the guard.
       expiryGenerating = false
     }
-  },
-
-  simulateAutoComplete: () => {
-    const { session, activeSessionId, recommendation } = get()
-    if (recommendation != null) return // already have results — don't regenerate
-    set((s) => ({
-      members: s.members.map((m) => ({ ...m, status: true })),
-      recommendation: {
-        ...structuredClone(MOCK_RECOMMENDATION),
-        session_id: activeSessionId ?? session?.id ?? MOCK_RECOMMENDATION.session_id,
-      },
-    }))
   },
 
   castVote: (restaurantId, userId) => {

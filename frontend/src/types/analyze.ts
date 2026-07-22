@@ -40,8 +40,9 @@ export interface AnalyzeTurnBody {
 }
 
 // Response body for the analyze endpoint. Mirrors ai_service `AnalyzeResponse`:
-// the reply text is `agent_reply` (not `reply`), and completion is inferred from
-// `missing_signals` being empty (there is no `done` flag).
+// the reply text is `agent_reply` (not `reply`). Completion is the authoritative
+// `is_complete` flag (server-derived from `missing_signals` being empty) — the
+// frontend keys the "I'm Finished" CTA off it rather than re-deriving it.
 export interface AnalyzeResponse {
   user_id: number
   session_id: number | null
@@ -50,6 +51,10 @@ export interface AnalyzeResponse {
   qa_updated: boolean
   agent_reply: string
   missing_signals: string[]
+  // True once the agent has everything it needs for this member's role. Optional
+  // on the wire so an older gateway/ai_service without the field degrades to the
+  // missingSignals-empty inference in the store.
+  is_complete?: boolean
 }
 
 // Request body for POST /api/sessions — the host pre-session modal answers.

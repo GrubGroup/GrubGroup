@@ -10,10 +10,3 @@ export interface ChatMessage {
   text: string
   at: string // ISO timestamp
 }
-
-// A preference the agent has captured ("Noted so far" panel).
-export interface NotedPref {
-  id: string
-  label: string // e.g. "No tree nuts", "~$20pp budget", "Near Market St"
-  confirmed: boolean
-}

@@ -1,18 +1,22 @@
 import { create } from 'zustand'
-import type { ChatMessage, ConversationTurn, ExtractedSignals, NotedPref } from '@/types'
+import type { ChatMessage, ConversationTurn, ExtractedSignals } from '@/types'
 import { openingAgentMessage } from '@/constants/agentChat'
 import { analyzeTurn } from '@/api/sessionApi'
 
 interface ChatState {
   messages: ChatMessage[]
-  notedPreferences: NotedPref[]
   // The session this transcript/signal-set belongs to. Used to re-seed when the
   // active session changes, so session B never inherits session A's chat.
   sessionId: number | null
   // The reconciled signal set the agent has accumulated across turns — sent back
-  // on each turn so corrections work, and rendered in the "Noted so far" panel.
+  // on each turn so corrections work, and rendered in the "Noted so far" panel
+  // (NotedSoFarPanel derives its rows from currentSignals + missingSignals).
   currentSignals: ExtractedSignals
   missingSignals: string[]
+  // Authoritative "agent has everything it needs" flag from the analyze response
+  // (server-derived). Drives the "all set" banner + finish CTA state. Distinct
+  // from missingSignals being empty pre-first-turn: only true after a real turn.
+  isComplete: boolean
   sending: boolean
   // Reset the conversation for a (possibly new) session. Opens with a single
   // agent greeting that asks the first question (dietary); everything after is
@@ -48,55 +52,6 @@ const emptySignals = (): ExtractedSignals => ({
   radius_miles: null,
 })
 
-// Map reconciled signals + what's still missing into the "Noted so far" chips.
-// A field is `confirmed` once the agent stopped listing it as missing.
-function signalsToNotedPrefs(sig: ExtractedSignals, missing: string[]): NotedPref[] {
-  const prefs: NotedPref[] = []
-  const isMissing = (key: string) => missing.includes(key)
-
-  // A field is `confirmed` once the agent stopped listing it in missing_signals.
-  // These keys match the backend's ask-order names exactly (dietary_restrictions
-  // / preferred_cuisines / disliked_cuisines / budget / location).
-  if (sig.dietary_restrictions.length) {
-    prefs.push({
-      id: 'diet',
-      label: sig.dietary_restrictions.join(', '),
-      confirmed: !isMissing('dietary_restrictions'),
-    })
-  }
-  if (sig.preferred_cuisines.length) {
-    prefs.push({
-      id: 'likes',
-      label: `Likes: ${sig.preferred_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('preferred_cuisines'),
-    })
-  }
-  if (sig.disliked_cuisines.length) {
-    prefs.push({
-      id: 'avoids',
-      label: `Avoids: ${sig.disliked_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('disliked_cuisines'),
-    })
-  }
-  if (sig.budget_min != null || sig.budget_max != null) {
-    const label =
-      sig.budget_min != null && sig.budget_max != null
-        ? `$${sig.budget_min}–${sig.budget_max}pp`
-        : sig.budget_max != null
-          ? `Up to $${sig.budget_max}pp`
-          : `From $${sig.budget_min}pp`
-    prefs.push({ id: 'budget', label, confirmed: !isMissing('budget') })
-  }
-  if (sig.location_label) {
-    prefs.push({
-      id: 'location',
-      label: sig.location_label,
-      confirmed: !isMissing('location'),
-    })
-  }
-  return prefs
-}
-
 // Build the conversation_history the analyze endpoint replays for context, from
 // the rendered messages (system lines dropped; agent -> assistant).
 function toConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
@@ -107,10 +62,10 @@ function toConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
-  notedPreferences: [],
   sessionId: null,
   currentSignals: emptySignals(),
   missingSignals: [],
+  isComplete: false,
   sending: false,
 
   seed: (sessionId = null, displayName = null) => {
@@ -125,10 +80,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set({
       messages: [opening],
-      notedPreferences: [],
       sessionId,
       currentSignals: emptySignals(),
       missingSignals: [],
+      isComplete: false,
     })
   },
 
@@ -151,6 +106,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ messages: [...s.messages, userMsg], sending: true }))
 
     try {
+      // The gateway derives host-ness server-side from session.host_user_id.
       const res = await analyzeTurn(sessionId ?? 0, {
         message: trimmed,
         message_source: 'text',
@@ -167,7 +123,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [...s.messages, agentMsg],
         currentSignals: res.extracted_signals,
         missingSignals: res.missing_signals,
-        notedPreferences: signalsToNotedPrefs(res.extracted_signals, res.missing_signals),
+        // Prefer the server's authoritative flag; fall back to the missing list
+        // being empty for an older gateway/ai_service that omits is_complete.
+        isComplete: res.is_complete ?? res.missing_signals.length === 0,
         sending: false,
       }))
     } catch {

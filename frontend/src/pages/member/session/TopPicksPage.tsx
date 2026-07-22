@@ -8,7 +8,6 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { USE_MOCK } from '@/lib/env'
 import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
@@ -19,7 +18,6 @@ export function TopPicksPage() {
   const recommendationLoading = useSessionStore((s) => s.recommendationLoading)
   const recommendationError = useSessionStore((s) => s.recommendationError)
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
-  const loadSession = useSessionStore((s) => s.load)
   const votes = useSessionStore((s) => s.votes)
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
@@ -33,9 +31,8 @@ export function TopPicksPage() {
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    if (USE_MOCK && !session) void loadSession(42, currentUserId)
     if (!restaurantsLoaded) void loadRestaurants()
-  }, [session, loadSession, currentUserId, restaurantsLoaded, loadRestaurants])
+  }, [restaurantsLoaded, loadRestaurants])
 
   useEffect(() => {
     // Fetch once when we have a session but no rec yet — and NOT while a fetch is
@@ -73,7 +70,7 @@ export function TopPicksPage() {
     if (activeId == null || confirming) return
     chooseRestaurant(activeId)
     const sessionId = activeSessionId ?? session?.id ?? null
-    if (!USE_MOCK && sessionId != null) {
+    if (sessionId != null) {
       setConfirming(true)
       try {
         await closeSession(sessionId, activeId)
