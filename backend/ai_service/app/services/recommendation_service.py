@@ -24,7 +24,12 @@ async def generate_recommendation(
     SessionNotReadyError otherwise. It then runs the LangGraph pipeline, persists
     the ranked picks via crud.recommendation, and returns a DTO-ready dict:
     {recommendation_id, session_id, created_at, items:[{restaurant_id,
-    match_score, justification}, ...]}.
+    match_score, justification, name, hours, is_open}, ...]}.
+
+    The persisted RecommendationItem row keeps only restaurant_id / match_score /
+    justification; `name` / `hours` / `is_open` are enriched from the pipeline
+    candidates for the response (so the picks payload is self-contained when the
+    gateway delivers it into the group chat), not stored.
     """
     if not force_partial:
         async with async_session_factory() as db:
@@ -37,7 +42,11 @@ async def generate_recommendation(
 
     state = await run_pipeline(session_id, force_partial=force_partial)
 
-    items = [
+    # Index the pipeline candidates by id for the response enrichment (name /
+    # hours / open-at-event-time). These are display fields, not persisted.
+    candidate_by_id = {c.id: c for c in state.candidates}
+
+    persist_items = [
         {
             "restaurant_id": item.restaurant_id,
             "match_score": item.match_score,
@@ -50,7 +59,21 @@ async def generate_recommendation(
         recommendation = await recommendation_crud.create_recommendation(
             db, session_id
         )
-        await recommendation_crud.add_items(db, recommendation.id, items)
+        await recommendation_crud.add_items(db, recommendation.id, persist_items)
+
+    items = []
+    for item in state.ranked:
+        candidate = candidate_by_id.get(item.restaurant_id)
+        items.append(
+            {
+                "restaurant_id": item.restaurant_id,
+                "match_score": item.match_score,
+                "justification": item.justification,
+                "name": candidate.name if candidate else None,
+                "hours": candidate.hours if candidate else None,
+                "is_open": candidate.is_open if candidate else None,
+            }
+        )
 
     return {
         "recommendation_id": recommendation.id,

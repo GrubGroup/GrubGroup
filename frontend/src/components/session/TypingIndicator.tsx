@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
+import type { SessionMember } from '@/types'
 import type { Typer } from '@/stores/groupChatStore'
 import { Avatar } from '@/components/ui'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/session.mock'
+import { memberColor } from '@/constants/memberColors'
+import { nameForMember } from '@/utils/memberName'
 
 export interface TypingIndicatorProps {
   typers: Typer[]
+  /** Session roster, so a typer's name resolves to their real display name. */
+  members?: SessionMember[]
 }
 
 // Drop typers whose last signal is older than this (safety net for a missed
@@ -15,14 +19,15 @@ const EXPIRY_MS = 3000
 // at 8 members, so 4 avatars + "+N" covers the fullest case cleanly.
 const MAX_AVATARS = 4
 
-function displayName(t: Typer): string {
-  return t.name ?? MOCK_MEMBER_NAMES[t.userId ?? -1] ?? 'Someone'
+// The socket carries the typer's name; fall back to the roster resolver by id.
+function displayName(t: Typer, members?: SessionMember[]): string {
+  return t.name ?? nameForMember(t.userId, members)
 }
 
 // A single merged "typing" bubble: stacked avatars of everyone currently typing
 // (no names) followed by animated dots. One bubble regardless of how many people
 // are typing.
-export function TypingIndicator({ typers }: TypingIndicatorProps) {
+export function TypingIndicator({ typers, members }: TypingIndicatorProps) {
   // Re-render on a 1s tick so expired typers disappear even without new events.
   const [, force] = useState(0)
   useEffect(() => {
@@ -43,10 +48,10 @@ export function TypingIndicator({ typers }: TypingIndicatorProps) {
       <div className="flex -space-x-1.5">
         {shown.map((t) => (
           <Avatar
-            key={t.userId ?? displayName(t)}
-            name={displayName(t)}
+            key={t.userId ?? displayName(t, members)}
+            name={displayName(t, members)}
             size="sm"
-            colorClass={MOCK_MEMBER_COLORS[t.userId ?? -1]}
+            colorClass={memberColor(t.userId ?? -1)}
             className="border border-surface-raised"
           />
         ))}

@@ -1,6 +1,6 @@
-// Live group-chat message — the shape broadcast by the gateway over Socket.IO.
-// Frontend-shaped (not mirroring Prisma `GroupMessage`) since there's no DB in
-// scope yet; persistence is a documented follow-up.
+// Live group-chat message — the shape broadcast by the gateway over Socket.IO
+// (and replayed from persisted history on join). Frontend-shaped, aligned to the
+// gateway's `toWireMessage` output (sockets/sessionHandlers.js).
 
 export interface GroupMessage {
   id: string
@@ -9,7 +9,9 @@ export interface GroupMessage {
   name?: string | null
   text: string
   at: string // ISO timestamp
-  // 'system' renders as a centered divider (e.g. "Sofia has left the group").
-  // Absent/'text' is a normal chat bubble.
-  type?: 'text' | 'system'
+  // 'system' renders as a centered divider (e.g. "Sophie has left the group").
+  // Absent/'text' is a normal chat bubble. 'session_block' is a LEGACY type kept
+  // only so a persisted recommendation row (from before recommendations moved to
+  // the results flow) is recognized and swallowed rather than rendered.
+  type?: 'text' | 'system' | 'session_block'
 }

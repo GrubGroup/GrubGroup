@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button, Icon, IconButton, Input, Modal, Spinner } from '@/components/ui'
-import { fetchGroup, addGroupMember } from '@/api/groups.api'
-import { searchUsers } from '@/api/users.api'
+import { fetchGroup, addGroupMember } from '@/api/groupsApi'
+import { searchUsers } from '@/api/usersApi'
 import { useGroupsStore } from '@/stores/groupsStore'
 import { cn } from '@/utils/cn'
+import { nameForMember } from '@/utils/memberName'
 import type { GroupDetail, UserSearchResult } from '@/types'
 import { isAxiosError } from 'axios'
 
@@ -273,7 +274,7 @@ export function GroupDetailPanel({
                 <p className="py-4 text-sm text-text-muted">No members yet.</p>
               ) : (
                 members.map((m) => {
-                  const name = m.display_name ?? `User ${m.user_id}`
+                  const name = m.display_name ?? nameForMember(m.user_id)
                   const isYou = m.user_id === currentUserId
                   return (
                     <div key={m.user_id} className="flex items-center gap-3 py-2.5">

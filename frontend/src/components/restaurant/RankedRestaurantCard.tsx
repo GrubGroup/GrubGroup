@@ -1,6 +1,7 @@
 import type { RankedPick } from '@/types'
 import { Badge, Button, Icon } from '@/components/ui'
 import { cn } from '@/utils/cn'
+import { formatHours, isOpenAt } from '@/utils/hours'
 
 export interface RankedRestaurantCardProps {
   rank: number
@@ -9,6 +10,14 @@ export interface RankedRestaurantCardProps {
   hasVoted: boolean
   onVote: () => void
   onSelect: () => void
+  /** Show the open/closed + hours line (top-picks list + in-chat picks card). */
+  showHours?: boolean
+  /** Show the host-only "Confirm this restaurant" button. Non-hosts pass false. */
+  showConfirm?: boolean
+  /** Confirm handler — closes the session and creates the Event. */
+  onConfirm?: () => void
+  /** Disable the confirm button while a close request is in flight. */
+  confirming?: boolean
 }
 
 export function RankedRestaurantCard({
@@ -18,10 +27,19 @@ export function RankedRestaurantCard({
   hasVoted,
   onVote,
   onSelect,
+  showHours = false,
+  showConfirm = false,
+  onConfirm,
+  confirming = false,
 }: RankedRestaurantCardProps) {
   const { restaurant } = pick
   const pct = pick.match_score != null ? Math.round(pick.match_score * 100) : null
   const priceDollars = restaurant.price_avg != null ? '$'.repeat(Math.min(4, Math.ceil(restaurant.price_avg / 15))) : ''
+
+  // Open/closed: prefer the backend verdict (computed at the session's chosen
+  // event time). Fall back to a client-side check "right now" when absent.
+  const hoursText = formatHours(pick.hours ?? restaurant.hours)
+  const open = pick.is_open != null ? pick.is_open : isOpenAt(restaurant.hours ?? pick.hours, new Date())
 
   return (
     <div
@@ -63,12 +81,18 @@ export function RankedRestaurantCard({
         <div className="h-full rounded-pill bg-primary/40" style={{ width: `${pct ?? 0}%` }} />
       </div>
 
-      <div className="ml-6 flex flex-wrap gap-1.5">
+      <div className="ml-6 flex flex-wrap items-center gap-1.5">
         {restaurant.dietary_tags.slice(0, 3).map((t) => (
           <Badge key={t} tone="success">
             {t}
           </Badge>
         ))}
+        {showHours && (
+          <Badge tone={open ? 'success' : 'neutral'}>
+            {open ? 'Open' : 'Closed'}
+            {hoursText ? ` · ${hoursText}` : ''}
+          </Badge>
+        )}
       </div>
 
       {pick.justification && (
@@ -91,6 +115,24 @@ export function RankedRestaurantCard({
           {hasVoted ? 'Voted' : 'Vote'}
         </Button>
       </div>
+
+      {showConfirm && onConfirm && (
+        <div className="ml-6">
+          <Button
+            fullWidth
+            variant="accent"
+            size="sm"
+            isLoading={confirming}
+            leftIcon={<Icon name="check" size={13} />}
+            onClick={(e) => {
+              e.stopPropagation()
+              onConfirm()
+            }}
+          >
+            Confirm this restaurant
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

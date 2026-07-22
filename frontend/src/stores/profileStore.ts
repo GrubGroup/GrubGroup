@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { LocationPref, Profile } from '@/types'
-import { fetchProfile, saveProfile } from '@/api/profile.api'
+import { fetchProfile, saveProfile } from '@/api/profileApi'
 
 interface ProfileState {
   profile: Profile | null

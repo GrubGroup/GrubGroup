@@ -39,4 +39,23 @@ const getRecommendations = async (sessionId, { forcePartial = false } = {}) => {
   return data;
 };
 
-export { embed, getRecommendations };
+/**
+ * Proxy one conversational QA sub-agent turn to the ai_service. The ai_service
+ * parses the message, reconciles it against prior signals, persists the member's
+ * session-scoped Qa row (host-only occasion gated server-side), and returns the
+ * updated signals + agent reply + still-missing questions.
+ * @param {number} sessionId
+ * @param {object} body AnalyzeRequest: { user_id, message, message_source?,
+ *   conversation_history?, current_signals? }
+ * @returns {Promise<object>} AnalyzeResponse: { user_id, session_id,
+ *   extracted_signals, profile_updated, qa_updated, agent_reply, missing_signals }
+ */
+const analyzeTurn = async (sessionId, body) => {
+  const { data } = await client.post(
+    `/api/v1/sessions/${sessionId}/analyze`,
+    body,
+  );
+  return data;
+};
+
+export { embed, getRecommendations, analyzeTurn };

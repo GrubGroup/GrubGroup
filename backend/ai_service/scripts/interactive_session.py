@@ -70,6 +70,7 @@ from app.schemas.ai import ConversationTurn, ExtractedSignals
 # pattern in this scripts/ package.
 from scripts.demo_orchestrator import (
     Ink,
+    _DEMO_SCHEDULED_FOR,
     _DEMO_SESSION_ID,
     _MEMBERS,
     _SESSION_QA,
@@ -268,17 +269,32 @@ def _extract_budget(answer: str) -> tuple[int | None, int | None]:
 # ---------------------------------------------------------------------------
 
 
+# A few SF neighborhoods -> approximate (lat, lon), so an offline location answer
+# yields a real secondary anchor for the between-host-and-member ranking (offline
+# has no geocoder; --live geocodes the free-text label for real).
+_KNOWN_PLACES: list[tuple[str, float, float]] = [
+    ("mission", 37.7599, -122.4148),
+    ("downtown", 37.7749, -122.4194),
+    ("soma", 37.7785, -122.4056),
+    ("marina", 37.8030, -122.4370),
+    ("oakland", 37.8044, -122.2712),
+    ("berkeley", 37.8715, -122.2730),
+    ("office", 37.7899, -122.4000),
+]
+
+
 def _extract_delta(answer: str, field: str, vocab: set[str]) -> dict[str, Any]:
     """Offline extractor: one typed `answer` for `field` -> an analyze-turn delta.
 
     Produces the SAME delta shape ``demo_orchestrator`` feeds its offline analyze
-    stand-in (keys ``dietary`` / ``preferred`` / ``disliked`` / ``budget_*``), so
-    ``_install_offline_turn`` can turn it into canned LLM JSON and the real
-    ``analyze_turn`` then expands broad terms ("asian" -> its cuisines), records
-    styles ("steakhouse"), and reconciles. The extractor matches against the real
-    seed-catalog vocabulary, so any tag it finds is one the retriever can match;
-    broad group words (asian / latin / mediterranean) and style words
-    (steakhouse / bbq / cafe) are catalog tags too, so they extract then expand.
+    stand-in (keys ``dietary`` / ``preferred`` / ``disliked`` / ``budget_*`` /
+    ``location_*``), so ``_install_offline_turn`` can turn it into canned LLM JSON
+    and the real ``analyze_turn`` then expands broad terms ("asian" -> its
+    cuisines), records styles ("steakhouse"), and reconciles. The extractor
+    matches against the real seed-catalog vocabulary, so any tag it finds is one
+    the retriever can match; broad group words (asian / latin / mediterranean) and
+    style words (steakhouse / bbq / cafe) are catalog tags too, so they extract
+    then expand.
     """
     if field == "budget":
         bmin, bmax = _extract_budget(answer)
@@ -287,6 +303,19 @@ def _extract_delta(answer: str, field: str, vocab: set[str]) -> dict[str, Any]:
         return {field: []}
     if field == "dietary":
         return {"dietary": _extract_dietary(answer)}
+    if field == "location":
+        # Match a known neighborhood to coords (the offline stand-in for geocoding
+        # the member's preferred spot). No match -> no anchor (happy with host's).
+        text = _normalize(answer)
+        for name, lat, lon in _KNOWN_PLACES:
+            if name in text:
+                return {
+                    "location_label": answer.strip(),
+                    "location_mode": "named",
+                    "location_lat": lat,
+                    "location_lon": lon,
+                }
+        return {}
     # preferred / disliked both draw from the cuisine vocabulary.
     return {field: _extract_cuisines(answer, vocab)}
 
@@ -351,33 +380,30 @@ def _stdin_is_tty() -> bool:
 # The interactive sub-agent conversation.
 # ---------------------------------------------------------------------------
 
-# Ordered questions: dietary -> preferred -> disliked -> budget. Order matches
-# the personas' analyze_turns and the reconcile inputs. Answer in your OWN words —
-# broad groups ("Asian food"), styles ("a steakhouse"), and mid-chat corrections
-# ("actually, change chinese to korean") are all understood by the real agent.
-# Chips mirror AgentChatPage's quick-reply affordances.
+# Ordered questions: preferred -> disliked -> budget -> location. Order matches
+# the personas' analyze_turns and the reconcile inputs. Dietary is NOT asked here
+# — it's captured once in onboarding (durable Profile) and feeds the ranking hard
+# filter directly. Answer in your OWN words — broad groups ("Asian food"), styles
+# ("a steakhouse"), and mid-chat corrections ("actually, change chinese to
+# korean") are all understood by the real agent. The location question is
+# per-member and optional (relative to the host's spot). Chips mirror
+# AgentChatPage's quick-reply affordances.
 _QUESTIONS: list[dict[str, Any]] = [
-    {
-        "field": "dietary",
-        "prompt": (
-            "Hi {name}! I'm your food agent for this session. First — any dietary "
-            "needs I should lock in for the group search?"
-        ),
-        "chips": ["Vegan", "Gluten-free", "No nuts", "No restrictions"],
-    },
     {
         "field": "preferred",
         "prompt": (
-            "What sounds good today? Name a cuisine, a whole vibe (\"Asian\", "
-            "\"something Mediterranean\"), or a kind of spot (\"a steakhouse\")."
+            "Hi {name}! I'm your food agent for this session. First — what sounds "
+            "good today? Name a cuisine, a whole vibe (\"Asian\", \"something "
+            "Mediterranean\"), or a kind of spot (\"a steakhouse\")."
         ),
         "chips": ["Asian food", "Italian", "A steakhouse", "Anything works"],
     },
     {
         "field": "disliked",
         "prompt": (
-            "Anything you'd rather the group avoided tonight? (You can also revise "
-            "an earlier answer here — e.g. \"actually, swap chinese for korean\".)"
+            "Are there any cuisines you dislike or want to avoid? (You can also "
+            "revise an earlier answer here — e.g. \"actually, swap chinese for "
+            "korean\".)"
         ),
         "chips": ["No steakhouses", "Nothing fancy", "No BBQ", "Nothing to avoid"],
     },
@@ -385,6 +411,15 @@ _QUESTIONS: list[dict[str, Any]] = [
         "field": "budget",
         "prompt": "And your comfortable price range per person?",
         "chips": ["$15–20pp", "Under $20", "$20–40", "I'm flexible"],
+    },
+    {
+        "field": "location",
+        "prompt": (
+            "The host set the meeting spot for this event. Want to name a place "
+            "that's more convenient for you (so we can find somewhere in between), "
+            "or are you happy with theirs?"
+        ),
+        "chips": ["Near the Mission", "Downtown's fine", "By the office", "Wherever works"],
     },
 ]
 
@@ -419,11 +454,19 @@ def _render_noted(ink: Ink, signals: ExtractedSignals, answered: set[str]) -> No
     else:
         budget = "group ceiling"
 
+    if signals.location_label:
+        loc = signals.location_label
+        if signals.location_lat is not None and signals.location_lon is not None:
+            loc += f" ({signals.location_lat:.4f}, {signals.location_lon:.4f})"
+    else:
+        loc = "host's spot"
+
     print(f"    {ink.dim('— noted so far —')}")
     print(_row("dietary", "dietary", diet))
     print(_row("preferred", "likes", pref))
     print(_row("disliked", "avoids", dis))
     print(_row("budget", "budget", budget))
+    print(_row("location", "your spot", loc))
 
 
 async def _drive_turn(
@@ -659,7 +702,7 @@ async def _collect_member_prefs(
 
     prefs: list[MemberPref] = []
     for i, member in enumerate(_MEMBERS):
-        # Member #1 (index 0) is the host — only they may set occasion/time_slot.
+        # Member #1 (index 0) is the host — only they may set the occasion.
         is_host = i == 0
         interactive_here = all_interactive or member["username"] == played["username"]
         if interactive_here:
@@ -824,7 +867,12 @@ async def _run(args: argparse.Namespace) -> int:
         _note(ink, "Session aborted (:quit). No picks generated.")
         return 0
 
-    state = PipelineState(session_id=_DEMO_SESSION_ID, qa=_SESSION_QA, members=prefs)
+    state = PipelineState(
+        session_id=_DEMO_SESSION_ID,
+        qa=_SESSION_QA,
+        members=prefs,
+        scheduled_for=_DEMO_SCHEDULED_FOR,
+    )
 
     reconciled = _print_reconcile(ink, state)  # reused (STEP 4/6)
     state.reconciled = reconciled

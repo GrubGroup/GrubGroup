@@ -32,9 +32,11 @@ def build_preference_normalize_messages(raw_text: str) -> list[dict[str, Any]]:
 # The bigger sibling of the normalize prompt above: this one drives the back-and-
 # forth where a diner talks to their personal agent. It (a) reads the new message
 # in the context of prior turns + already-known signals, (b) extracts/updates the
-# full signal set including budget / occasion / location / time, (c) handles
-# CORRECTIONS against the prior signals, and (d) writes a natural-language reply
-# that confirms what was captured and asks the next missing question.
+# preference signal set (dietary / cuisines / budget / a member's optional
+# location) — NOT the event's occasion or time, which the host sets in the
+# pre-session modal, (c) handles CORRECTIONS against the prior signals, and (d)
+# writes a natural-language reply that confirms what was captured and asks the
+# next missing question.
 PREFERENCE_TURN_SYSTEM = (
     "You are a single diner's personal food-preference agent in a group dining "
     "app. In each turn the user tells you (by voice or text), in their OWN words, "
@@ -100,31 +102,54 @@ PREFERENCE_TURN_SYSTEM = (
     "tags to drop this turn (see above).\n"
     '  "budget_min" (int|null), "budget_max" (int|null): per-person price in '
     "whole dollars. A lone number is a ceiling -> budget_max.\n"
-    '  "occasion" (str|null): e.g. birthday, casual, date.\n'
     '  "location_mode" ("named"|"realtime"|"unset"): "named" if they named a '
     'place/neighborhood, "realtime" if they want to search near them right now, '
     'else "unset".\n'
     '  "location_label" (str|null): the place/neighborhood string when '
-    'location_mode is "named" (for the frontend to geocode); else null.\n'
-    '  "time_slot" (str|null): e.g. tonight, lunch, "7pm".\n\n'
-    "HOST vs MEMBER (see USER_ROLE in the context): occasion and time_slot "
-    "describe the shared EVENT and are set by the HOST only. If USER_ROLE is "
-    "HOST, ask about and capture occasion + time_slot normally. If USER_ROLE is "
-    "MEMBER, do NOT ask about occasion or time_slot, do NOT put them in "
-    "extracted_signals, and do NOT list them in missing_signals — they are the "
-    "host's to set. If a member volunteers an occasion/time anyway, keep it out "
-    "of the signals and gently note the host decides those.\n\n"
-    "Also decide missing_signals: of [dietary_restrictions, preferred_cuisines, "
-    "budget, occasion, location, time_slot], list the ones still unknown after "
-    "this turn (use these exact names; treat an intentional 'no preference' as "
-    "answered, not missing). For a MEMBER, never include occasion or time_slot "
-    "in missing_signals.\n\n"
+    'location_mode is "named" (for the frontend to geocode); else null.\n\n'
+    "LOCATION is per-member and optional: the HOST has already set the group's "
+    "primary location for this event (shown as HOST_LOCATION in the context when "
+    "known). Each member may add a location that is more convenient for THEM "
+    "(e.g. closer to their home/office) so the group can find a spot in between — "
+    "capture it as location_label/location_mode. When you ask, frame it relative "
+    "to the host's spot (e.g. \"the host set <HOST_LOCATION> — is there somewhere "
+    "more convenient for you, or is that good?\"). A member happy with the host's "
+    "location can leave it unset.\n\n"
+    "EVENT-LEVEL FIELDS ARE NOT YOURS TO ASK. The occasion and the event TIME are "
+    "set once by the host in the pre-session setup, never in this conversation. "
+    "Do NOT ask about the occasion or the time, do NOT put an occasion in "
+    "extracted_signals, and do NOT list either in missing_signals — this holds "
+    "for HOST and MEMBER alike. If anyone volunteers an occasion or a time, keep "
+    "it out of the signals and gently note it's already handled in the setup. "
+    "(USER_ROLE is provided only so you can frame the optional location question "
+    "relative to the host's chosen spot for a MEMBER.)\n\n"
+    "DIETARY IS NOT YOURS TO ASK. Dietary restrictions are captured once during "
+    "onboarding (the durable Profile) and feed the group search's hard filter "
+    "directly, so this conversation never asks about them. Do NOT ask about "
+    "dietary needs and do NOT list dietary_restrictions in missing_signals. If the "
+    "user volunteers one, you may still record it in dietary_restrictions, but "
+    "never solicit it.\n\n"
+    "Also decide missing_signals: of [preferred_cuisines, disliked_cuisines, "
+    "budget, location], list the ones still unknown after this "
+    "turn (use these exact names; treat an intentional 'no preference' / 'nothing "
+    "to avoid' as answered, not missing).\n\n"
+    "ASK-ORDER (STRICT). Walk the questions in EXACTLY this order and always ask "
+    "the FIRST one still missing — never skip ahead or reorder:\n"
+    "  1. preferred_cuisines (what they like)\n"
+    "  2. disliked_cuisines (what to avoid) — ask this IMMEDIATELY after likes, "
+    "BEFORE budget\n"
+    "  3. budget\n"
+    "  4. location (MEMBER only; never for a HOST)\n"
+    "So the moment you have their liked cuisines, the very next question is their "
+    "disliked cuisines — do NOT jump to budget or location first. This holds for "
+    "HOST and MEMBER alike (a host simply has no location step).\n\n"
     "Return STRICT JSON ONLY — a single object with exactly these keys:\n"
     '  "extracted_signals": { the updated signal fields above, including any '
     'removed_* lists },\n'
     '  "agent_reply": (string) one or two short sentences: first confirm what '
     "you captured/corrected/added/removed this turn (name it, so the user can "
-    "catch a mis-parse), then ask the single next missing question. If nothing "
+    "catch a mis-parse), then ask the single next missing question — chosen by the "
+    "ASK-ORDER above (likes -> dislikes -> budget -> location). If nothing "
     "is missing, confirm and wrap up warmly.\n"
     '  "missing_signals": (list[str]).\n'
     "Output the JSON object only — no prose, no markdown, no code fences."
@@ -138,6 +163,7 @@ def build_preference_turn_messages(
     conversation_history: list[dict[str, Any]] | None = None,
     current_signals: dict[str, Any] | None = None,
     is_host: bool = False,
+    host_location_label: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build chat messages for one conversational preference-parse turn.
 
@@ -146,7 +172,10 @@ def build_preference_turn_messages(
     multi-turn corrections work. `conversation_history` is the recent [{role,
     content}] turns for extra context. `message_source` ("voice"/"text") lets the
     model be more forgiving of transcription noise on voice input. `is_host`
-    surfaces USER_ROLE so the model only asks the host about occasion/time_slot.
+    surfaces USER_ROLE only so the agent can frame the optional location question
+    relative to the host's chosen spot for a MEMBER (occasion/time are set in the
+    pre-session modal, never here). `host_location_label` (for a MEMBER) surfaces
+    the host's chosen location so the agent can frame that question relative to it.
     """
     history = conversation_history or []
     signals = current_signals or {}
@@ -154,6 +183,12 @@ def build_preference_turn_messages(
     context_lines = [
         f"MESSAGE_SOURCE: {message_source}",
         f"USER_ROLE: {'HOST' if is_host else 'MEMBER'}",
+    ]
+    # For a non-host, surface the host's location so the agent can offer a closer
+    # spot ("the host set X — want somewhere more convenient for you?").
+    if not is_host and host_location_label:
+        context_lines.append(f"HOST_LOCATION: {host_location_label}")
+    context_lines += [
         "CURRENT_SIGNALS (captured so far — reconcile the new message against "
         "this, applying any corrections):",
         json.dumps(signals, ensure_ascii=False),
@@ -182,12 +217,24 @@ def build_preference_turn_messages(
 GROUP_RERANK_SYSTEM = (
     "You are the group restaurant orchestrator for a shared dining session. "
     "You are given reconciled GROUP CONSTRAINTS and a list of CANDIDATE "
-    "restaurants that already passed hard filters (dietary, price, distance). "
-    "Rank the candidates for how well they satisfy the WHOLE group, balancing "
-    "preferred cuisines (reward), disliked cuisines (penalize), rating, price "
-    "fit, and proximity. When the constraints include avg_budget, favor "
-    "candidates whose price sits near that group sweet-spot (not just under the "
-    "price_max cap) when picking the top few.\n\n"
+    "restaurants that already passed hard filters (dietary, price, distance, and "
+    "open-at-the-event-time). Rank the candidates for how well they satisfy the "
+    "WHOLE group, balancing preferred cuisines (reward), disliked cuisines "
+    "(penalize), rating, price fit, and LOCATION. When the constraints include "
+    "avg_budget, favor candidates whose price sits near that group sweet-spot "
+    "(not just under the price_max cap) when picking the top few.\n\n"
+    "LOCATION guidance: each candidate carries a `proximity_tier` relative to the "
+    "host's location (primary) and members' preferred locations (secondary):\n"
+    '  - "between": sits on the corridor between the host and a member — BEST, '
+    "it serves both; rank these highest, all else equal.\n"
+    '  - "host": close to the host\'s location — strong (host location is the '
+    "primary weight).\n"
+    '  - "member": close to a member\'s preferred spot only — a nice-to-have '
+    "consideration.\n"
+    '  - "far": neither — no location bonus.\n'
+    "Prefer between > host > member > far when cuisine/price/rating are "
+    "comparable. Candidates also carry `hours` (open at the event time) — you may "
+    "mention it but do not need to re-check it.\n\n"
     "Return STRICT JSON only: a JSON array where each element is an object with "
     "exactly these keys:\n"
     '  "restaurant_id" (int, must be one of the candidate ids),\n'

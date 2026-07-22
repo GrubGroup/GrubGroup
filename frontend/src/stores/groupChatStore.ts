@@ -38,8 +38,15 @@ interface GroupChatState {
   // Replay of persisted backlog for a group, sent by the gateway on join.
   receiveHistory: (groupId: number, messages: GroupMessage[]) => void
   sendMessage: (groupId: number, text: string) => void
-  startSession: (groupId: number) => void
-  receiveSessionStart: (groupId: number) => void
+  // Host emits after creating the Session over REST; sessionId lets other members
+  // adopt the same session. Omitted for a legacy/no-op start.
+  startSession: (groupId: number, sessionId?: number) => void
+  receiveSessionStart: (groupId: number, sessionId?: number | null) => void
+  // Reset a group's session-start marker to null so a NEW session can place a
+  // fresh card. receiveSessionStart ignores a repeat start while a marker exists
+  // (dedupe), so this must be called when starting another session after one
+  // completes — else the guard silently swallows the new start.
+  clearSessionStart: (groupId: number) => void
   setTyping: (groupId: number, isTyping: boolean) => void
   receiveTyping: (update: TypingUpdate) => void
 }
@@ -54,20 +61,28 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
   sessionStartIndexByGroup: {},
   typingByGroup: {},
 
-  receiveMessage: (msg) =>
+  receiveMessage: (msg) => {
+    // Recommendations live in the session/results flow, never the chat — drop any
+    // legacy SESSION_BLOCK row so it can't surface as a blank bubble.
+    if (msg.type === 'session_block') return
     set((s) => ({
       messagesByGroup: {
         ...s.messagesByGroup,
         [msg.groupId]: [...(s.messagesByGroup[msg.groupId] ?? EMPTY), msg],
       },
-    })),
+    }))
+  },
 
   // Seed a group's messages from the persisted backlog. Replaces the list
   // (set, not append) so a reload/late-join starts from the stored history;
-  // subsequent live receiveMessage calls append after it.
+  // subsequent live receiveMessage calls append after it. Legacy SESSION_BLOCK
+  // rows are filtered out (recommendations moved to the results flow).
   receiveHistory: (groupId, messages) =>
     set((s) => ({
-      messagesByGroup: { ...s.messagesByGroup, [groupId]: messages },
+      messagesByGroup: {
+        ...s.messagesByGroup,
+        [groupId]: messages.filter((m) => m.type !== 'session_block'),
+      },
     })),
 
   sendMessage: (groupId, text) => {
@@ -78,12 +93,15 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
   },
 
   // Emit only — the card appears when the server echoes 'session:start' back.
-  startSession: (groupId) => {
-    getSocket()?.emit('session:start', { groupId })
+  // The host passes the freshly-created sessionId so every member adopts it.
+  startSession: (groupId, sessionId) => {
+    getSocket()?.emit('session:start', { groupId, sessionId })
   },
 
   // Record the session-start point at the current message count for this group,
   // so the card renders inline after existing messages. Ignore repeat starts.
+  // (The sessionId is consumed by useSocket to adopt the session in sessionStore;
+  // the store here only tracks where the card renders.)
   receiveSessionStart: (groupId) =>
     set((s) => {
       if (s.sessionStartIndexByGroup[groupId] != null) return s
@@ -92,6 +110,11 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
         sessionStartIndexByGroup: { ...s.sessionStartIndexByGroup, [groupId]: count },
       }
     }),
+
+  clearSessionStart: (groupId) =>
+    set((s) => ({
+      sessionStartIndexByGroup: { ...s.sessionStartIndexByGroup, [groupId]: null },
+    })),
 
   // Emit only — tell the gateway I started/stopped typing. Nothing local changes;
   // the indicator for OTHERS is driven by their receiveTyping.

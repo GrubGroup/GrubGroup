@@ -66,18 +66,18 @@ def _build_session_signals(
 ) -> QaSignals:
     """Reduce per-member Qa rows into the one session-level signal set.
 
-    occasion / time_slot are HOST-ONLY: they are read strictly from the host's
-    Qa row (the schema already keeps them null on non-host rows, but reading only
-    the host row makes that explicit). The search location is taken from the
-    host's row when present, otherwise from the first member who supplied one, so
-    a host who skipped location still gets a usable group center.
+    occasion is HOST-ONLY: it is read strictly from the host's Qa row (the schema
+    already keeps it null on non-host rows, but reading only the host row makes
+    that explicit). The search location is taken from the host's row when present,
+    otherwise from the first member who supplied one, so a host who skipped
+    location still gets a usable group center. The host's chosen event time is no
+    longer a Qa signal — it lives on Session.scheduled_for.
     """
     host_qa = next(
         (qa for qa in qa_rows if qa.user_id == host_user_id), None
     )
 
     occasion = host_qa.occasion if host_qa else None
-    time_slot = host_qa.time_slot if host_qa else None
 
     # Prefer the host's location; else fall back to any member's.
     located = None
@@ -87,11 +87,10 @@ def _build_session_signals(
         located = next((qa for qa in qa_rows if qa.location_lat is not None), None)
 
     if located is None:
-        return QaSignals(occasion=occasion, time_slot=time_slot)
+        return QaSignals(occasion=occasion)
 
     return QaSignals(
         occasion=occasion,
-        time_slot=time_slot,
         location_mode=located.location_mode,
         location_lat=located.location_lat,
         location_lon=located.location_lon,
@@ -116,25 +115,37 @@ async def run_pipeline(
         qa_rows = await session_crud.list_qa(db, session_id)
 
     host_user_id = session.host_user_id if session is not None else None
-    # Index each member's session-scoped Qa row by user_id (one row per member).
+    # Index each member's session-scoped Qa row + Profile row by user_id.
     qa_by_user = {qa.user_id: qa for qa in qa_rows}
+    profile_by_user = {p.user_id: p for p in profiles}
 
-    # Flatten Profile rows to plain dicts so they travel cleanly through the
-    # graph state (raw_profiles is typed list[dict]). Each member's own Qa row
-    # is merged in as qa_* overrides — the durable Profile stays untouched, and
-    # a member with no Qa row simply carries empty overrides.
+    # Fan out over the CONFIRMED MEMBER SET, not just users with a Profile row: a
+    # guest (or a member who answered QA but never saved a durable Profile) still
+    # contributes their session preferences. Such a member gets an empty-Profile
+    # base plus their Qa overrides. Falling back to the full member list keeps a
+    # session with no confirmations from producing zero candidates. Each member's
+    # own Qa row is merged in as qa_* overrides (incl. their preferred location);
+    # the durable Profile stays untouched.
+    confirmed = [m.user_id for m in members if m.status]
+    fan_out_user_ids = confirmed or user_ids
+
     raw_profiles: list[dict[str, Any]] = []
-    for p in profiles:
-        member_qa = qa_by_user.get(p.user_id)
+    for uid in fan_out_user_ids:
+        p = profile_by_user.get(uid)
+        member_qa = qa_by_user.get(uid)
+        # A member with neither a Profile nor a Qa row carries no signal at all;
+        # skip them so an empty MemberPref doesn't dilute the group constraints.
+        if p is None and member_qa is None:
+            continue
         raw_profiles.append(
             {
-                "user_id": p.user_id,
-                "dietary_restrictions": list(p.dietary_restrictions or []),
-                "preferred_cuisines": list(p.preferred_cuisines or []),
-                "disliked_cuisines": list(p.disliked_cuisines or []),
-                "budget_min": p.budget_min,
-                "budget_max": p.budget_max,
-                "liked_restaurant_ids": list(p.liked_restaurant_ids or []),
+                "user_id": uid,
+                "dietary_restrictions": list(p.dietary_restrictions or []) if p else [],
+                "preferred_cuisines": list(p.preferred_cuisines or []) if p else [],
+                "disliked_cuisines": list(p.disliked_cuisines or []) if p else [],
+                "budget_min": p.budget_min if p else 0,
+                "budget_max": p.budget_max if p else 0,
+                "liked_restaurant_ids": list(p.liked_restaurant_ids or []) if p else [],
                 "qa_preferred_cuisines": (
                     list(member_qa.preferred_cuisines or []) if member_qa else []
                 ),
@@ -143,16 +154,31 @@ async def run_pipeline(
                 ),
                 "qa_budget_min": member_qa.budget_min if member_qa else None,
                 "qa_budget_max": member_qa.budget_max if member_qa else None,
+                # A member's preferred (closer-to-them) location — the SECONDARY
+                # anchor for between-host-and-member ranking. The host's own row
+                # carries the primary/group location, read via _build_session_signals.
+                "qa_location_lat": (
+                    member_qa.location_lat if member_qa else None
+                ),
+                "qa_location_lon": (
+                    member_qa.location_lon if member_qa else None
+                ),
             }
         )
 
-    # Session-level (host-authored) signals: occasion / time_slot are host-only,
-    # and the group search location comes from the host's Qa row, falling back
-    # to any member who supplied one so a host who skipped location still gets a
-    # sensible center.
+    # Session-level (host-authored) signals: occasion is host-only, and the group
+    # search location comes from the host's Qa row, falling back to any member who
+    # supplied one so a host who skipped location still gets a sensible center.
     qa = _build_session_signals(qa_rows, host_user_id)
 
-    state = PipelineState(session_id=session_id, qa=qa, raw_profiles=raw_profiles)
+    scheduled_for = session.scheduled_for if session is not None else None
+
+    state = PipelineState(
+        session_id=session_id,
+        qa=qa,
+        raw_profiles=raw_profiles,
+        scheduled_for=scheduled_for,
+    )
 
     compiled = build_graph()
     final = await compiled.ainvoke(state)

@@ -222,26 +222,26 @@ The feature structure below **exists and is populated** — build new work into 
 ```
 src/
 ├── api/            # HTTP calls to the gateway via axios
-│   ├── session.api.ts  restaurants.api.ts  profile.api.ts   # live modules
-│   └── mock/           # 7 mock modules (session, restaurants, profile, groupChat, chatScript, groups, events)
+│   ├── sessionApi.ts  eventsApi.ts  restaurantsApi.ts  profileApi.ts   # live modules (camelCase)
+│   └── mock/           # mock modules (sessionMock, restaurantsMock, profileMock, groupChatMock, groupsMock, eventsMock, usersMock, agentAnalyzeMock)
 ├── pages/          # Full screens (navStore-driven; no react-router)
 │   ├── auth/           # AuthPage (Better Auth sign-in/up + Google)
 │   └── member/         # EmptyGroupsPage, GroupChatPage, EventsPage
 │       ├── onboarding/     # Onboarding1-3
 │       └── session/        # AgentChatPage, TopPicksPage
-├── components/     # ~47 reusable UI pieces
+├── components/     # reusable UI pieces
 │   ├── ui/             # Design-system primitives (Button, Input, Card, Modal, …) + index.ts
 │   ├── layout/         # AppSidebar, BrandPanel, OnboardingLayout
-│   ├── session/        # Group session / chat widgets (SessionCard, ChatStream, MemberRoster, …)
-│   ├── restaurant/     # Restaurant/menu cards (RankedRestaurantCard, MenuList, VoteControl, …)
+│   ├── session/        # Session/chat widgets (HostSessionModal, SessionTopBar, SessionTimer, SessionPicksBlock, SessionCard, ChatStream, …)
+│   ├── restaurant/     # Restaurant/menu cards (RankedRestaurantCard — reused for TopPicks + in-chat picks, MenuList, VoteControl, …)
 │   ├── profile/        # Profile fields (Dietary, Cuisine, Budget, Location, LikedRestaurants)
 │   ├── event/          # Shared group event (EventDrawer, EventItemRow, EventSummary)
 │   └── voice/          # VoiceComposer (react-speech-recognition)
-├── hooks/          # useSocket, useVoiceInput, usePlacesInput
-├── stores/         # 9 zustand stores: auth, session, groupChat, chat, event, profile, groups, restaurant, nav
+├── hooks/          # useSocket, useSessionCountdown, useVoiceInput, usePlacesInput
+├── stores/         # 10 zustand stores: auth, session, groupChat, chat, event, eventList, profile, groups, restaurant, nav
 ├── lib/            # Client setup: axios, socket, authClient (Better Auth), env
-├── types/          # Shared TypeScript types (user, profile, session, group, restaurant, …)
-├── utils/          # Small helpers (cn.ts)
+├── types/          # Shared TypeScript types (user, profile, session, recommendation, analyze, group, restaurant, …)
+├── utils/          # Small helpers (cn.ts, hours.ts — TS mirror of ai_service app/ai/hours.py)
 └── constants/      # App-wide constants (dietary.ts)
 ```
 

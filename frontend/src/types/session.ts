@@ -8,13 +8,23 @@ export interface Session {
   host_user_id: number
   group_id?: number | null
   time_limit: number
+  // The host's chosen event time (pre-session modal). Drives the open/closed
+  // hard filter server-side and is snapshotted onto Event.date at close. Null on
+  // legacy sessions created before the field existed.
+  scheduled_for?: string | null
   created_at: string
   closed_at?: string | null
 }
 
 export interface SessionMember {
-  session_id: number
+  // The gateway's getSession/listMembers reads DON'T return session_id (it's
+  // implied by the route), but they DO return the member's display_name and
+  // username. Model the actual wire shape: session_id optional, name fields
+  // present (username is the fallback when display_name is null).
+  session_id?: number
   user_id: number
+  display_name?: string | null
+  username?: string | null
   status: boolean // true = done sharing preferences
   joined_at: string
 }

@@ -423,15 +423,15 @@ async def _create_session(members: list[dict], label: str) -> tuple[int, list[in
         )
 
         # Qa: one row per member (session-scoped overrides). The HOST's row holds
-        # the event occasion + time_slot and the shared search location (host-
-        # only); other members carry only their own overrides.
+        # the event occasion and the shared search location (host-only); other
+        # members carry only their own overrides. (The event time lives on
+        # Session.scheduled_for, not Qa.)
         host_uid = user_ids[0]
         db.add_all(
             Qa(
                 session_id=session.id,
                 user_id=uid,
                 occasion="casual group dinner" if uid == host_uid else None,
-                time_slot="dinner" if uid == host_uid else None,
                 location_mode="manual" if uid == host_uid else None,
                 location_lat=37.7749 if uid == host_uid else None,
                 location_lon=-122.4194 if uid == host_uid else None,

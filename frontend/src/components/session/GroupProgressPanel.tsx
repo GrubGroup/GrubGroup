@@ -16,6 +16,9 @@ export function GroupProgressPanel({ headerOnly, rosterOnly }: GroupProgressPane
   const members = useSessionStore((s) => s.members)
   const currentUserId = useSessionStore((s) => s.currentUserId)
   const doneCount = useSessionStore((s) => s.doneCount())
+  // Prefer the server-authoritative total so the denominator is correct even
+  // before this client's roster has fully loaded (or after a reload).
+  const total = useSessionStore((s) => s.progressTotal())
 
   if (rosterOnly) {
     return <MemberRoster members={members} currentUserId={currentUserId} />
@@ -26,10 +29,10 @@ export function GroupProgressPanel({ headerOnly, rosterOnly }: GroupProgressPane
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-text">Group progress</span>
         <span className="text-xs font-semibold text-text-muted">
-          {doneCount}/{members.length}
+          {doneCount}/{total}
         </span>
       </div>
-      <SegmentedProgress value={doneCount} total={members.length} />
+      <SegmentedProgress value={doneCount} total={total} />
     </div>
   )
 

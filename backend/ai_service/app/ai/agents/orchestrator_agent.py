@@ -4,19 +4,34 @@ from __future__ import annotations
 
 import json
 
+from app.ai.geo import TIER_BONUS, proximity_tier
 from app.ai.graph.state import (
     CandidateRestaurant,
     PipelineState,
     RankedItem,
     ReconciledConstraints,
 )
+from app.ai.hours import is_open_at
 from app.ai.llm.client import chat_completion
 from app.ai.llm.prompts import build_group_rerank_messages
 from app.ai.rag.embeddings import embed_text
 from app.ai.rag.retriever import similarity_search
 
-# How many candidates to pull from pgvector before the LLM re-rank pass.
-_CANDIDATE_LIMIT = 20
+# How many candidates to pull from pgvector before the geo/hours/LLM re-rank
+# passes. Larger than the final top-5 so post-retrieval proximity scoring and the
+# open/closed hard filter have room to reorder without starving the shortlist —
+# the embedding-only pgvector order is applied BEFORE any geo re-rank, so a
+# well-located pick must survive the cut on cosine similarity alone.
+_CANDIDATE_LIMIT = 40
+
+# Default search radius (miles) applied when the host set a location but no
+# explicit radius (the common case — the analyze prompt doesn't ask for one, so
+# Qa.radius_miles is usually null). Without this the retriever's bounding box is
+# skipped entirely (it requires BOTH center + radius), degrading to unbounded
+# global cosine retrieval — the proximity tiers would then rank against places
+# anywhere. A generous city-scale default keeps retrieval geographically anchored
+# without excluding a member's cross-town preferred spot.
+_DEFAULT_RADIUS_MILES = 15.0
 
 
 # How much a session-scoped Qa cuisine outweighs a durable Profile cuisine. A
@@ -38,8 +53,8 @@ def _reconcile(state: PipelineState) -> ReconciledConstraints:
     weights reward preferred cuisines and penalize disliked ones, summed across
     members: durable Profile cuisines score +/-1 and session QA cuisines add
     +/-_QA_CUISINE_WEIGHT on top, so a QA override outranks the Profile for this
-    session while still counting the Profile taste. occasion / time_slot /
-    center / radius come from the host-authored session signals.
+    session while still counting the Profile taste. occasion / center / radius
+    come from the host-authored session signals.
     """
     required_dietary: list[str] = []
     seen_dietary: set[str] = set()
@@ -82,16 +97,38 @@ def _reconcile(state: PipelineState) -> ReconciledConstraints:
         sum(budget_caps) / len(budget_caps) if budget_caps else None
     )
 
+    # `center` is the retrieval anchor + PRIMARY location weight: the host's
+    # location (resolved into state.qa by _build_session_signals, falling back to
+    # a member's when the host set none). It seeds the bounding box.
     center: tuple[float, float] | None = None
     if state.qa.location_lat is not None and state.qa.location_lon is not None:
         center = (state.qa.location_lat, state.qa.location_lon)
+
+    # Secondary anchors: each member's preferred (closer-to-them) location. Skip
+    # any that coincide with the center (e.g. the host's own row) so the corridor
+    # test compares distinct points. Null coords are already excluded by the
+    # MemberPref.location property.
+    member_locations: list[tuple[float, float]] = []
+    for member in state.members:
+        loc = member.location
+        if loc is not None and loc != center:
+            member_locations.append(loc)
+
+    # Apply a default radius when a center exists but no explicit radius was set,
+    # so the retriever's bounding box always engages (it needs BOTH). Without a
+    # center, radius is irrelevant (no box) — leave it as-is.
+    radius_miles = state.qa.radius_miles
+    if center is not None and radius_miles is None:
+        radius_miles = _DEFAULT_RADIUS_MILES
 
     return ReconciledConstraints(
         required_dietary=required_dietary,
         price_max=price_max,
         avg_budget=avg_budget,
         center=center,
-        radius_miles=state.qa.radius_miles,
+        radius_miles=radius_miles,
+        host_location=center,
+        member_locations=member_locations,
         cuisine_weights=cuisine_weights,
     )
 
@@ -103,8 +140,6 @@ def _build_query_text(
     parts: list[str] = ["Group dining recommendation."]
     if state.qa.occasion:
         parts.append(f"Occasion: {state.qa.occasion}.")
-    if state.qa.time_slot:
-        parts.append(f"Time: {state.qa.time_slot}.")
 
     liked = [c for c, w in reconciled.cuisine_weights.items() if w > 0]
     disliked = [c for c, w in reconciled.cuisine_weights.items() if w < 0]
@@ -189,12 +224,76 @@ def _parse_ranked(raw: str, valid_ids: set[int]) -> list[RankedItem]:
     return ranked
 
 
+def _build_candidates(
+    hits: list, reconciled: ReconciledConstraints, state: PipelineState
+) -> list[CandidateRestaurant]:
+    """Turn retrieval hits into CandidateRestaurants with geo/hours/tier attached.
+
+    Each candidate keeps its coordinates + hours, is classified into a proximity
+    tier (between-host-and-member > host > member > far) against the reconciled
+    anchors, and gets an `is_open` flag evaluated at the session's chosen time.
+    A candidate that parses as CLOSED at that time is HARD-FILTERED OUT (D4) —
+    unknown/unparseable/null hours parse as open, so only confidently-closed
+    venues are dropped. With no event time set, hours are not filtered at all.
+    """
+    candidates: list[CandidateRestaurant] = []
+    for restaurant, distance in hits:
+        if restaurant.id is None:
+            continue
+
+        point = (
+            (restaurant.lat, restaurant.long)
+            if restaurant.lat is not None and restaurant.long is not None
+            else None
+        )
+        tier = proximity_tier(
+            point,
+            host=reconciled.host_location,
+            members=reconciled.member_locations,
+        )
+
+        # Open/closed at the chosen event time. None time -> is_open None (unknown,
+        # not filtered); known time -> True/False, and a definite False is dropped.
+        if state.scheduled_for is not None:
+            is_open = is_open_at(restaurant.hours, state.scheduled_for)
+            if not is_open:
+                continue  # hard-filter confidently-closed venues out of the top picks
+        else:
+            is_open = None
+
+        candidates.append(
+            CandidateRestaurant(
+                id=restaurant.id,
+                name=restaurant.name,
+                cuisine_tags=list(restaurant.cuisine_tags or []),
+                dietary_tags=list(restaurant.dietary_tags or []),
+                price_avg=restaurant.price_avg,
+                avg_rating=restaurant.avg_rating,
+                distance=distance,
+                lat=restaurant.lat,
+                long=restaurant.long,
+                hours=restaurant.hours,
+                is_open=is_open,
+                proximity_tier=tier,
+            )
+        )
+    return candidates
+
+
+def _blend_proximity(base_score: float, tier: str | None) -> float:
+    """Add the proximity-tier bonus to a base match score, clamped to [0, 1]."""
+    bonus = TIER_BONUS.get(tier or "far", 0.0)
+    return round(max(0.0, min(1.0, base_score + bonus)), 4)
+
+
 async def orchestrate(state: PipelineState) -> PipelineState:
     """Reconcile prefs, retrieve candidates, LLM re-rank, and fill state.ranked.
 
     Returns the same PipelineState mutated with `reconciled`, `candidates`, and
     `ranked`. `ranked` items match the RecommendationItem shape exactly
-    (restaurant_id, match_score, justification).
+    (restaurant_id, match_score, justification). Beyond cuisine/budget/embedding
+    fit, candidates are scored by PROXIMITY (between-host-and-member > host >
+    member) and hard-filtered by open/closed at the session's chosen time.
     """
     reconciled = _reconcile(state)
     state.reconciled = reconciled
@@ -211,19 +310,7 @@ async def orchestrate(state: PipelineState) -> PipelineState:
         radius_miles=reconciled.radius_miles,
     )
 
-    candidates = [
-        CandidateRestaurant(
-            id=restaurant.id,
-            name=restaurant.name,
-            cuisine_tags=list(restaurant.cuisine_tags or []),
-            dietary_tags=list(restaurant.dietary_tags or []),
-            price_avg=restaurant.price_avg,
-            avg_rating=restaurant.avg_rating,
-            distance=distance,
-        )
-        for restaurant, distance in hits
-        if restaurant.id is not None
-    ]
+    candidates = _build_candidates(hits, reconciled, state)
     state.candidates = candidates
 
     if not candidates:
@@ -243,20 +330,33 @@ async def orchestrate(state: PipelineState) -> PipelineState:
     valid_ids = {c.id for c in candidates}
     ranked = _parse_ranked(raw or "", valid_ids)
 
-    # Fallback: if the LLM returned nothing usable, rank by retrieval distance
-    # so the pipeline still produces valid RecommendationItem-shaped output.
-    if not ranked:
+    # Blend the proximity bonus into the LLM's scores and RE-SORT, so the
+    # between-host-and-member geometry the prompt was told about is also enforced
+    # deterministically (the LLM sees the tiers but we don't rely on it alone).
+    tier_by_id = {c.id: c.proximity_tier for c in candidates}
+    if ranked:
+        for item in ranked:
+            item.match_score = _blend_proximity(
+                item.match_score, tier_by_id.get(item.restaurant_id)
+            )
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
+    else:
+        # Fallback: no usable LLM output -> rank by embedding distance, then apply
+        # the same proximity blend so the geometry still shapes the order.
         ordered = sorted(
             candidates, key=lambda c: (c.distance if c.distance is not None else 1.0)
         )
         ranked = [
             RankedItem(
                 restaurant_id=c.id,
-                match_score=round(max(0.0, 1.0 - (c.distance or 0.0)), 4),
-                justification="Ranked by embedding similarity (LLM re-rank unavailable).",
+                match_score=_blend_proximity(
+                    max(0.0, 1.0 - (c.distance or 0.0)), c.proximity_tier
+                ),
+                justification="Ranked by embedding similarity + proximity (LLM re-rank unavailable).",
             )
             for c in ordered
         ]
+        ranked.sort(key=lambda item: item.match_score, reverse=True)
 
     state.ranked = ranked
     return state

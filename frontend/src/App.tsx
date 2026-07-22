@@ -15,8 +15,7 @@ import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useSession } from '@/lib/authClient'
-import { fetchProfile } from '@/api/profile.api'
-import { USE_MOCK } from '@/lib/env'
+import { fetchProfile } from '@/api/profileApi'
 import type { SessionUser } from '@/stores/authStore'
 
 // Frontend-only screen switch (no router). Transitions follow the wireframe
@@ -28,12 +27,10 @@ function App() {
   const user = useAuthStore((s) => s.user)
   const setSessionUser = useAuthStore((s) => s.setSessionUser)
 
-  // Live mode: mirror Better Auth's session (httpOnly cookie) into the store, so
-  // the guard and pages read a single source of truth and survive refresh. Mock
-  // mode boots pre-authenticated and skips this.
+  // Mirror Better Auth's session (httpOnly cookie) into the store, so the guard
+  // and pages read a single source of truth and survive refresh.
   const { data: session, isPending } = useSession()
   useEffect(() => {
-    if (USE_MOCK) return
     setSessionUser((session?.user as SessionUser | undefined) ?? null)
   }, [session, setSessionUser])
 
@@ -48,7 +45,6 @@ function App() {
   // more than once.
   const routedRef = useRef(false)
   useEffect(() => {
-    if (USE_MOCK) return
     if (!session?.user || !isAuthScreen || routedRef.current) return
     routedRef.current = true
     void (async () => {
@@ -68,9 +64,9 @@ function App() {
     })()
   }, [session, isAuthScreen, go, setGroup])
 
-  // Auth guard (live mode only): every screen except the auth pages requires a
-  // signed-in user. Wait for the initial session check before bouncing.
-  if (!USE_MOCK && !isPending && !user && !isAuthScreen) {
+  // Auth guard: every screen except the auth pages requires a signed-in user.
+  // Wait for the initial session check before bouncing.
+  if (!isPending && !user && !isAuthScreen) {
     return <AuthPage mode="signin" />
   }
 

@@ -83,7 +83,6 @@ _OFFLINE_LLM_JSON = [
                 "budget",
                 "occasion",
                 "location",
-                "time_slot",
             ],
         }
     ),
@@ -99,7 +98,6 @@ _OFFLINE_LLM_JSON = [
                 "budget",
                 "occasion",
                 "location",
-                "time_slot",
             ],
         }
     ),
@@ -119,7 +117,6 @@ _OFFLINE_LLM_JSON = [
                 "preferred_cuisines",
                 "occasion",
                 "location",
-                "time_slot",
             ],
         }
     ),

@@ -14,12 +14,20 @@ const listEvents = async (req, res, next) => {
         id: true,
         date: true,
         address: true,
+        lat: true,
+        lon: true,
         restaurant_id: true,
         restaurant_name: true,
         occasion: true,
         time_slot: true,
         group_id: true,
         group_name: true,
+        // Who attended — snapshotted from the session members at close time
+        // (closeSession connects them). Surfaced so the Events detail can show a
+        // "Who's going" list with real names.
+        attendees: {
+          select: { id: true, username: true, display_name: true },
+        },
       },
     });
     return res.status(200).json(events);
