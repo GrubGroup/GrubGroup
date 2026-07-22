@@ -23,6 +23,7 @@ import {
   selectProgressTotal,
   selectRecommendation,
   selectActiveSessionId,
+  selectIsHost,
 } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
@@ -52,6 +53,8 @@ export function AgentChatPage() {
   const progressTotal = useSessionStore(selectProgressTotal(groupId))
   const recommendation = useSessionStore(selectRecommendation(groupId))
   const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const forceFinish = useSessionStore((s) => s.forceFinish)
+  const isHost = useSessionStore(selectIsHost(groupId))
   const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
   const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
 
@@ -108,8 +111,26 @@ export function AgentChatPage() {
   // bar changes: composer → done pill. 'agent-chat-done' shows the pill.
   const isDone = screen === 'agent-chat-done'
   const [marking, setMarking] = useState(false)
+  const [forcing, setForcing] = useState(false)
 
   const handleSend = (text: string) => void sendUserMessage(groupId, text, activeSessionId)
+
+  // Host ends the session early over the answers gathered so far, then opens
+  // results. The gateway broadcasts session:picks; the picks screen polls until
+  // generation lands. Guard against a double-click during the request.
+  const handleForceFinish = async () => {
+    if (forcing) return
+    setForcing(true)
+    try {
+      await forceFinish(groupId)
+      go('top-picks')
+    } catch {
+      // Generation failed to start — stay put so the host can retry / the timer
+      // can fall back; the button re-enables below.
+    } finally {
+      setForcing(false)
+    }
+  }
 
   const handleDone = async () => {
     if (marking) return // guard against a double-click during the REST round-trip
@@ -222,7 +243,7 @@ export function AgentChatPage() {
                   See the group's results
                 </Button>
               ) : (
-                <div className="flex flex-col items-center gap-1 py-1 text-center">
+                <div className="flex flex-col items-center gap-2 py-1 text-center">
                   <span className="flex items-center gap-2 text-sm font-medium text-text">
                     <Spinner size="sm" /> Waiting for others
                   </span>
@@ -230,6 +251,19 @@ export function AgentChatPage() {
                     {doneCount} of {progressTotal} finished · you can review your
                     answers while you wait
                   </span>
+                  {/* Host can stop waiting and generate results over the answers so
+                      far, rather than blocking on every member finishing. */}
+                  {isHost && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isLoading={forcing}
+                      leftIcon={<Icon name="sparkles" size={14} />}
+                      onClick={() => void handleForceFinish()}
+                    >
+                      Force finish &amp; see results
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

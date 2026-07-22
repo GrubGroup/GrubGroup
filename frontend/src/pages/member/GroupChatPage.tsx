@@ -24,6 +24,7 @@ import {
   selectRecommendation,
   selectPhase,
   selectStartedAt,
+  selectIsHost,
 } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
@@ -69,6 +70,8 @@ export function GroupChatPage() {
   const hydrateMembers = useSessionStore((s) => s.hydrateMembers)
   const startedAt = useSessionStore(selectStartedAt(groupId))
   const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
+  const forceFinish = useSessionStore((s) => s.forceFinish)
+  const isHost = useSessionStore(selectIsHost(groupId))
   const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
 
   // Resolve membership BEFORE connecting the socket, so we never join a room the
@@ -118,6 +121,8 @@ export function GroupChatPage() {
   const [editing, setEditing] = useState(false)
   // Host pre-session setup modal.
   const [hostModalOpen, setHostModalOpen] = useState(false)
+  // Host "Force finish" request in flight (disables the card's button).
+  const [forcing, setForcing] = useState(false)
 
   // Redirect a user who has no valid selected group to the empty-groups screen —
   // but only once the list has loaded, so an in-flight/empty list doesn't bounce
@@ -214,6 +219,24 @@ export function GroupChatPage() {
   const handleJoin = () => {
     join(groupId)
     go('agent-chat')
+  }
+
+  // Host ends the session early: generate over the answers gathered so far, then
+  // open the results screen. The gateway broadcasts session:picks so every
+  // member's card flips to complete; loadRecommendation on the picks screen polls
+  // until the generation lands. Guard against a double-click during the request.
+  const handleForceFinish = async () => {
+    if (forcing) return
+    setForcing(true)
+    try {
+      await forceFinish(groupId)
+      go('top-picks')
+    } catch {
+      // Generation failed to kick off — leave the user on the chat so they can
+      // retry (or let the timer fall back); the button re-enables below.
+    } finally {
+      setForcing(false)
+    }
   }
 
   // After leaving, the group is gone from the (refreshed) list. Jump to the next
@@ -348,6 +371,9 @@ export function GroupChatPage() {
                   onViewResults={() => go('top-picks')}
                   onExpire={() => void triggerExpiryGeneration(groupId)}
                   onReview={() => go('agent-chat-done')}
+                  isHost={isHost}
+                  onForceFinish={() => void handleForceFinish()}
+                  forcing={forcing}
                 />
               </motion.div>
 

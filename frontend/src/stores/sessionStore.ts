@@ -123,6 +123,11 @@ interface SessionState {
   // if the countdown runs out before everyone finishes. No-op for non-hosts or
   // when results already exist. Guarded (per group) against concurrent/repeat calls.
   triggerExpiryGeneration: (groupId: number) => Promise<void>
+  // Host "Force finish": end the session early over the answers gathered SO FAR
+  // (force_partial) — before everyone clicks "I'm Finished" or the timer expires.
+  // Same server operation as the expiry fallback (marks remaining members done,
+  // generates, broadcasts session:picks); host-only and guarded per group.
+  forceFinish: (groupId: number) => Promise<void>
   castVote: (groupId: number, restaurantId: number, userId: number) => void
   chooseRestaurant: (groupId: number, restaurantId: number) => void
   close: (groupId: number) => void
@@ -360,6 +365,39 @@ export const useSessionStore = create<SessionState>((set, get) => {
         // Generation failure (e.g. 409 not-ready) is surfaced elsewhere; release the
         // per-group guard so a later retry rather than latching it.
         expiryGenerating.delete(groupId)
+      }
+    },
+
+    forceFinish: async (groupId) => {
+      const sl = slice(groupId)
+      const isHost = sl.session != null && sl.session.host_user_id === get().currentUserId
+      // Host-only; skip if there's no session or results already exist. Reuses the
+      // same per-group latch as the timer fallback so the two can't double-fire.
+      if (sl.activeSessionId == null || sl.recommendation != null || !isHost) return
+      if (expiryGenerating.has(groupId)) return
+      expiryGenerating.add(groupId)
+      // Mark this group's results as loading so the caller (and the picks screen)
+      // shows the loading circle until generation returns — not an empty list.
+      patch(groupId, { recommendationLoading: true, recommendationError: false })
+      try {
+        // force_partial: the gateway marks any un-finished members done, generates
+        // over whatever answers exist, and broadcasts session:picks. We ALSO adopt
+        // the recommendation it returns directly, so the results screen renders
+        // ready content the moment we navigate — no wait on the socket echo/poll.
+        const recommendation = await generateRecommendation(sl.activeSessionId, {
+          forcePartial: true,
+        })
+        patch(groupId, {
+          recommendation,
+          recommendationLoading: false,
+          recommendationError: false,
+        })
+      } catch {
+        // Release the guard on failure so the host can retry (or the timer can),
+        // and clear the loading flag so the caller can react.
+        expiryGenerating.delete(groupId)
+        patch(groupId, { recommendationLoading: false })
+        throw new Error('force-finish failed')
       }
     },
 

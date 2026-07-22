@@ -23,6 +23,12 @@ export interface SessionCardProps {
   onExpire?: () => void
   // Re-open the (preserved) conversation to review answers — shown when waiting.
   onReview?: () => void
+  // Whether the viewer hosts this session — gates the "Force finish" action.
+  isHost?: boolean
+  // Host ends the session early over the answers gathered so far (force_partial).
+  onForceFinish?: () => void
+  // True while a force-finish request is in flight (disables the button).
+  forcing?: boolean
 }
 
 // The inline "session in progress" card shown inside the group chat. Its CTA
@@ -40,8 +46,13 @@ export function SessionCard({
   onViewResults,
   onExpire,
   onReview,
+  isHost,
+  onForceFinish,
+  forcing,
 }: SessionCardProps) {
   const complete = state === 'complete'
+  // The host can end the session early while it's still running (not once complete).
+  const canForceFinish = isHost && !complete && onForceFinish != null
   return (
     <div className="rounded-card border border-primary/40 bg-surface-raised p-4 shadow-sm">
       <div className="flex items-center justify-between">
@@ -104,6 +115,18 @@ export function SessionCard({
       <div className="mt-2">
         <SegmentedProgress value={readyCount} total={total} tone="primary" />
       </div>
+
+      {/* Host-only: end the session now over the answers gathered so far. */}
+      {canForceFinish && (
+        <button
+          onClick={onForceFinish}
+          disabled={forcing}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-xs font-medium text-text-muted hover:bg-surface-sunken hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Icon name="sparkles" size={12} />
+          {forcing ? 'Finishing…' : 'Force finish & see results'}
+        </button>
+      )}
     </div>
   )
 }
