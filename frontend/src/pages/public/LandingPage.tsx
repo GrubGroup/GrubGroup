@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { useRef, type ReactNode } from 'react'
+import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from 'framer-motion'
 import { Button, Icon, MicPop, Wordmark, type IconName } from '@/components/ui'
 import { EASE, viewport, useFadeUp, makeFloat } from '@/lib/motion'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useNavStore } from '@/stores/navStore'
 import { cn } from '@/utils/cn'
 
@@ -457,7 +458,20 @@ const STEPS: { n: string; icon: IconName; eyebrow: string; title: string; body: 
   },
 ]
 
+// Public switch: on desktop with motion allowed, the steps play as a
+// scroll-pinned reveal (numbers 1→2→3 + their cards appear in sequence). On
+// mobile or with reduced motion, fall back to the static grid — which is also
+// the no-JS baseline (all three steps in the DOM). The `useMediaQuery` default
+// (false) means the static grid renders on first paint, then upgrades once JS
+// confirms the ≥640px match, so there's no layout pop.
 function HowItWorks() {
+  const reduce = useReducedMotion()
+  const isDesktop = useMediaQuery('(min-width: 640px)')
+  if (reduce || !isDesktop) return <HowItWorksStatic />
+  return <HowItWorksPinned />
+}
+
+function HowItWorksStatic() {
   const reduce = useReducedMotion()
   const fadeUp = useFadeUp()
   return (
@@ -492,6 +506,156 @@ function HowItWorks() {
             <p className="mt-3 text-[15px] leading-relaxed text-text-muted">{s.body}</p>
           </motion.article>
         ))}
+      </div>
+    </section>
+  )
+}
+
+// Scroll-pinned variant of §4. A tall track holds an inner sticky stage under
+// the nav; as the user scrolls, `scrollYProgress` (0→1) drives the three steps
+// one at a time — each step's big numeral pops first, then its card slides up a
+// beat later. Step 3 persists to the end of the pin. When the pin releases, the
+// full §4 three-card grid (01/02/03 numerals) sits directly below in normal
+// flow and stays on screen — the sequence hands off to it rather than vanishing.
+// Desktop + motion-allowed only (gated by the HowItWorks switch).
+
+// Active window start per step (0-based). Step 3 has no successor, so it holds.
+const PIN_STARTS = [0, 0.33, 0.66] as const
+
+// Motion values for one step (numeral leads, card follows ~0.05 later). `last`
+// keeps step 3 visible through progress = 1 instead of fading it back out.
+function useStepMotion(scrollYProgress: MotionValue<number>, start: number, last: boolean) {
+  const endOpacity = last ? 1 : 0
+  const numOpacity = useTransform(
+    scrollYProgress,
+    [start, start + 0.06, start + 0.27, start + 0.33],
+    [0, 1, 1, endOpacity],
+  )
+  const numY = useTransform(scrollYProgress, [start, start + 0.06], [40, 0])
+  const cardOpacity = useTransform(
+    scrollYProgress,
+    [start + 0.05, start + 0.12, start + 0.27, start + 0.33],
+    [0, 1, 1, endOpacity],
+  )
+  const cardY = useTransform(scrollYProgress, [start + 0.05, start + 0.12], [48, 0])
+  const cardScale = useTransform(scrollYProgress, [start + 0.05, start + 0.12], [0.94, 1])
+  return { numOpacity, numY, cardOpacity, cardY, cardScale }
+}
+
+function HowItWorksPinned() {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({
+    target: trackRef,
+    offset: ['start start', 'end end'],
+  })
+
+  // One motion set per step — declared at the top level (never inside .map),
+  // so the hook count stays constant.
+  const s1 = useStepMotion(scrollYProgress, PIN_STARTS[0], false)
+  const s2 = useStepMotion(scrollYProgress, PIN_STARTS[1], false)
+  const s3 = useStepMotion(scrollYProgress, PIN_STARTS[2], true)
+  const motions = [s1, s2, s3]
+
+  // After step 3, fade the whole solo stage (numeral + card deck + glow) out so
+  // no empty ghost cards linger at the tail — hands off to the finale grid.
+  const stageOpacity = useTransform(scrollYProgress, [0.9, 1], [1, 0])
+
+  // Entrance for the persistent finale grid.
+  const fadeUp = useFadeUp()
+
+  return (
+    <section id="how-it-works" className="scroll-mt-[72px] bg-surface-raised">
+      {/* Pinned sequence — plays 1 → 2 → 3 while the stage stays fixed */}
+      <div ref={trackRef} className="relative h-[240vh]">
+        <div className="sticky top-[72px] flex min-h-[calc(100vh-72px)] flex-col justify-center overflow-hidden px-6 py-12 lg:px-8">
+          <motion.div style={{ opacity: stageOpacity }} className="mx-auto w-full max-w-[1100px]">
+            <SectionHeader eyebrow="HOW IT WORKS" title="Three steps to one table." />
+
+            <div className="relative mt-10 grid items-center gap-10 lg:mt-14 lg:grid-cols-[0.8fr_1fr]">
+              {/* Left — cross-fading big numeral + eyebrow, centered in its column */}
+              <div className="relative flex h-[200px] items-center justify-center lg:h-[300px]">
+                {/* soft glow, hero language */}
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-pill bg-primary-soft/40 blur-[90px]" />
+                {STEPS.map((s, i) => (
+                  <motion.div
+                    key={s.n}
+                    style={{ opacity: motions[i].numOpacity, y: motions[i].numY }}
+                    className="absolute inset-0 flex flex-col items-center justify-center"
+                  >
+                    <span className="text-[12px] font-semibold tracking-[0.15em] text-primary">
+                      {s.eyebrow}
+                    </span>
+                    <span className="font-display text-[160px] font-extrabold leading-none text-primary lg:text-[240px]">
+                      {String(i + 1)}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Right — cross-fading modal cards, layered like a deck */}
+              <div className="relative h-[300px] lg:h-[340px]">
+                {/* faint ghost cards behind, so the stack reads as a deck */}
+                <div className="pointer-events-none absolute inset-x-4 top-6 h-full rotate-3 rounded-[20px] bg-surface-panel/70" />
+                <div className="pointer-events-none absolute inset-x-6 top-10 h-full -rotate-3 rounded-[20px] bg-surface-panel/50" />
+                {STEPS.map((s, i) => (
+                  <motion.div
+                    key={s.n}
+                    style={{
+                      opacity: motions[i].cardOpacity,
+                      y: motions[i].cardY,
+                      scale: motions[i].cardScale,
+                    }}
+                    className="absolute inset-0 flex flex-col justify-center rounded-[20px] border border-surface-sunken bg-surface-raised p-7 shadow-[0_36px_80px_rgba(26,18,8,0.18)] lg:p-8"
+                  >
+                    <span className="flex h-13 w-13 items-center justify-center rounded-2xl bg-primary-soft/25 text-primary">
+                      <Icon name={s.icon} size={24} />
+                    </span>
+                    <p className="mt-4 text-[11px] font-semibold tracking-[0.1em] text-text-muted">
+                      {s.eyebrow}
+                    </p>
+                    <h3 className="mt-1.5 font-display text-[22px] font-bold">{s.title}</h3>
+                    <p className="mt-3 text-[15px] leading-relaxed text-text-muted">{s.body}</p>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Persistent finale — the §4 three-card grid stays on screen after the
+          pin releases (scrolls normally into the rest of the page). */}
+      <div className="px-6 pb-20 lg:px-8 lg:pb-24">
+        <motion.div
+          initial="hidden"
+          whileInView="show"
+          viewport={viewport}
+          variants={fadeUp}
+          className="mx-auto grid max-w-[1100px] gap-6 sm:grid-cols-3"
+        >
+          {STEPS.map((s, i) => (
+            <div
+              key={s.n}
+              className={cn(
+                'relative rounded-card bg-surface p-8 shadow-sm',
+                i === 1 && 'sm:mt-8',
+              )}
+            >
+              {/* ghost numeral peeking above the card */}
+              <span className="pointer-events-none absolute -top-14 left-4 font-display text-[120px] font-extrabold leading-none text-text/[0.05]">
+                {s.n}
+              </span>
+              <span className="relative flex h-13 w-13 items-center justify-center rounded-2xl bg-primary-soft/25 text-primary">
+                <Icon name={s.icon} size={24} />
+              </span>
+              <p className="mt-4 text-[11px] font-semibold tracking-[0.1em] text-text-muted">
+                {s.eyebrow}
+              </p>
+              <h3 className="mt-1.5 font-display text-[22px] font-bold">{s.title}</h3>
+              <p className="mt-3 text-[15px] leading-relaxed text-text-muted">{s.body}</p>
+            </div>
+          ))}
+        </motion.div>
       </div>
     </section>
   )
