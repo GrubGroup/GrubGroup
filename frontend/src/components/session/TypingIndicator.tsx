@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SessionMember } from '@/types'
 import type { Typer } from '@/stores/groupChatStore'
 import { Avatar } from '@/components/ui'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
+import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
 
 export interface TypingIndicatorProps {
@@ -51,7 +51,7 @@ export function TypingIndicator({ typers, members }: TypingIndicatorProps) {
             key={t.userId ?? displayName(t, members)}
             name={displayName(t, members)}
             size="sm"
-            colorClass={MOCK_MEMBER_COLORS[t.userId ?? -1]}
+            colorClass={memberColor(t.userId ?? -1)}
             className="border border-surface-raised"
           />
         ))}

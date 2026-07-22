@@ -1,15 +1,18 @@
 import type { MenuItem, Restaurant } from '@/types'
-import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_MENUS, MOCK_RESTAURANTS } from './mock/restaurantsMock'
 
 export async function fetchRestaurants(): Promise<Restaurant[]> {
-  if (USE_MOCK) return structuredClone(MOCK_RESTAURANTS)
-  const { data } = await api.get<Restaurant[]>('/restaurants')
+  // Ask for the whole catalog (gateway caps at 100; the seed is ~54–67 rows).
+  // Without an explicit limit the gateway defaults to 20, so any recommended
+  // restaurant with id > 20 would be absent from restaurantStore.byId and the
+  // Top Picks page would silently drop every such pick → "No matching spots".
+  const { data } = await api.get<Restaurant[]>('/restaurants', { params: { limit: 100 } })
   return data
 }
 
-// FRONTEND-ONLY menus (no DB table yet) — mock always.
+// Menus have no backend table yet, so there is nothing to fetch — return empty.
+// The restaurantId param is kept for call-site compatibility (store.loadMenu).
 export async function fetchMenu(restaurantId: number): Promise<MenuItem[]> {
-  return structuredClone(MOCK_MENUS[restaurantId] ?? [])
+  void restaurantId
+  return []
 }

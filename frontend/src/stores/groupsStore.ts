@@ -1,14 +1,11 @@
 import { create } from 'zustand'
 import { isAxiosError } from 'axios'
 import type { Group } from '@/types'
-import { USE_MOCK } from '@/lib/env'
-import { MOCK_GROUPS } from '@/api/mock/groupsMock'
 import { fetchGroups, createGroup, addGroupMember, removeGroupMember } from '@/api/groupsApi'
 
-// The user's group list. In live mode it's loaded from the gateway (each group
-// carries its latest DB message as last_message, for the sidebar preview); in
-// mock mode it's seeded from MOCK_GROUPS. Create + invite hit the real gateway
-// endpoints (the caller is auto-added as a member server-side).
+// The user's group list, loaded from the gateway (each group carries its latest
+// DB message as last_message, for the sidebar preview). Create + invite hit the
+// real gateway endpoints (the caller is auto-added as a member server-side).
 
 // Result of an invite attempt, so the UI can show success/error inline.
 export interface InviteResult {
@@ -36,48 +33,33 @@ interface GroupsState {
   reset: () => void
   addGroup: (name: string, memberIds?: number[]) => Promise<Group>
   inviteMember: (groupId: number, username: string) => Promise<InviteResult>
-  // Leave a group (remove yourself), then drop it from the list. In mock mode
-  // it's removed locally.
+  // Leave a group (remove yourself), then drop it from the list.
   leaveGroup: (groupId: number, userId: number) => Promise<void>
 }
 
 export const useGroupsStore = create<GroupsState>((set, get) => ({
-  // Live mode starts empty and is filled by load() from the gateway — seeding
-  // MOCK_GROUPS here would leak the mock seed into a real (or freshly signed-up)
-  // account's sidebar. Mock mode seeds the demo groups directly.
-  groups: USE_MOCK ? MOCK_GROUPS : [],
+  // Starts empty and is filled by load() from the gateway.
+  groups: [],
 
-  // Refresh the list from the backend. In mock mode a failure keeps the current
-  // list (never blanks the demo). In live mode we clear on failure so one
-  // account never shows another account's (or the mock) groups.
+  // Refresh the list from the backend. Clear on failure so one account never
+  // shows another account's groups.
   load: async () => {
     try {
       set({ groups: await fetchGroups() })
     } catch {
-      if (!USE_MOCK) set({ groups: [] })
+      set({ groups: [] })
     }
   },
 
   // Drop the current account's groups (call on sign-out so the next account
   // never sees the previous one's list before load() runs).
-  reset: () => set({ groups: USE_MOCK ? MOCK_GROUPS : [] }),
+  reset: () => set({ groups: [] }),
 
   // Create a real group via POST /api/groups (with the picked member ids; the
   // caller is added server-side), then refresh the list so previews and counts
-  // come from the DB. In mock mode, just push a local group.
+  // come from the DB.
   addGroup: async (name, memberIds) => {
     const trimmed = name.trim()
-    if (USE_MOCK) {
-      const nextId = Math.max(10, ...get().groups.map((g) => g.id)) + 1
-      const group: Group = {
-        id: nextId,
-        name: trimmed,
-        emoji: '💬',
-        member_count: (memberIds?.length ?? 0) + 1, // + the caller
-      }
-      set((s) => ({ groups: [...s.groups, group] }))
-      return group
-    }
     const group = await createGroup(trimmed, memberIds)
     await get().load()
     return group
@@ -101,13 +83,8 @@ export const useGroupsStore = create<GroupsState>((set, get) => ({
     }
   },
 
-  // Leave a group: remove yourself server-side, then drop it from the list. In
-  // mock mode there's no request — just remove it locally.
+  // Leave a group: remove yourself server-side, then drop it from the list.
   leaveGroup: async (groupId, userId) => {
-    if (USE_MOCK) {
-      set((s) => ({ groups: s.groups.filter((g) => g.id !== groupId) }))
-      return
-    }
     await removeGroupMember(groupId, userId)
     await get().load()
   },

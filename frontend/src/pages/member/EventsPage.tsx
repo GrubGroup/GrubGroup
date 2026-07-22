@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react'
 import type { EventRecord } from '@/types'
 import { Avatar, Badge, Icon } from '@/components/ui'
 import { AppSidebar } from '@/components/layout/AppSidebar'
-import { FEATURED_EVENT } from '@/api/mock/eventsMock'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
-import { nameForMember } from '@/utils/memberName'
+import { memberColor } from '@/constants/memberColors'
 import { useEventListStore } from '@/stores/eventListStore'
 
 // A cuisine/dietary emoji is not on the API row, so pick a stable default.
@@ -137,7 +135,7 @@ export function EventsPage() {
                           key={a.id}
                           className="flex items-center gap-3 border-b border-border py-2.5 last:border-b-0"
                         >
-                          <Avatar name={name} size="sm" colorClass={MOCK_MEMBER_COLORS[a.id]} />
+                          <Avatar name={name} size="sm" colorClass={memberColor(a.id)} />
                           <span className="flex-1 text-sm text-text">{name}</span>
                         </div>
                       )
@@ -148,84 +146,26 @@ export function EventsPage() {
             </div>
           </>
         ) : (
-          <FeaturedFallback />
+          <EventsEmptyState />
         )}
       </div>
     </div>
   )
 }
 
-// Shown before any real events exist (or while loading in mock) — reuses the
-// original mock hero so the page never looks empty during the demo.
-function FeaturedFallback() {
+// Shown when the caller has no events yet (nothing booked). Honest empty state —
+// events appear here once a session's host confirms a restaurant.
+function EventsEmptyState() {
   return (
-    <>
-      <div className="relative flex h-56 shrink-0 flex-col justify-end bg-surface-inverse p-6 text-white">
-        <span className="absolute right-6 top-6 text-xs text-white/70">
-          Upcoming · {FEATURED_EVENT.time}
-        </span>
-        <p className="text-xs text-white/70">
-          📍 {FEATURED_EVENT.group} · {FEATURED_EVENT.date}
-        </p>
-        <h1 className="font-display text-3xl font-bold">{FEATURED_EVENT.restaurantName}</h1>
-        <p className="text-sm text-white/80">$ · {FEATURED_EVENT.confirmed} confirmed</p>
-      </div>
-
-      <div className="flex flex-col gap-5 p-6">
-        <div className="flex gap-2">
-          {FEATURED_EVENT.dietary.map((d) => (
-            <Badge key={d} tone="success">
-              {d}
-            </Badge>
-          ))}
-        </div>
-
-        <div className="rounded-card bg-surface-sunken p-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Why this was picked
-          </p>
-          <p className="text-sm text-text-muted">{FEATURED_EVENT.why}</p>
-        </div>
-
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-              Who's going
-            </p>
-            <span className="text-xs text-text-muted">{FEATURED_EVENT.confirmed} confirmed</span>
-          </div>
-          <div className="flex flex-col">
-            {FEATURED_EVENT.attendees.map((a) => {
-              const name = nameForMember(a.userId)
-              return (
-              <div
-                key={a.userId}
-                className="flex items-center gap-3 border-b border-border py-2.5 last:border-b-0"
-              >
-                <Avatar
-                  name={name}
-                  size="sm"
-                  colorClass={MOCK_MEMBER_COLORS[a.userId]}
-                />
-                <span className="flex-1 text-sm text-text">
-                  {name}
-                </span>
-                <span
-                  className={
-                    a.status === 'Confirmed'
-                      ? 'flex items-center gap-1 text-sm text-success'
-                      : 'text-sm text-text-muted'
-                  }
-                >
-                  {a.status === 'Confirmed' && <Icon name="check" size={13} />}
-                  {a.status}
-                </span>
-              </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    </>
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-raised text-2xl">
+        🍽️
+      </span>
+      <p className="text-sm font-medium text-text">No events yet</p>
+      <p className="max-w-xs text-xs text-text-muted">
+        Start a group session and confirm a restaurant — your booked outings will
+        show up here.
+      </p>
+    </div>
   )
 }

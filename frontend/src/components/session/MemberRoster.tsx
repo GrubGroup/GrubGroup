@@ -1,6 +1,6 @@
 import type { SessionMember } from '@/types'
 import { Avatar, Icon } from '@/components/ui'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
+import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
 
 export interface MemberRosterProps {
@@ -17,7 +17,7 @@ export function MemberRoster({ members, currentUserId }: MemberRosterProps) {
         const isYou = m.user_id === currentUserId
         return (
           <li key={m.user_id} className="flex items-center gap-2">
-            <Avatar name={name} size="sm" colorClass={MOCK_MEMBER_COLORS[m.user_id]} />
+            <Avatar name={name} size="sm" colorClass={memberColor(m.user_id)} />
             <span className="flex-1 text-sm text-text">{isYou ? name : name}</span>
             {m.status ? (
               <span aria-label="ready" className="text-success">

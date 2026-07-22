@@ -1,6 +1,6 @@
 import type { GroupMessage, SessionMember } from '@/types'
 import { Avatar } from '@/components/ui'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
+import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
 
 export interface GroupMessageRowProps {
@@ -54,7 +54,7 @@ export function GroupMessageRow({ message, currentUserId, members }: GroupMessag
 
   return (
     <div className="flex items-start gap-2.5">
-      <Avatar name={name} size="sm" colorClass={MOCK_MEMBER_COLORS[message.userId ?? -1]} />
+      <Avatar name={name} size="sm" colorClass={memberColor(message.userId ?? -1)} />
       <div className="flex flex-col gap-0.5">
         <span className="text-xs text-text-muted">{name}</span>
         <div className="flex items-end gap-2">

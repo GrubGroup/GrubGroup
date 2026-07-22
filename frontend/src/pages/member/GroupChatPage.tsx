@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Session } from '@/types'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
@@ -10,13 +10,7 @@ import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { TypingIndicator } from '@/components/session/TypingIndicator'
 import { cn } from '@/utils/cn'
-import { USE_MOCK } from '@/lib/env'
-import {
-  SESSION_STARTED_BY,
-  MOCK_GROUP_MESSAGES,
-  MOCK_GROUP_MESSAGES_AFTER,
-} from '@/api/mock/groupChatMock'
-import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
+import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -50,21 +44,18 @@ export function GroupChatPage() {
   const recommendation = useSessionStore((s) => s.recommendation)
   const phase = useSessionStore((s) => s.phase)
   const join = useSessionStore((s) => s.join)
-  const loadSession = useSessionStore((s) => s.load)
   const setSession = useSessionStore((s) => s.setSession)
   const hydrateMembers = useSessionStore((s) => s.hydrateMembers)
   const startedAt = useSessionStore((s) => s.startedAt)
   const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
-  const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
+  const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
 
-  // Live group chat: connect + join the selected room (no-op in mock mode).
+  // Live group chat: connect + join the selected room over the socket.
   useSocket(groupId)
   const messages = useGroupChatStore(selectGroupMessages(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
-  const receiveHistory = useGroupChatStore((s) => s.receiveHistory)
-  const receiveMessage = useGroupChatStore((s) => s.receiveMessage)
-  const receiveSessionStart = useGroupChatStore((s) => s.receiveSessionStart)
+  const clearSessionStart = useGroupChatStore((s) => s.clearSessionStart)
   const setTyping = useGroupChatStore((s) => s.setTyping)
   const typers = useGroupChatStore(selectTypers(groupId))
 
@@ -83,39 +74,8 @@ export function GroupChatPage() {
   // Host pre-session setup modal.
   const [hostModalOpen, setHostModalOpen] = useState(false)
 
-  useEffect(() => {
-    // Mock mode seeds a demo session/roster (id 42) so the card renders offline.
-    // In live mode the roster is populated when a session is created/adopted via
-    // the socket, so we don't hit a real session id that the user may not be in.
-    if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
-  }, [members.length, loadSession, currentUserId])
-
-  useEffect(() => {
-    // Mock demo bootstrap: the socket is disabled offline, so nothing seeds the
-    // group chat or fires receiveSessionStart (which normally arrives from the
-    // gateway). Seed the demo backlog once and place the session card inline —
-    // Sophie's "started a session" — so the whole Join → session → results flow
-    // is walkable without a backend. Live mode gets all of this from the socket.
-    if (!USE_MOCK) return
-    if (messages.length > 0) return
-    const toWire = (m: { id: string; userId: number; text: string }) => ({
-      id: m.id,
-      groupId,
-      userId: m.userId,
-      name: MOCK_MEMBER_NAMES[m.userId] ?? null,
-      text: m.text,
-      at: new Date().toISOString(),
-      type: 'text' as const,
-    })
-    // Seed the pre-session backlog, drop the session card at that point, then
-    // append the post-start messages so the card lands inline between them.
-    receiveHistory(groupId, MOCK_GROUP_MESSAGES.map(toWire))
-    receiveSessionStart(groupId)
-    MOCK_GROUP_MESSAGES_AFTER.forEach((m) => receiveMessage(toWire(m)))
-  }, [groupId, messages.length, receiveHistory, receiveMessage, receiveSessionStart])
-
   const memberIds = members.map((m) => m.user_id)
-  const total = progressTotal || members.length || 6
+  const total = progressTotal || members.length || 0
 
   // The card state is derived from SESSION STATE, not just the screen, so it
   // reflects reality regardless of how the user navigated here:
@@ -134,24 +94,34 @@ export function GroupChatPage() {
       ? 'waiting'
       : (CARD_STATE[screen] ?? 'not-joined')
 
+  // A session is "ongoing" once it has started but hasn't completed — the window
+  // in which "Start session" is disabled (you can't run two at once). Once
+  // complete (or none started), the button is clickable again so the group can
+  // kick off another session in the same chat.
+  const sessionOngoing = sessionStartIndex !== null && !isComplete
+
   // Header "X members" reflects the real group membership from GET /api/groups
-  // (member_count); falls back to the session total in mock mode, where
-  // MOCK_GROUPS carry no member_count.
+  // (member_count); falls back to the session total when absent.
   const memberCount = group?.member_count ?? total
 
   // Host finished the pre-session modal: adopt the created session locally, then
   // broadcast session:start WITH its id so every member's client can adopt it and
   // share one countdown. The inline card appears via the server echo.
   const handleSessionCreated = (session: Session) => {
+    // Clear any PRIOR session's card marker for this group first, so the new
+    // session places a fresh card (receiveSessionStart dedupes while a marker
+    // exists). setSession clears the prior session's results/roster in the
+    // session store. Together these make "start another session" work after one
+    // completes — otherwise the new session inherits the old card position and
+    // stale picks.
+    clearSessionStart(groupId)
     setSession(session, currentUserId)
     startSession(groupId, session.id)
-    // Live: the card appears via the server's session:start echo. Mock: the
-    // socket is null, so drop the card inline locally.
-    if (USE_MOCK) receiveSessionStart(groupId)
-    // Live: the create response has no member names, and the host skips the
-    // session:start load() — so fetch the name-carrying roster now, else the
-    // host's own avatar/roster shows "User N"/"U1".
-    else void hydrateMembers(session.id)
+    // The card appears via the server's session:start echo. The create response
+    // has no member names, and the host skips the session:start load() — so fetch
+    // the name-carrying roster now, else the host's own avatar/roster shows
+    // "User N"/"U1".
+    void hydrateMembers(session.id)
     setHostModalOpen(false)
   }
 
@@ -190,7 +160,7 @@ export function GroupChatPage() {
                     key={id}
                     name={nameForMember(id, members)}
                     size="sm"
-                    colorClass={MOCK_MEMBER_COLORS[id]}
+                    colorClass={memberColor(id)}
                     className="h-4 w-4 border border-surface-raised text-[7px]"
                   />
                 ))}
@@ -206,20 +176,24 @@ export function GroupChatPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Start session stays PRESENT the whole time — it's only DISABLED
+                while a session is actively running (started but not yet complete),
+                and re-enables once results land / the session closes so the group
+                can start another. Edit group is anchored to the far right. */}
+            <button
+              onClick={() => setHostModalOpen(true)}
+              disabled={sessionOngoing}
+              title={sessionOngoing ? 'A session is already in progress' : undefined}
+              className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="sparkles" size={12} /> Start session
+            </button>
             <button
               onClick={() => setEditing(true)}
               className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken"
             >
               <Icon name="users" size={12} /> Edit group
             </button>
-            {sessionStartIndex === null && (
-              <button
-                onClick={() => setHostModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-input bg-surface-inverse px-3 py-1.5 text-xs font-medium text-white"
-              >
-                <Icon name="sparkles" size={12} /> Start session
-              </button>
-            )}
           </div>
         </div>
 
@@ -235,7 +209,7 @@ export function GroupChatPage() {
             <>
               <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
                 <span className="h-px flex-1 bg-border" />
-                {nameForMember(sessionObj?.host_user_id ?? SESSION_STARTED_BY, members)} started a
+                {nameForMember(sessionObj?.host_user_id ?? 0, members)} started a
                 session
                 <span className="h-px flex-1 bg-border" />
               </div>
