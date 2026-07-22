@@ -85,9 +85,15 @@ export function GroupChatPage() {
 
   // Auto-scroll to newest. Opening a chat (or switching groups via the groupId
   // reset key, or the initial socket history bulk-load) jumps to the bottom
-  // instantly; a single new message (echo lands, +1) smooth-scrolls into view.
-  // Fold the typing bubble into the count so it nudges the view when it appears.
-  const endRef = useScrollToBottom<HTMLDivElement>(messages.length + typers.length, groupId)
+  // instantly; a single new item (echo lands, +1) smooth-scrolls into view.
+  // The count sums EVERY thing that renders in the stream so any new item pushes
+  // the view down: chat + system messages (both in `messages`), the typing
+  // bubble, and the "started a session" card — which is placed via an index, not
+  // a message, so it must be folded in explicitly or a new session wouldn't scroll.
+  const endRef = useScrollToBottom<HTMLDivElement>(
+    messages.length + typers.length + (sessionStartIndex !== null ? 1 : 0),
+    groupId,
+  )
   // Only messages that just arrived pop in; opening/switching a group renders the
   // existing history static (keyed by groupId so a switch resets the "seen" set).
   const newIds = useNewItemIds(messages.map((m) => m.id), groupId)
