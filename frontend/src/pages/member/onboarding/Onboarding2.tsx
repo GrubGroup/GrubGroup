@@ -1,5 +1,4 @@
 import { Button, Icon } from '@/components/ui'
-import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
 import { useProfileStore } from '@/stores/profileStore'
 import { useNavStore } from '@/stores/navStore'
 import { cn } from '@/utils/cn'
@@ -12,19 +11,15 @@ const BANDS = [
   { label: 'Flexible', min: 0, max: 200 },
 ]
 
-export function Onboarding2() {
+// Onboarding step 3 of 4 content (usual budget). Rendered inside AuthFlowShell.
+export function BudgetStep() {
   const go = useNavStore((s) => s.go)
   const budgetMin = useProfileStore((s) => s.profile?.budget_min ?? 15)
   const budgetMax = useProfileStore((s) => s.profile?.budget_max ?? 25)
   const setBudget = useProfileStore((s) => s.setBudget)
 
   return (
-    <OnboardingLayout
-      step={3}
-      total={4}
-      title="What's your usual budget?"
-      subtitle="Per person, per meal. You can always adjust for specific sessions."
-    >
+    <>
       <div className="flex flex-col gap-2">
         {BANDS.map((b) => {
           const selected = b.min === budgetMin && b.max === budgetMax
@@ -53,6 +48,6 @@ export function Onboarding2() {
           Continue
         </Button>
       </div>
-    </OnboardingLayout>
+    </>
   )
 }

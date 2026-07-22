@@ -5,7 +5,7 @@ export type { Session, SessionMember, SessionPhase } from './session'
 export type { Restaurant } from './restaurant'
 export type { Recommendation, RecommendationItem, RankedPick } from './recommendation'
 export type { MenuItem, EventItem } from './menu'
-export type { ChatRole, ChatMessage, NotedPref } from './chat'
+export type { ChatRole, ChatMessage } from './chat'
 export type { GroupMessage } from './groupChat'
 export type { Group, GroupMember, GroupDetail } from './group'
 export type {

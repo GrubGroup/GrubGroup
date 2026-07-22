@@ -2,7 +2,7 @@ import type { SessionMember } from '@/types'
 import { Avatar, Button, Icon } from '@/components/ui'
 import { SegmentedProgress } from './SegmentedProgress'
 import { SessionTimer } from './SessionTimer'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/sessionMock'
+import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
 
 type SessionCardState = 'not-joined' | 'continue' | 'waiting' | 'complete'
@@ -91,7 +91,7 @@ export function SessionCard({
               key={m.user_id}
               name={nameForMember(m.user_id, members)}
               size="sm"
-              colorClass={MOCK_MEMBER_COLORS[m.user_id]}
+              colorClass={memberColor(m.user_id)}
               className="h-5 w-5 border-2 border-surface-raised text-[8px]"
             />
           ))}

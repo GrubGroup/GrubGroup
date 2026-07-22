@@ -43,7 +43,7 @@ export function SessionTopBar({ groupId, label = 'Your food agent' }: SessionTop
         <span className="flex h-6 w-6 items-center justify-center rounded-pill bg-surface-inverse text-[11px] text-white">
           🍽
         </span>
-        <span className="flex items-center gap-1.5 text-sm font-semibold text-text">
+        <span className="flex items-center gap-1.5 text-body font-semibold text-text">
           {label}
         </span>
       </div>
@@ -56,7 +56,7 @@ export function SessionTopBar({ groupId, label = 'Your food agent' }: SessionTop
         />
       </div>
 
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-muted">
+      <div className="flex items-center gap-1.5 text-overline uppercase tracking-wide text-text-muted">
         <Icon name="lock" size={11} /> Private
       </div>
     </div>

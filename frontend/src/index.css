@@ -92,6 +92,29 @@
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', monospace;
 
+  /* ------------------------------------------------------------------
+   * Type scale — semantic roles (the SINGLE hierarchy for the whole app).
+   * Size + line-height are baked into each `text-*` utility; apply WEIGHT
+   * separately (font-medium/semibold/bold), as the rest of the system does.
+   * All one family (--font-sans == --font-display); font-display only signals
+   * "title" intent. Functional micro-glyphs (avatar initials, emoji-in-tile)
+   * and the Wordmark logotype are intentionally OUT of this scale.
+   * ------------------------------------------------------------------ */
+  --text-overline: 0.6875rem; /* 11px — eyebrows/overlines (uppercase tracking) */
+  --text-overline--line-height: 1.35;
+  --text-caption: 0.75rem; /* 12px — timestamps, previews, meta, sub-rows */
+  --text-caption--line-height: 1.4;
+  --text-body: 0.875rem; /* 14px — THE body size: chat, panels, forms, modals */
+  --text-body--line-height: 1.5;
+  --text-item-title: 0.9375rem; /* 15px — inline entity title (group name, event row) */
+  --text-item-title--line-height: 1.35;
+  --text-section-title: 1.125rem; /* 18px — modal titles, panel/section headers */
+  --text-section-title--line-height: 1.3;
+  --text-panel-title: 1.25rem; /* 20px — group-detail identity hero name */
+  --text-panel-title--line-height: 1.25;
+  --text-display: 1.875rem; /* 30px — page/detail hero <h1> */
+  --text-display--line-height: 1.15;
+
   /* Radius (semantic; wireframe uses generous 12-16px rounding) */
   --radius-input: 0.75rem;
   --radius-card: 1rem;
@@ -116,4 +139,118 @@ body {
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * Accessibility: honor the OS "reduce motion" setting everywhere. Tailwind's
+ * `motion-safe:` prefix already gates hover transforms, and Framer Motion reads
+ * `useReducedMotion()` in components; this is a global backstop that neutralizes
+ * any remaining transitions/animations (incl. smooth-scroll) for these users.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Radiating sound-wave ring — a gentle expand-and-fade, softer than Tailwind's
+ * built-in `animate-ping`. Used by the voice-first mic affordances: the landing
+ * "Start a session" CTA (MicPop, on hover) and the VoiceComposer mic button
+ * (while listening). The reduced-motion backstop above neutralizes it for users
+ * who opt out.
+ */
+@keyframes wave {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@utility animate-wave {
+  animation: wave 1.4s ease-out infinite;
+}
+
+/*
+ * Mic "liquid fill" for the landing "Start a session" CTA (MicPop). The fill
+ * rests low (empty) and RISES to fill the mic silhouette on the parent button's
+ * hover; its top edge ripples sideways so it reads as liquid, not a hard fill.
+ * The reduced-motion backstop above snaps the rise and freezes the ripple.
+ */
+@keyframes mic-ripple {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-12px);
+  }
+}
+
+.mic-fill {
+  transform: translateY(14px); /* rest: pushed below the mic (empty) */
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mic-fill-wave {
+  animation: mic-ripple 1.1s linear infinite;
+}
+
+.group:hover .mic-fill {
+  transform: translateY(-2px); /* hover: liquid rises up into the mic */
+}
+
+/*
+ * Skeleton shimmer — a soft highlight sweeping left→right across placeholder
+ * blocks while search results / lists load (see ui/Skeleton). The reduced-motion
+ * backstop above freezes the sweep to a static tint for users who opt out.
+ */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@utility animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-surface-sunken) 25%,
+    var(--color-surface-panel) 50%,
+    var(--color-surface-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/*
+ * Message "pop": a freshly arrived chat bubble eases up into place with a small
+ * scale + fade — a subtle settle, not a big bounce. Applied ONLY to newly arrived
+ * messages; existing history renders static, so opening a chat doesn't replay it.
+ * The reduced-motion backstop above collapses it.
+ */
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@utility animate-bubble-pop {
+  transform-origin: bottom;
+  animation: bubble-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }

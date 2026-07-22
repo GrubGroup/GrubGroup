@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Icon } from '@/components/ui'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
 import { cn } from '@/utils/cn'
+
+// Resting bar heights (px) for the listening waveform. When motion is allowed
+// each bar oscillates around its base height so the row reads like a live audio
+// signal; reduced-motion renders these static (the prior behavior).
+const WAVE_BARS = [6, 12, 20, 10, 16, 8, 22, 12, 6, 14, 9, 18, 7, 15]
 
 export interface VoiceComposerProps {
   onSend: (text: string) => void
@@ -33,6 +39,7 @@ export function VoiceComposer({
 }: VoiceComposerProps) {
   const { transcript, listening, resetTranscript, supported, start, stop } = useVoiceInput()
   const [text, setText] = useState('')
+  const reduce = useReducedMotion()
 
   const displayValue = listening ? transcript : text
 
@@ -92,15 +99,21 @@ export function VoiceComposer({
             disabled={disabled}
             onClick={toggleMic}
             className={cn(
-              'flex h-11 w-11 shrink-0 items-center justify-center rounded-pill shadow-sm transition-colors',
+              'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-pill shadow-sm transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
               'disabled:cursor-not-allowed disabled:opacity-50',
               listening
-                ? 'animate-pulse bg-primary text-on-primary'
+                ? 'bg-primary text-on-primary'
                 : 'bg-surface-inverse text-white hover:opacity-90',
             )}
           >
-            <Icon name="mic" size={18} />
+            {/* Radiating ring while listening — feels active without the whole
+                button pulsing. Reduced-motion users get the solid fill only. */}
+            {listening && !reduce && (
+              <span className="pointer-events-none absolute inset-0 animate-wave rounded-pill bg-primary" />
+            )}
+            {/* Filled glyph while active so it reads as "on". */}
+            <Icon name="mic" size={18} filled={listening} className="relative" />
           </button>
         )}
 
@@ -108,13 +121,28 @@ export function VoiceComposer({
         {listening ? (
           <div className="flex h-11 flex-1 items-center gap-3 rounded-pill bg-surface-sunken px-5">
             <div className="flex items-center gap-0.5" aria-hidden="true">
-              {[6, 12, 20, 10, 16, 8, 22, 12, 6, 14, 9, 18, 7, 15].map((h, i) => (
-                <span
-                  key={i}
-                  className="w-0.5 rounded-pill bg-text/70"
-                  style={{ height: `${h}px` }}
-                />
-              ))}
+              {WAVE_BARS.map((h, i) =>
+                reduce ? (
+                  <span
+                    key={i}
+                    className="w-0.5 rounded-pill bg-text/70"
+                    style={{ height: `${h}px` }}
+                  />
+                ) : (
+                  <motion.span
+                    key={i}
+                    className="w-0.5 rounded-pill bg-text/70"
+                    animate={{ height: [h, Math.min(h + 8, 24), Math.max(h - 4, 4), h] }}
+                    transition={{
+                      duration: 0.9 + (i % 4) * 0.15,
+                      repeat: Infinity,
+                      ease: 'easeInOut',
+                      delay: i * 0.06,
+                    }}
+                    style={{ height: `${h}px` }}
+                  />
+                ),
+              )}
             </div>
             <span className="text-sm text-text-muted">Listening…</span>
           </div>
@@ -156,7 +184,7 @@ export function VoiceComposer({
       </div>
 
       {privacyNote && (
-        <p className="mt-2 text-center text-[10px] text-text-subtle">
+        <p className="mt-2 text-center text-caption text-text-subtle">
           Only you can see this · your privacy is protected
         </p>
       )}

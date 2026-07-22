@@ -1,11 +1,9 @@
 import type { User } from '@/types'
-import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
-import { MOCK_USER } from './mock/profileMock'
 
-// Swap boundary for the caller's own User account (identity fields shown on the
-// profile header). Auth credentials (email/password) are owned by Better Auth
-// and are NOT edited through here. Stores import from here, never from mock/*.
+// The caller's own User account (identity fields shown on the profile header).
+// Auth credentials (email/password) are owned by Better Auth and are NOT edited
+// through here.
 
 export interface UpdateUserInput {
   display_name?: string | null
@@ -24,13 +22,11 @@ export class UserUpdateError extends Error {
 }
 
 export async function fetchMe(): Promise<User> {
-  if (USE_MOCK) return structuredClone(MOCK_USER)
   const { data } = await api.get<User>('/user/me')
   return data
 }
 
 export async function updateMe(input: UpdateUserInput): Promise<User> {
-  if (USE_MOCK) return { ...structuredClone(MOCK_USER), ...input }
   try {
     const { data } = await api.patch<User>('/user', input)
     return data

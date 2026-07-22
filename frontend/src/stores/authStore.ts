@@ -1,19 +1,5 @@
 import { create } from 'zustand'
 import type { Role, User } from '@/types'
-import { MOCK_USER } from '@/api/mock/profileMock'
-import { MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
-import { USE_MOCK } from '@/lib/env'
-
-// DEV ONLY: let two browser windows act as different members via a URL param,
-// e.g. localhost:5173?as=2 signs in as Sofia. Works even in live mode so the
-// live-chat demo can show distinct senders. Remove once real auth is enforced.
-function userFromUrlParam(): User | null {
-  if (typeof window === 'undefined') return null
-  const asId = Number(new URLSearchParams(window.location.search).get('as'))
-  if (!asId) return null
-  const name = MOCK_MEMBER_NAMES[asId] ?? `User ${asId}`
-  return { ...MOCK_USER, id: asId, username: name.toLowerCase(), display_name: name }
-}
 
 // Better Auth's session user (string id + camelCase). Shape the fields we read.
 export interface SessionUser {
@@ -41,14 +27,18 @@ function toDomainUser(su: SessionUser): User {
   }
 }
 
-// `?as=` wins (demo override); else mock mode seeds the default user; else null
-// (a real session is applied at runtime via setSessionUser from useSession).
-const INITIAL_USER = userFromUrlParam() ?? (USE_MOCK ? MOCK_USER : null)
-
 interface AuthState {
   user: User | null
   role: Role | null
   isGuest: boolean
+  // True once the interactive sign-in/up form has successfully handled auth this
+  // session. App uses it to stand down its own post-auth forwarding + splash: the
+  // form routes itself (and a brand-new account SLIDES from sign-up into
+  // onboarding inside AuthFlowShell), so App must not unmount the shell mid-slide.
+  // App's auto-forward is only for the OAuth-return / reload case, where the form
+  // never runs and this stays false.
+  entryFlowActive: boolean
+  setEntryFlowActive: (v: boolean) => void
   // Sync the store from Better Auth's session (called by App on session change).
   setSessionUser: (su: SessionUser | null) => void
   // Merge edited identity fields (display_name/username) after a saved update,
@@ -59,13 +49,16 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: INITIAL_USER,
-  role: INITIAL_USER?.role ?? null,
+  // Starts null; a real Better Auth session is applied at runtime via
+  // setSessionUser (from useSession in App).
+  user: null,
+  role: null,
   isGuest: false,
+  entryFlowActive: false,
+
+  setEntryFlowActive: (v) => set({ entryFlowActive: v }),
 
   setSessionUser: (su) => {
-    // Never override the dev ?as= impersonation with the real session.
-    if (userFromUrlParam()) return
     if (!su) {
       set({ user: null, role: null, isGuest: false })
       return
@@ -81,12 +74,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loginAsGuest: (name) => {
-    // DEV: honor the ?as= override so two windows sign in as different members.
-    const asUser = userFromUrlParam()
-    if (asUser) {
-      set({ isGuest: false, role: asUser.role, user: asUser })
-      return
-    }
     set({
       isGuest: true,
       role: 'USER',
@@ -104,6 +91,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    set({ user: null, role: null, isGuest: false })
+    set({ user: null, role: null, isGuest: false, entryFlowActive: false })
   },
 }))

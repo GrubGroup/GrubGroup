@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
 import { fetchRecommendation, fetchSession, generateRecommendation } from '@/api/sessionApi'
-import { MOCK_RECOMMENDATION } from '@/api/mock/sessionMock'
-import { USE_MOCK } from '@/lib/env'
 import { useAuthStore } from '@/stores/authStore'
 
 // Which groups have a host-expiry generation in flight — keyed by groupId so two
@@ -125,10 +123,6 @@ interface SessionState {
   // if the countdown runs out before everyone finishes. No-op for non-hosts or
   // when results already exist. Guarded (per group) against concurrent/repeat calls.
   triggerExpiryGeneration: (groupId: number) => Promise<void>
-  // MOCK-ONLY demo helper: flip every remaining member to done and adopt the mock
-  // recommendation, standing in for the gateway's server-side auto-complete (which
-  // isn't reachable offline, where the socket is disabled).
-  simulateAutoComplete: (groupId: number) => void
   castVote: (groupId: number, restaurantId: number, userId: number) => void
   chooseRestaurant: (groupId: number, restaurantId: number) => void
   close: (groupId: number) => void
@@ -202,30 +196,33 @@ export const useSessionStore = create<SessionState>((set, get) => {
       const uid = currentUserId ?? get().currentUserId
       // Keep the global identity fresh when the caller supplied it.
       if (currentUserId != null) set({ currentUserId })
-      patch(groupId, (prev) => {
-        // Seed the host (the current user, who just created the session) into the
-        // roster with their real name, so the roster is never empty/nameless right
-        // after create — hydrateMembers then merges in the rest of the group.
-        const hasSelf = prev.members.some((m) => m.user_id === uid)
-        const members = hasSelf
-          ? prev.members
-          : [
-              ...prev.members,
-              {
-                session_id: session.id,
-                user_id: uid,
-                status: false,
-                joined_at: new Date().toISOString(),
-                ...selfNameFields(uid),
-              },
-            ]
+      // A brand-new session clears this group's once-per-session expiry-generation
+      // latch, so the new session's timer fallback can fire (a prior session in the
+      // same group may have set it).
+      expiryGenerating.delete(groupId)
+      patch(groupId, () => {
+        // Adopting a session the current user just created is a FRESH START — even
+        // if a prior session ran in this group. Seed the roster with ONLY the host
+        // (their real name); hydrateMembers merges in the rest. Do NOT carry over
+        // the previous session's roster/total, results, or voting — otherwise the
+        // new session's card could show an instant 'complete' from a stale
+        // recommendation. Guards the "start another session after one completes" flow.
+        const members = [
+          {
+            session_id: session.id,
+            user_id: uid,
+            status: false,
+            joined_at: new Date().toISOString(),
+            ...selfNameFields(uid),
+          },
+        ]
         return {
           session,
           members,
-          serverTotal: Math.max(prev.serverTotal, members.length),
+          serverTotal: members.length,
           activeSessionId: session.id,
           startedAt: session.created_at ?? new Date().toISOString(),
-          // A newly-created session starts clean — never inherit prior results/votes.
+          phase: 'joining',
           recommendation: null,
           recommendationLoading: false,
           recommendationError: false,
@@ -308,21 +305,45 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }),
 
     loadRecommendation: async (groupId) => {
-      const sl = slice(groupId)
-      const id = sl.activeSessionId ?? sl.session?.id
+      const id = slice(groupId).activeSessionId ?? slice(groupId).session?.id
       if (id == null) return
       patch(groupId, { recommendationLoading: true, recommendationError: false })
-      try {
-        const recommendation = await fetchRecommendation(id)
-        patch(groupId, { recommendation, phase: 'picks', recommendationLoading: false })
-      } catch {
-        // The read-back failed — most often a 404 because generation hasn't landed
-        // yet (or the session timed out with nothing to generate). Surface it as a
-        // retryable error state rather than throwing (which left the page stuck on a
-        // permanent "Loading picks…" with no recovery). A later session:picks socket
-        // delivery still populates `recommendation` via receivePicks.
-        patch(groupId, { recommendationLoading: false, recommendationError: true })
+
+      // Results often don't exist the instant the user opens the picks screen — the
+      // group orchestrator can still be running (the read-back 404s), or we're
+      // waiting on the last member to finish. Rather than flashing an alarming
+      // "Couldn't load results" error, keep the loading circle up and POLL for a
+      // while. A live session:picks delivery (receivePicks) can populate this
+      // group's recommendation meanwhile, which ends the poll early. Only after
+      // we've exhausted our patience do we surface a retryable error.
+      const MAX_ATTEMPTS = 20
+      const RETRY_MS = 3000
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        // A socket delivery may already have filled this group's recommendation.
+        if (slice(groupId).recommendation) {
+          patch(groupId, { recommendationLoading: false, recommendationError: false })
+          return
+        }
+        try {
+          const recommendation = await fetchRecommendation(id)
+          patch(groupId, {
+            recommendation,
+            phase: 'picks',
+            recommendationLoading: false,
+            recommendationError: false,
+          })
+          return
+        } catch {
+          // Not ready yet (usually a 404 while generation runs). Wait, then retry —
+          // keeping the loading state up so the UI never shows an error mid-flight.
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => setTimeout(resolve, RETRY_MS))
+          }
+        }
       }
+      // Gave up after repeated attempts — surface a retryable error state (the user
+      // can hit Retry, and a later session:picks socket delivery still recovers it).
+      patch(groupId, { recommendationLoading: false, recommendationError: true })
     },
 
     triggerExpiryGeneration: async (groupId) => {
@@ -333,34 +354,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (expiryGenerating.has(groupId)) return
       expiryGenerating.add(groupId)
       try {
-        const rec = await generateRecommendation(sl.activeSessionId, { forcePartial: true })
-        // Live: the gateway broadcasts session:picks, so results arrive via the
-        // socket. Offline (mock, socket null): adopt the rec so Results appears.
-        if (USE_MOCK) {
-          get().receivePicks(groupId, {
-            recommendationId: rec.id,
-            sessionId: sl.activeSessionId,
-            items: rec.items,
-          })
-        }
+        await generateRecommendation(sl.activeSessionId, { forcePartial: true })
+        // The gateway broadcasts session:picks, so results arrive via the socket.
       } catch {
         // Generation failure (e.g. 409 not-ready) is surfaced elsewhere; release the
         // per-group guard so a later retry rather than latching it.
         expiryGenerating.delete(groupId)
       }
     },
-
-    simulateAutoComplete: (groupId) =>
-      patch(groupId, (prev) => {
-        if (prev.recommendation != null) return {} // already have results — don't regenerate
-        return {
-          members: prev.members.map((m) => ({ ...m, status: true })),
-          recommendation: {
-            ...structuredClone(MOCK_RECOMMENDATION),
-            session_id: prev.activeSessionId ?? prev.session?.id ?? MOCK_RECOMMENDATION.session_id,
-          },
-        }
-      }),
 
     castVote: (groupId, restaurantId, userId) =>
       patch(groupId, (prev) => {

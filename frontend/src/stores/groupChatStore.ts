@@ -29,6 +29,9 @@ interface TypingUpdate {
 
 interface GroupChatState {
   messagesByGroup: Record<number, GroupMessage[]>
+  // Per group: true once the persisted backlog (chat:history) has been received,
+  // so the UI can tell "still loading history" from "loaded, no messages".
+  historyLoadedByGroup: Record<number, boolean>
   // Per group: index in the message list where the session card belongs, or null
   // if no session has started. null = not started.
   sessionStartIndexByGroup: Record<number, number | null>
@@ -42,6 +45,11 @@ interface GroupChatState {
   // adopt the same session. Omitted for a legacy/no-op start.
   startSession: (groupId: number, sessionId?: number) => void
   receiveSessionStart: (groupId: number, sessionId?: number | null) => void
+  // Reset a group's session-start marker to null so a NEW session can place a
+  // fresh card. receiveSessionStart ignores a repeat start while a marker exists
+  // (dedupe), so this must be called when starting another session after one
+  // completes — else the guard silently swallows the new start.
+  clearSessionStart: (groupId: number) => void
   setTyping: (groupId: number, isTyping: boolean) => void
   receiveTyping: (update: TypingUpdate) => void
 }
@@ -53,6 +61,7 @@ const EMPTY_TYPERS: Typer[] = []
 
 export const useGroupChatStore = create<GroupChatState>((set) => ({
   messagesByGroup: {},
+  historyLoadedByGroup: {},
   sessionStartIndexByGroup: {},
   typingByGroup: {},
 
@@ -78,6 +87,7 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
         ...s.messagesByGroup,
         [groupId]: messages.filter((m) => m.type !== 'session_block'),
       },
+      historyLoadedByGroup: { ...s.historyLoadedByGroup, [groupId]: true },
     })),
 
   sendMessage: (groupId, text) => {
@@ -106,6 +116,11 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
       }
     }),
 
+  clearSessionStart: (groupId) =>
+    set((s) => ({
+      sessionStartIndexByGroup: { ...s.sessionStartIndexByGroup, [groupId]: null },
+    })),
+
   // Emit only — tell the gateway I started/stopped typing. Nothing local changes;
   // the indicator for OTHERS is driven by their receiveTyping.
   setTyping: (groupId, isTyping) => {
@@ -126,6 +141,10 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
 // Selector helper: returns the stable EMPTY array when a group has no messages.
 export const selectGroupMessages = (groupId: number) => (s: GroupChatState) =>
   s.messagesByGroup[groupId] ?? EMPTY
+
+// Selector: whether this group's persisted backlog has been received yet.
+export const selectHistoryLoaded = (groupId: number) => (s: GroupChatState) =>
+  s.historyLoadedByGroup[groupId] ?? false
 
 // Selector: the message index where the session card belongs, or null.
 export const selectSessionStartIndex = (groupId: number) => (s: GroupChatState) =>

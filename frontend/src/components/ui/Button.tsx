@@ -46,7 +46,11 @@ export function Button({
     <button
       className={cn(
         'inline-flex items-center justify-center rounded-input font-sans font-medium',
-        'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
+        'transition-[color,background-color,border-color,opacity,transform] duration-150 ease-out',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
+        // Tactile press feedback (motion-safe only). Disabled buttons stay put.
+        'active:brightness-95 disabled:active:brightness-100',
+        'motion-safe:active:scale-[0.97] disabled:motion-safe:active:scale-100',
         'disabled:cursor-not-allowed disabled:opacity-50',
         variantClasses[variant],
         sizeClasses[size],

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCard'
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
@@ -17,10 +18,11 @@ import {
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
-import { USE_MOCK } from '@/lib/env'
+import { EASE } from '@/lib/motion'
 import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
+  const reduce = useReducedMotion()
   const go = useNavStore((s) => s.go)
   const groupId = useNavStore((s) => s.groupId)
   // Session state is keyed by group — read THIS group's slice via selectors.
@@ -30,7 +32,6 @@ export function TopPicksPage() {
   const recommendationLoading = useSessionStore(selectRecommendationLoading(groupId))
   const recommendationError = useSessionStore(selectRecommendationError(groupId))
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
-  const loadSession = useSessionStore((s) => s.load)
   const votes = useSessionStore(selectVotes(groupId))
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
@@ -44,9 +45,8 @@ export function TopPicksPage() {
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    if (USE_MOCK && !session) void loadSession(groupId, 42, currentUserId)
     if (!restaurantsLoaded) void loadRestaurants()
-  }, [session, loadSession, currentUserId, groupId, restaurantsLoaded, loadRestaurants])
+  }, [restaurantsLoaded, loadRestaurants])
 
   useEffect(() => {
     // Fetch once when we have a session but no rec yet — and NOT while a fetch is
@@ -84,7 +84,7 @@ export function TopPicksPage() {
     if (activeId == null || confirming) return
     chooseRestaurant(groupId, activeId)
     const sessionId = activeSessionId ?? session?.id ?? null
-    if (!USE_MOCK && sessionId != null) {
+    if (sessionId != null) {
       setConfirming(true)
       try {
         await closeSession(sessionId, activeId)
@@ -96,6 +96,27 @@ export function TopPicksPage() {
       }
     }
     go('session-complete')
+  }
+
+  // While the group's picks are still being fetched/generated, take over the whole
+  // results area (everything right of the sidebar) with a single contained loading
+  // screen — the GrubGroup loading circle — instead of an empty list beside a small
+  // panel spinner. The sidebar stays put so the app frame never flickers.
+  if (isLoading) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-surface">
+        <GroupsSidebar />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-text-muted">
+          <Spinner size="lg" className="text-primary" />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <p className="text-sm font-medium text-text">Finding the group's picks…</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              Matching everyone's preferences, budget, and location. This can take a moment.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -111,16 +132,22 @@ export function TopPicksPage() {
           </p>
         </div>
         {picks.map((pick, i) => (
-          <RankedRestaurantCard
+          <motion.div
             key={pick.restaurant_id}
-            rank={i + 1}
-            pick={pick}
-            selected={pick.restaurant_id === activeId}
-            hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
-            onVote={() => castVote(groupId, pick.restaurant_id, currentUserId)}
-            onSelect={() => setSelectedId(pick.restaurant_id)}
-            showHours
-          />
+            initial={{ opacity: 0, y: reduce ? 0 : 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduce ? 0.2 : 0.4, delay: reduce ? 0 : i * 0.07, ease: EASE }}
+          >
+            <RankedRestaurantCard
+              rank={i + 1}
+              pick={pick}
+              selected={pick.restaurant_id === activeId}
+              hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
+              onVote={() => castVote(groupId, pick.restaurant_id, currentUserId)}
+              onSelect={() => setSelectedId(pick.restaurant_id)}
+              showHours
+            />
+          </motion.div>
         ))}
       </div>
 
@@ -165,11 +192,6 @@ export function TopPicksPage() {
               )}
             </div>
           </>
-        ) : isLoading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-text-muted">
-            <Spinner size="md" />
-            <p className="text-sm">Finding the group's picks…</p>
-          </div>
         ) : isError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
             <p className="text-sm font-medium text-text">Couldn't load results</p>

@@ -1,16 +1,15 @@
 import { create } from 'zustand'
-import type { ChatMessage, ConversationTurn, ExtractedSignals, NotedPref } from '@/types'
+import type { ChatMessage, ConversationTurn, ExtractedSignals } from '@/types'
 import { openingAgentMessage } from '@/constants/agentChat'
 import { analyzeTurn } from '@/api/sessionApi'
 
-// The per-group agent-chat slice. Keyed by GROUP (not sessionId) so two groups'
-// transcripts coexist: entering group B no longer wipes group A's in-progress
-// conversation, and returning to A shows it intact. (Keying by sessionId would
-// re-leak in mock, where every group shares MOCK_SESSION.id === 42.) Mirrors the
-// keyed pattern of sessionStore/groupChatStore.
+// The per-group agent-chat slice. Keyed by GROUP so two groups' transcripts
+// coexist: entering group B no longer wipes group A's in-progress conversation,
+// and returning to A shows it intact. Mirrors the keyed pattern of
+// sessionStore/groupChatStore. (NotedSoFarPanel derives its rows directly from
+// currentSignals + missingSignals, so there is no separate notedPreferences list.)
 export interface ChatSlice {
   messages: ChatMessage[]
-  notedPreferences: NotedPref[]
   // The session this transcript/signal-set belongs to. Used to re-seed when the
   // active session changes, so session B never inherits session A's chat.
   sessionId: number | null
@@ -18,6 +17,10 @@ export interface ChatSlice {
   // on each turn so corrections work, and rendered in the "Noted so far" panel.
   currentSignals: ExtractedSignals
   missingSignals: string[]
+  // Authoritative "the member has answered everything" flag, from the analyze
+  // response's is_complete (fallback: missingSignals empty). Seeded false so it's
+  // only true after a real turn — drives the agent-chat "All set" affordance.
+  isComplete: boolean
   sending: boolean
 }
 
@@ -41,10 +44,10 @@ const emptySignals = (): ExtractedSignals => ({
 
 const makeChatSlice = (): ChatSlice => ({
   messages: [],
-  notedPreferences: [],
   sessionId: null,
   currentSignals: emptySignals(),
   missingSignals: [],
+  isComplete: false,
   sending: false,
 })
 
@@ -74,55 +77,6 @@ interface ChatState {
 
 let idCounter = 100
 const nextId = () => `m${++idCounter}`
-
-// Map reconciled signals + what's still missing into the "Noted so far" chips.
-// A field is `confirmed` once the agent stopped listing it as missing.
-function signalsToNotedPrefs(sig: ExtractedSignals, missing: string[]): NotedPref[] {
-  const prefs: NotedPref[] = []
-  const isMissing = (key: string) => missing.includes(key)
-
-  // A field is `confirmed` once the agent stopped listing it in missing_signals.
-  // These keys match the backend's ask-order names exactly (dietary_restrictions
-  // / preferred_cuisines / disliked_cuisines / budget / location).
-  if (sig.dietary_restrictions.length) {
-    prefs.push({
-      id: 'diet',
-      label: sig.dietary_restrictions.join(', '),
-      confirmed: !isMissing('dietary_restrictions'),
-    })
-  }
-  if (sig.preferred_cuisines.length) {
-    prefs.push({
-      id: 'likes',
-      label: `Likes: ${sig.preferred_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('preferred_cuisines'),
-    })
-  }
-  if (sig.disliked_cuisines.length) {
-    prefs.push({
-      id: 'avoids',
-      label: `Avoids: ${sig.disliked_cuisines.slice(0, 4).join(', ')}`,
-      confirmed: !isMissing('disliked_cuisines'),
-    })
-  }
-  if (sig.budget_min != null || sig.budget_max != null) {
-    const label =
-      sig.budget_min != null && sig.budget_max != null
-        ? `$${sig.budget_min}–${sig.budget_max}pp`
-        : sig.budget_max != null
-          ? `Up to $${sig.budget_max}pp`
-          : `From $${sig.budget_min}pp`
-    prefs.push({ id: 'budget', label, confirmed: !isMissing('budget') })
-  }
-  if (sig.location_label) {
-    prefs.push({
-      id: 'location',
-      label: sig.location_label,
-      confirmed: !isMissing('location'),
-    })
-  }
-  return prefs
-}
 
 // Build the conversation_history the analyze endpoint replays for context, from
 // the rendered messages (system lines dropped; agent -> assistant).
@@ -163,10 +117,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
       patchChat(groupId, {
         messages: [opening],
-        notedPreferences: [],
         sessionId,
         currentSignals: emptySignals(),
         missingSignals: [],
+        isComplete: false,
       })
     },
 
@@ -210,7 +164,9 @@ export const useChatStore = create<ChatState>((set, get) => {
           messages: [...prev.messages, agentMsg],
           currentSignals: res.extracted_signals,
           missingSignals: res.missing_signals,
-          notedPreferences: signalsToNotedPrefs(res.extracted_signals, res.missing_signals),
+          // Prefer the server's authoritative flag; fall back to the missing list
+          // being empty for an older gateway/ai_service that omits is_complete.
+          isComplete: res.is_complete ?? res.missing_signals.length === 0,
           sending: false,
         }))
       } catch {
@@ -238,9 +194,11 @@ export const selectChatMessages = (groupId: number) => (s: ChatState) =>
   (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).messages
 export const selectChatSessionId = (groupId: number) => (s: ChatState) =>
   (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).sessionId
-export const selectNotedPreferences = (groupId: number) => (s: ChatState) =>
-  (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).notedPreferences
 export const selectSending = (groupId: number) => (s: ChatState) =>
   (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).sending
 export const selectMissingSignals = (groupId: number) => (s: ChatState) =>
   (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).missingSignals
+export const selectCurrentSignals = (groupId: number) => (s: ChatState) =>
+  (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).currentSignals
+export const selectIsComplete = (groupId: number) => (s: ChatState) =>
+  (s.byGroup[groupId] ?? EMPTY_CHAT_SLICE).isComplete

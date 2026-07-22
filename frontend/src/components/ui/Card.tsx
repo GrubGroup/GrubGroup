@@ -27,7 +27,8 @@ export function Card({
       className={cn(
         'rounded-card border border-border bg-surface-raised',
         paddingClasses[padding],
-        interactive && 'cursor-pointer transition-shadow hover:shadow-md',
+        interactive &&
+          'cursor-pointer transition-colors duration-150 ease-out hover:bg-surface-sunken/50',
         className,
       )}
       {...props}

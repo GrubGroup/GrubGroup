@@ -3,8 +3,8 @@ import { Avatar, Icon } from '@/components/ui'
 import type { IconName } from '@/components/ui'
 import { cn } from '@/utils/cn'
 
-// Account menu popover — opened by the sidebar footer user button. Mirrors the
-// "Account Menu (popover)" wireframe and its interaction-states frame:
+// Account menu popover — opened by clicking the sidebar rail user avatar. Mirrors
+// the "Account Menu (popover)" wireframe and its interaction-states frame:
 //   - View profile (person), Account settings (gear, disabled — out of scope),
 //     Sign out (logout, destructive red)
 //   - neutral hover #F0EEE9 / pressed #E5E4DF; sign-out red hover@8% / pressed@15%
@@ -17,6 +17,8 @@ export interface AccountMenuProps {
   avatarUrl?: string | null
   onViewProfile: () => void
   onSignOut: () => void
+  /** Positioning classes for the popover; defaults to the full-width footer anchor. */
+  positionClass?: string
 }
 
 export function AccountMenu({
@@ -27,6 +29,7 @@ export function AccountMenu({
   avatarUrl,
   onViewProfile,
   onSignOut,
+  positionClass = 'bottom-full left-3 right-3 mb-2',
 }: AccountMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -54,14 +57,17 @@ export function AccountMenu({
       ref={ref}
       role="menu"
       aria-label="Account menu"
-      className="absolute bottom-full left-3 right-3 z-50 mb-2 overflow-hidden rounded-card border border-border bg-surface-raised p-1.5 shadow-xl"
+      className={cn(
+        'absolute z-50 overflow-hidden rounded-card border border-border bg-surface-raised p-1.5 shadow-xl',
+        positionClass,
+      )}
     >
       {/* Header: identity */}
       <div className="flex items-center gap-2.5 px-2.5 py-2">
         <Avatar name={displayName} src={avatarUrl} size="sm" colorClass="member-purple" />
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-text">{displayName}</p>
-          <p className="truncate text-xs text-text-muted">@{username}</p>
+          <p className="truncate text-body font-semibold text-text">{displayName}</p>
+          <p className="truncate text-caption text-text-muted">@{username}</p>
         </div>
       </div>
 
@@ -111,7 +117,7 @@ function MenuItem({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm font-medium transition-colors',
+        'flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-body font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
         disabled && 'cursor-not-allowed text-text-subtle',
         !disabled &&
