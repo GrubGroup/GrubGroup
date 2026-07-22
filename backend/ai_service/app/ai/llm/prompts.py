@@ -133,12 +133,23 @@ PREFERENCE_TURN_SYSTEM = (
     "budget, location], list the ones still unknown after this "
     "turn (use these exact names; treat an intentional 'no preference' / 'nothing "
     "to avoid' as answered, not missing).\n\n"
+    "ASK-ORDER (STRICT). Walk the questions in EXACTLY this order and always ask "
+    "the FIRST one still missing — never skip ahead or reorder:\n"
+    "  1. preferred_cuisines (what they like)\n"
+    "  2. disliked_cuisines (what to avoid) — ask this IMMEDIATELY after likes, "
+    "BEFORE budget\n"
+    "  3. budget\n"
+    "  4. location (MEMBER only; never for a HOST)\n"
+    "So the moment you have their liked cuisines, the very next question is their "
+    "disliked cuisines — do NOT jump to budget or location first. This holds for "
+    "HOST and MEMBER alike (a host simply has no location step).\n\n"
     "Return STRICT JSON ONLY — a single object with exactly these keys:\n"
     '  "extracted_signals": { the updated signal fields above, including any '
     'removed_* lists },\n'
     '  "agent_reply": (string) one or two short sentences: first confirm what '
     "you captured/corrected/added/removed this turn (name it, so the user can "
-    "catch a mis-parse), then ask the single next missing question. If nothing "
+    "catch a mis-parse), then ask the single next missing question — chosen by the "
+    "ASK-ORDER above (likes -> dislikes -> budget -> location). If nothing "
     "is missing, confirm and wrap up warmly.\n"
     '  "missing_signals": (list[str]).\n'
     "Output the JSON object only — no prose, no markdown, no code fences."
