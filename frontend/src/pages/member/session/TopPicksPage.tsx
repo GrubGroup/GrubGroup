@@ -87,6 +87,27 @@ export function TopPicksPage() {
     go('session-complete')
   }
 
+  // While the group's picks are still being fetched/generated, take over the whole
+  // results area (everything right of the sidebar) with a single contained loading
+  // screen — the GrubGroup loading circle — instead of an empty list beside a small
+  // panel spinner. The sidebar stays put so the app frame never flickers.
+  if (isLoading) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-surface">
+        <GroupsSidebar />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-text-muted">
+          <Spinner size="lg" className="text-primary" />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <p className="text-sm font-medium text-text">Finding the group's picks…</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              Matching everyone's preferences, budget, and location. This can take a moment.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
       <GroupsSidebar />
@@ -160,11 +181,6 @@ export function TopPicksPage() {
               )}
             </div>
           </>
-        ) : isLoading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-text-muted">
-            <Spinner size="md" />
-            <p className="text-sm">Finding the group's picks…</p>
-          </div>
         ) : isError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
             <p className="text-sm font-medium text-text">Couldn't load results</p>

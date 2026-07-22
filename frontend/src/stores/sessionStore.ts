@@ -245,17 +245,37 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const id = get().activeSessionId ?? get().session?.id
     if (id == null) return
     set({ recommendationLoading: true, recommendationError: false })
-    try {
-      const recommendation = await fetchRecommendation(id)
-      set({ recommendation, phase: 'picks', recommendationLoading: false })
-    } catch {
-      // The read-back failed — most often a 404 because generation hasn't landed
-      // yet (or the session timed out with nothing to generate). Surface it as a
-      // retryable error state rather than throwing (which left the page stuck on a
-      // permanent "Loading picks…" with no recovery). A later session:picks socket
-      // delivery still populates `recommendation` via receivePicks.
-      set({ recommendationLoading: false, recommendationError: true })
+
+    // Results often don't exist the instant the user opens the picks screen — the
+    // group orchestrator can still be running (the read-back 404s), or we're
+    // waiting on the last member to finish. Rather than flashing an alarming
+    // "Couldn't load results" error, keep the loading circle up and POLL for a
+    // while. A live session:picks delivery (receivePicks) can populate
+    // `recommendation` meanwhile, which ends the poll early. Only after we've
+    // exhausted our patience do we surface a retryable error.
+    const MAX_ATTEMPTS = 20
+    const RETRY_MS = 3000
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // A socket delivery may already have filled the recommendation — stop.
+      if (get().recommendation) {
+        set({ recommendationLoading: false, recommendationError: false })
+        return
+      }
+      try {
+        const recommendation = await fetchRecommendation(id)
+        set({ recommendation, phase: 'picks', recommendationLoading: false, recommendationError: false })
+        return
+      } catch {
+        // Not ready yet (usually a 404 while generation runs). Wait, then retry —
+        // keeping the loading state up so the UI never shows an error mid-flight.
+        if (attempt < MAX_ATTEMPTS - 1) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_MS))
+        }
+      }
     }
+    // Gave up after repeated attempts — surface a retryable error state (the user
+    // can hit Retry, and a later session:picks socket delivery still recovers it).
+    set({ recommendationLoading: false, recommendationError: true })
   },
 
   triggerExpiryGeneration: async () => {

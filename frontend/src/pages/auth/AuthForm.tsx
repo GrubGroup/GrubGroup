@@ -58,6 +58,16 @@ export function AuthForm({ mode, setForwarding }: AuthFormProps) {
   // app — an existing user with groups lands in their most recent group chat; one
   // with none sees the empty-groups landing page — showing the splash meanwhile.
   const onAuthed = async () => {
+    // A brand-new account can't have a saved profile — go straight to onboarding
+    // so the right panel SLIDES in immediately (no profile fetch stalling the
+    // transition, and no splash). The persistent BrandPanel (left) doesn't remount.
+    if (isSignup) {
+      go('onboarding-1')
+      return
+    }
+    // Returning user: gate on whether they finished onboarding before. If they
+    // abandoned it (no profile), slide into onboarding inside the shell; otherwise
+    // forward into the app behind the branded splash.
     const profile = await fetchProfile()
     if (!profile) {
       go('onboarding-1')
