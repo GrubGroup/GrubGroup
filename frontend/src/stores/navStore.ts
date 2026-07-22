@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { USE_MOCK } from '@/lib/env'
 
 // Screen switcher (no router) — mirrors the wireframe journey. See the
 // frontend-user-journey memory for the transition map. Two parallel contexts:
@@ -53,7 +52,7 @@ export const useNavStore = create<NavState>((set, get) => ({
   // mode starts at 0 — a no-group sentinel (real ids are positive) — so a
   // brand-new user is never shown a group they haven't joined; GroupChatPage
   // redirects to empty-groups until a real group is selected.
-  groupId: USE_MOCK ? 7 : 0,
+  groupId: 0,
   returnTo: 'group-chat',
   go: (screen) => set({ screen }),
   openProfile: () => set({ returnTo: get().screen, screen: 'profile' }),

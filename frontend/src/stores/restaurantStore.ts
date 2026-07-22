@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { MenuItem, Restaurant } from '@/types'
-import { fetchMenu, fetchRestaurants } from '@/api/restaurants.api'
+import { fetchMenu, fetchRestaurants } from '@/api/restaurantsApi'
 
 interface RestaurantState {
   byId: Record<number, Restaurant>

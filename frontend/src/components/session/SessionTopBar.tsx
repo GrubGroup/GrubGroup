@@ -1,12 +1,8 @@
-import { useRef } from 'react'
 import { Icon } from '@/components/ui'
 import { SessionTimer } from './SessionTimer'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
-import { USE_MOCK } from '@/lib/env'
 import { useSessionStore } from '@/stores/sessionStore'
-import { useGroupChatStore } from '@/stores/groupChatStore'
-import { generateRecommendation } from '@/api/session.api'
 
 export interface SessionTopBarProps {
   /** Center label; the wireframe uses "Your food agent". */
@@ -21,43 +17,13 @@ export function SessionTopBar({ label = 'Your food agent' }: SessionTopBarProps)
   const session = useSessionStore((s) => s.session)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const startedAt = useSessionStore((s) => s.startedAt)
-  const isHost = useSessionStore((s) => s.isHost())
-  const generatingRef = useRef(false)
+  // The timer is now only a FALLBACK: auto-complete generates results the moment
+  // every member finishes (server-side live, simulated in mock). The host-only
+  // expiry generation is centralized in the store, shared with the group-chat
+  // card timer — see sessionStore.triggerExpiryGeneration.
+  const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
 
   if (activeSessionId == null || session == null) return null
-
-  const handleExpire = async () => {
-    if (!isHost || generatingRef.current) return
-    generatingRef.current = true
-    try {
-      const rec = await generateRecommendation(activeSessionId, { forcePartial: true })
-      // Live: the gateway persists a SESSION_BLOCK message + broadcasts
-      // session:picks, so the card lands via the socket. Offline (mock, socket
-      // null) there is no broadcast — inject the picks block locally so the
-      // in-chat card still appears.
-      if (USE_MOCK && session.group_id != null) {
-        useGroupChatStore.getState().receiveMessage({
-          id: `picks-${rec.id}`,
-          groupId: session.group_id,
-          userId: session.host_user_id,
-          name: null,
-          text: '',
-          at: new Date().toISOString(),
-          type: 'session_block',
-          block: {
-            kind: 'top_picks',
-            session_id: activeSessionId,
-            recommendation_id: rec.id,
-            items: rec.items,
-          },
-        })
-      }
-    } catch {
-      // A generation failure (e.g. members not ready → 409) is surfaced elsewhere;
-      // don't crash the bar. Allow a later manual retry.
-      generatingRef.current = false
-    }
-  }
 
   return (
     <div
@@ -76,7 +42,11 @@ export function SessionTopBar({ label = 'Your food agent' }: SessionTopBarProps)
       </div>
 
       <div className="absolute left-1/2 -translate-x-1/2">
-        <SessionTimer startedAt={startedAt} minutes={session.time_limit} onExpire={handleExpire} />
+        <SessionTimer
+          startedAt={startedAt}
+          minutes={session.time_limit}
+          onExpire={() => void triggerExpiryGeneration()}
+        />
       </div>
 
       <div className="flex items-center gap-1.5 text-overline uppercase tracking-wide text-text-muted">

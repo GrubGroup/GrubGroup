@@ -1,6 +1,22 @@
 import { create } from 'zustand'
 import type { Recommendation, Session, SessionMember, SessionPhase } from '@/types'
-import { fetchRecommendation, fetchSession } from '@/api/session.api'
+import { fetchRecommendation, fetchSession, generateRecommendation } from '@/api/sessionApi'
+import { useAuthStore } from '@/stores/authStore'
+
+// Module-level guard so the timer-expiry generation fires at most once even if
+// both the group-chat card timer and the agent-chat top-bar timer were to expire.
+let expiryGenerating = false
+
+// The signed-in user's name fields, so locally-built roster rows for the current
+// user carry a real name (the gateway's create response doesn't include one, and
+// join/progress rows would otherwise be nameless → "User N"/"U1" avatars).
+// Read lazily via getState() — authStore does not import sessionStore, so there's
+// no cycle. Returns undefined name fields when signed out (mock defaults apply).
+function selfNameFields(userId: number): Pick<SessionMember, 'display_name' | 'username'> {
+  const user = useAuthStore.getState().user
+  if (!user || user.id !== userId) return {}
+  return { display_name: user.display_name ?? null, username: user.username ?? null }
+}
 
 interface SessionState {
   session: Session | null
@@ -18,12 +34,21 @@ interface SessionState {
   // (e.g. 1/6, not 1/1). 0 = unknown → fall back to members.length.
   serverTotal: number
   recommendation: Recommendation | null
+  // Results-fetch UI state so the results screen can tell loading / empty / error
+  // apart instead of a single permanent "Loading picks…". `recommendationError`
+  // is set when the read-back fails on a session that should already have results.
+  recommendationLoading: boolean
+  recommendationError: boolean
   phase: SessionPhase
   votes: Record<number, number[]> // restaurantId -> userIds who voted
   chosenRestaurantId: number | null
   currentUserId: number
 
   load: (sessionId: number, currentUserId: number) => Promise<void>
+  // Merge the gateway's name-carrying roster into `members` WITHOUT resetting
+  // phase/startedAt (unlike load). Used to give the host real member names right
+  // after they create a session (their local rows are otherwise nameless).
+  hydrateMembers: (sessionId: number) => Promise<void>
   // Adopt a session object directly (e.g. the one the host just created via the
   // modal), without a round-trip. Seeds activeSessionId + startedAt.
   setSession: (session: Session, currentUserId?: number) => void
@@ -36,7 +61,20 @@ interface SessionState {
   // them if the roster hasn't loaded them yet) so every client's progress bar and
   // roster reconcile from the server echo — not an optimistic local flip.
   applyProgress: (doneCount: number, total: number, userId: number, status: boolean) => void
+  // Adopt a recommendation delivered live over the socket (session:picks), so the
+  // "Results" affordance appears without a fetch. Stores the recommendation only —
+  // it deliberately does NOT set phase:'picks' (that implies the user is VIEWING
+  // results); navigation to the results screen stays user-driven.
+  receivePicks: (payload: {
+    recommendationId: number
+    sessionId: number
+    items: Recommendation['items']
+  }) => void
   loadRecommendation: () => Promise<void>
+  // Timer-expiry fallback: the HOST client alone generates results (force_partial)
+  // if the countdown runs out before everyone finishes. No-op for non-hosts or
+  // when results already exist. Guarded against concurrent/repeat calls.
+  triggerExpiryGeneration: () => Promise<void>
   castVote: (restaurantId: number, userId: number) => void
   chooseRestaurant: (restaurantId: number) => void
   close: () => void
@@ -54,6 +92,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   members: [],
   serverTotal: 0,
   recommendation: null,
+  recommendationLoading: false,
+  recommendationError: false,
   phase: 'joining',
   votes: {},
   chosenRestaurantId: null,
@@ -72,13 +112,65 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  setSession: (session, currentUserId) =>
-    set((s) => ({
-      session,
-      activeSessionId: session.id,
-      startedAt: session.created_at ?? new Date().toISOString(),
-      currentUserId: currentUserId ?? s.currentUserId,
-    })),
+  hydrateMembers: async (sessionId) => {
+    const { members: fetched } = await fetchSession(sessionId)
+    set((s) => {
+      // Merge fetched name/status rows over the local roster, preserving any
+      // local status flip that's newer than the fetch (a member who finished
+      // between create and hydrate). Fetched rows are the source of names.
+      const byId = new Map(s.members.map((m) => [m.user_id, m]))
+      const merged = fetched.map((f) => {
+        const local = byId.get(f.user_id)
+        return { ...f, status: local?.status || f.status }
+      })
+      // Keep any local-only rows the fetch doesn't know about yet.
+      for (const local of s.members) {
+        if (!merged.some((m) => m.user_id === local.user_id)) merged.push(local)
+      }
+      return { members: merged, serverTotal: Math.max(s.serverTotal, merged.length) }
+    })
+  },
+
+  setSession: (session, currentUserId) => {
+    // A brand-new session clears the once-per-session expiry-generation latch, so
+    // the new session's timer fallback can fire (the prior session may have set it).
+    expiryGenerating = false
+    set((s) => {
+      // Adopting a session the current user just created is a FRESH START — even
+      // if a prior session ran in this group. Seed the roster with ONLY the host
+      // (their real name), so hydrateMembers can merge in the rest; do NOT carry
+      // over the previous session's roster/total. Clear the previous session's
+      // results + voting state so the new session's card shows 'in progress' (not
+      // an instant 'complete' from a stale recommendation) and Results is empty
+      // until this session generates its own. Guards the "start another session
+      // after one completes" flow (the button re-enables once complete).
+      const uid = currentUserId ?? s.currentUserId
+      const members = [
+        {
+          session_id: session.id,
+          user_id: uid,
+          status: false,
+          joined_at: new Date().toISOString(),
+          ...selfNameFields(uid),
+        },
+      ]
+      return {
+        session,
+        members,
+        serverTotal: members.length,
+        activeSessionId: session.id,
+        startedAt: session.created_at ?? new Date().toISOString(),
+        currentUserId: uid,
+        // Clear prior-session results/voting so nothing leaks into the new one.
+        recommendation: null,
+        recommendationLoading: false,
+        recommendationError: false,
+        votes: {},
+        chosenRestaurantId: null,
+        phase: 'joining',
+      }
+    })
+  },
 
   setStartedAt: (at) => set({ startedAt: at }),
 
@@ -96,6 +188,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             user_id: currentUserId,
             status: false,
             joined_at: new Date().toISOString(),
+            ...selfNameFields(currentUserId),
           },
         ]
     set({ members: next, phase: 'waiting' })
@@ -113,7 +206,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((s) => {
       const known = s.members.some((m) => m.user_id === userId)
       const members = known
-        ? s.members.map((m) => (m.user_id === userId ? { ...m, status } : m))
+        ? s.members.map((m) =>
+            m.user_id === userId
+              ? // Backfill the current user's name if this row was created bare
+                // (e.g. by an earlier progress echo) so its avatar isn't "User N".
+                { ...m, status, ...(m.display_name || m.username ? {} : selfNameFields(userId)) }
+              : m,
+          )
         : [
             ...s.members,
             {
@@ -121,6 +220,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               user_id: userId,
               status,
               joined_at: new Date().toISOString(),
+              ...selfNameFields(userId),
             },
           ]
       // Trust the server's authoritative total so the denominator is right even
@@ -131,11 +231,47 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (userId === get().currentUserId && status) set({ phase: 'done' })
   },
 
+  receivePicks: ({ recommendationId, sessionId, items }) =>
+    set({
+      recommendation: {
+        id: recommendationId,
+        session_id: sessionId,
+        created_at: new Date().toISOString(),
+        items,
+      },
+    }),
+
   loadRecommendation: async () => {
     const id = get().activeSessionId ?? get().session?.id
     if (id == null) return
-    const recommendation = await fetchRecommendation(id)
-    set({ recommendation, phase: 'picks' })
+    set({ recommendationLoading: true, recommendationError: false })
+    try {
+      const recommendation = await fetchRecommendation(id)
+      set({ recommendation, phase: 'picks', recommendationLoading: false })
+    } catch {
+      // The read-back failed — most often a 404 because generation hasn't landed
+      // yet (or the session timed out with nothing to generate). Surface it as a
+      // retryable error state rather than throwing (which left the page stuck on a
+      // permanent "Loading picks…" with no recovery). A later session:picks socket
+      // delivery still populates `recommendation` via receivePicks.
+      set({ recommendationLoading: false, recommendationError: true })
+    }
+  },
+
+  triggerExpiryGeneration: async () => {
+    const { activeSessionId, recommendation } = get()
+    // Only the host generates; skip if results already exist or none in progress.
+    if (activeSessionId == null || recommendation != null || !get().isHost()) return
+    if (expiryGenerating) return
+    expiryGenerating = true
+    try {
+      await generateRecommendation(activeSessionId, { forcePartial: true })
+      // The gateway broadcasts session:picks, so results arrive via the socket.
+    } catch {
+      // Generation failure (e.g. 409 not-ready) is surfaced elsewhere; allow a
+      // later retry rather than latching the guard.
+      expiryGenerating = false
+    }
   },
 
   castVote: (restaurantId, userId) => {

@@ -33,15 +33,15 @@ from app.ai.taxonomy import (
 )
 from app.schemas.ai import ConversationTurn, ExtractedSignals
 
-# The signal names the reply logic asks about, in the order we prefer to ask.
-# This mirrors the per-member sub-agent conversation in
-# ``scripts/interactive_session.py`` exactly: dietary -> likes -> dislikes ->
-# budget -> location. The event-level fields are NOT asked here — the host sets
-# occasion AND the event TIME once, up front, in the pre-session modal
-# (Qa.occasion via the host's seeded row; Session.scheduled_for). location is
-# per-member and optional (each member may add a spot near them).
+# The signal names the reply logic asks about, in the order we prefer to ask:
+# likes -> dislikes -> budget -> location. Dietary needs are NOT asked here —
+# they're captured once in onboarding (durable Profile.dietary_restrictions) and
+# feed the ranking hard-filter directly, so the session chat never re-asks them.
+# The event-level fields are NOT asked here either — the host sets occasion AND
+# the event TIME once, up front, in the pre-session modal (Qa.occasion via the
+# host's seeded row; Session.scheduled_for). location is per-member and optional
+# (each member may add a spot near them).
 _MISSING_ORDER = [
-    "dietary_restrictions",
     "preferred_cuisines",
     "disliked_cuisines",
     "budget",
@@ -308,10 +308,10 @@ def _compute_missing(signals: ExtractedSignals, *, is_host: bool) -> list[str]:
     own missing_signals (the primary path) treats an intentional "nothing to
     avoid" as answered, so this deterministic fallback may re-ask dislikes once
     in the rare fully-degraded turn; that's an accepted degraded-path imperfect.
-    occasion/time are pre-session modal fields, never part of this conversation.
+    dietary (captured once in onboarding) and occasion/time (pre-session modal
+    fields) are never part of this conversation.
     """
     present: dict[str, bool] = {
-        "dietary_restrictions": bool(signals.dietary_restrictions),
         "preferred_cuisines": bool(signals.preferred_cuisines),
         "disliked_cuisines": bool(signals.disliked_cuisines),
         "budget": signals.budget_min is not None or signals.budget_max is not None,
@@ -333,11 +333,10 @@ def _clean_missing(value: Any, signals: ExtractedSignals, *, is_host: bool) -> l
 
 # One next-question per signal, in ask-order — mirrors the per-question prompts
 # in scripts/interactive_session.py so the degraded (LLM-reply-unusable) path
-# still walks the same dietary -> likes -> dislikes -> budget -> location flow.
+# still walks the same likes -> dislikes -> budget -> location flow.
 _QUESTION_FOR = {
-    "dietary_restrictions": "Any dietary needs I should lock in for the group?",
     "preferred_cuisines": "What sounds good today — a cuisine, a vibe, or a kind of spot?",
-    "disliked_cuisines": "Anything you'd rather the group avoided?",
+    "disliked_cuisines": "Are there any cuisines you dislike or want to avoid?",
     "budget": "What is your comfortable price range per person?",
     "location": "Any spot that's more convenient for you? I can factor it in.",
 }

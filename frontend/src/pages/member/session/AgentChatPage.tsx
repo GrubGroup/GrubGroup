@@ -5,16 +5,15 @@ import { GroupProgressPanel } from '@/components/session/GroupProgressPanel'
 import { NotedSoFarPanel } from '@/components/session/NotedSoFarPanel'
 import { SessionTopBar } from '@/components/session/SessionTopBar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
-import { Icon } from '@/components/ui'
+import { Button, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
-import { USE_MOCK } from '@/lib/env'
 import { useChatStore } from '@/stores/chatStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useSocket } from '@/hooks/useSocket'
-import { setReady } from '@/api/session.api'
+import { setReady } from '@/api/sessionApi'
 import { chipsForMissing } from '@/constants/agentChat'
 
 export function AgentChatPage() {
@@ -25,14 +24,16 @@ export function AgentChatPage() {
   const adoptSessionId = useChatStore((s) => s.adoptSessionId)
   const sending = useChatStore((s) => s.sending)
   const missingSignals = useChatStore((s) => s.missingSignals)
+  const isComplete = useChatStore((s) => s.isComplete)
 
   const phase = useSessionStore((s) => s.phase)
   const setPhase = useSessionStore((s) => s.setPhase)
   const setMemberDone = useSessionStore((s) => s.setMemberDone)
-  const members = useSessionStore((s) => s.members)
+  const doneCount = useSessionStore((s) => s.doneCount())
+  const progressTotal = useSessionStore((s) => s.progressTotal())
+  const recommendation = useSessionStore((s) => s.recommendation)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const loadSession = useSessionStore((s) => s.load)
-  const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
+  const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
   const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
   const screen = useNavStore((s) => s.screen)
   const groupId = useNavStore((s) => s.groupId)
@@ -40,11 +41,20 @@ export function AgentChatPage() {
 
   // Quick-reply chips follow the question the agent just asked (its first
   // still-missing signal), mirroring interactive_session.py's per-question chips.
-  // Before the first turn (nothing asked/missing yet) show the dietary chips —
-  // the opening greeting asks about dietary needs first.
+  // Before the first turn (nothing asked/missing yet) show the cuisine chips —
+  // the opening greeting asks about preferred cuisines first.
   const quickReplies = chipsForMissing(
-    missingSignals.length ? missingSignals : ['dietary_restrictions'],
+    missingSignals.length ? missingSignals : ['preferred_cuisines'],
   )
+
+  // "All set": the agent has nothing left to ask. Keyed off the server's
+  // authoritative is_complete flag (chatStore.isComplete), which is only true
+  // after a real analyze turn — so the opening greeting never falsely reads as
+  // complete, and a skipped-but-answered step (empty dislikes) still counts as
+  // done. Once true, we surface a gentle "good to go" banner and keep the
+  // composer open so corrections are still possible.
+  const hasAnswered = messages.some((m) => m.role === 'user')
+  const allSet = hasAnswered && isComplete && !sending
 
   // Keep the live socket subscribed while the member chats, so session:member_done
   // progress + a session:picks delivery still update this page (the group-chat page
@@ -52,9 +62,6 @@ export function AgentChatPage() {
   useSocket(groupId)
 
   useEffect(() => {
-    // Mock mode seeds the demo roster; live adopts the session via the socket.
-    if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
-
     // Seed the conversation when there's none yet, or re-seed when it belongs to
     // a GENUINELY DIFFERENT session — so a new session never inherits the prior
     // transcript. Refining an unknown id into the real one (chatSessionId null →
@@ -70,9 +77,6 @@ export function AgentChatPage() {
     }
     if (phase === 'joining' || phase === 'waiting') setPhase('chatting')
   }, [
-    members.length,
-    loadSession,
-    currentUserId,
     displayName,
     messages.length,
     chatSessionId,
@@ -93,11 +97,10 @@ export function AgentChatPage() {
   const handleDone = async () => {
     if (marking) return // guard against a double-click during the REST round-trip
     setMarking(true)
-    // Live: mark ready over REST — the gateway broadcasts session:member_done and
-    // every client (incl. this one) reconciles from the echo. Mock: flip locally.
-    if (USE_MOCK || activeSessionId == null) {
-      setMemberDone(currentUserId)
-    } else {
+    // Mark ready over REST — the gateway broadcasts session:member_done and (when
+    // this is the last finish) auto-generates results, which arrive via
+    // session:picks. Every client reconciles from the echo.
+    if (activeSessionId != null) {
       try {
         await setReady(activeSessionId, true)
       } catch {
@@ -105,6 +108,8 @@ export function AgentChatPage() {
         // stuck; the broadcast reconciles the shared roster when it lands.
         setMemberDone(currentUserId)
       }
+    } else {
+      setMemberDone(currentUserId)
     }
     go('agent-chat-done')
   }
@@ -138,7 +143,7 @@ export function AgentChatPage() {
           {/* Conversation always visible; the done pill renders in-stream. */}
           <ChatStream done={isDone} />
 
-          {!isDone && (
+          {!isDone ? (
             <>
               {/* Quick-reply chips — follow the question the agent just asked. */}
               {quickReplies.length > 0 && (
@@ -156,14 +161,61 @@ export function AgentChatPage() {
                 </div>
               )}
               <VoiceComposer onSend={handleSend} disabled={sending} privacyNote />
-              <button
-                onClick={() => void handleDone()}
-                disabled={marking}
-                className="flex items-center justify-center gap-1 border-t border-border bg-surface-raised py-2 text-center text-xs font-medium text-primary hover:text-primary-hover disabled:opacity-50"
-              >
-                I'm done sharing preferences <Icon name="arrow-right" size={12} />
-              </button>
+              {/* "All set" banner: once the agent has nothing left to ask, nudge
+                  the user to finish while making clear they can still make changes. */}
+              {allSet && (
+                <div className="mx-4 mt-2 flex items-start gap-2 rounded-input border border-success/40 bg-success/10 px-3 py-2 text-xs text-text">
+                  <span className="mt-0.5 text-success">
+                    <Icon name="check" size={14} />
+                  </span>
+                  <span>
+                    You're good to go — I have everything I need. Want to change
+                    anything? Just tell me. Otherwise, finish below.
+                  </span>
+                </div>
+              )}
+              {/* Prominent finish CTA — the primary way to end the conversation.
+                  Turns accent once the agent is satisfied, to signal it's ready. */}
+              <div className="border-t border-border bg-surface-raised p-4">
+                <Button
+                  fullWidth
+                  size="lg"
+                  variant={allSet ? 'accent' : 'primary'}
+                  isLoading={marking}
+                  rightIcon={<Icon name="arrow-right" size={16} />}
+                  onClick={() => void handleDone()}
+                >
+                  I'm Finished
+                </Button>
+              </div>
             </>
+          ) : (
+            // Done: the conversation + noted panel stay visible for review. The
+            // footer shows a waiting state until the group's results are ready,
+            // then a prominent way into them.
+            <div className="border-t border-border bg-surface-raised p-4">
+              {recommendation != null ? (
+                <Button
+                  fullWidth
+                  size="lg"
+                  variant="accent"
+                  rightIcon={<Icon name="arrow-right" size={16} />}
+                  onClick={() => go('top-picks')}
+                >
+                  See the group's results
+                </Button>
+              ) : (
+                <div className="flex flex-col items-center gap-1 py-1 text-center">
+                  <span className="flex items-center gap-2 text-sm font-medium text-text">
+                    <Spinner size="sm" /> Waiting for others
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {doneCount} of {progressTotal} finished · you can review your
+                    answers while you wait
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

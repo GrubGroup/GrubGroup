@@ -13,8 +13,7 @@ import { useNavStore } from '@/stores/navStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useSession } from '@/lib/authClient'
-import { fetchProfile } from '@/api/profile.api'
-import { USE_MOCK } from '@/lib/env'
+import { fetchProfile } from '@/api/profileApi'
 import type { SessionUser } from '@/stores/authStore'
 
 // Frontend-only screen switch (no router). Transitions follow the wireframe
@@ -29,12 +28,10 @@ function App() {
   // forward + splash so AuthFlowShell stays mounted and slides sign-up → onboarding.
   const entryFlowActive = useAuthStore((s) => s.entryFlowActive)
 
-  // Live mode: mirror Better Auth's session (httpOnly cookie) into the store, so
-  // the guard and pages read a single source of truth and survive refresh. Mock
-  // mode boots pre-authenticated and skips this.
+  // Mirror Better Auth's session (httpOnly cookie) into the store, so the guard
+  // and pages read a single source of truth and survive refresh.
   const { data: session, isPending } = useSession()
   useEffect(() => {
-    if (USE_MOCK) return
     setSessionUser((session?.user as SessionUser | undefined) ?? null)
   }, [session, setSessionUser])
 
@@ -58,7 +55,6 @@ function App() {
   const [forwarding, setForwarding] = useState(false)
   const [routed, setRouted] = useState(false)
   useEffect(() => {
-    if (USE_MOCK) return
     // The interactive form owns routing (incl. the sign-up → onboarding slide) —
     // don't double-forward or flash the splash over it.
     if (entryFlowActive) return
@@ -89,27 +85,25 @@ function App() {
     })()
   }, [session, isPublicScreen, entryFlowActive, go, setGroup])
 
-  // Splash gate (live mode only): show a branded loader — never the landing page —
-  // while the session check is pending, OR while an authenticated user on a public
-  // screen is being forwarded into the app. This closes the "landing flash before
-  // auth resolves" gap for a signed-in user reloading. A logged-OUT user has no
+  // Splash gate: show a branded loader — never the landing page — while the
+  // session check is pending, OR while an authenticated user on a public screen
+  // is being forwarded into the app. This closes the "landing flash before auth
+  // resolves" gap for a signed-in user reloading. A logged-OUT user has no
   // session.user, so they fall through to the landing page after the brief pending
   // window. Skip the "authed on a public screen" case while the interactive form
   // owns the entry flow — otherwise the splash would cover the sign-up →
   // onboarding slide (the form shows the splash itself only for the app-forward).
   if (
-    !USE_MOCK &&
-    (isPending ||
-      (session?.user && isPublicScreen && !routed && !entryFlowActive) ||
-      forwarding)
+    isPending ||
+    (session?.user && isPublicScreen && !routed && !entryFlowActive) ||
+    forwarding
   ) {
     return <AppSplash />
   }
 
-  // Auth guard (live mode only): every screen except the public pages (landing +
-  // auth) requires a signed-in user. Wait for the initial session check before
-  // bouncing.
-  if (!USE_MOCK && !isPending && !user && !isPublicScreen) {
+  // Auth guard: every screen except the public pages (landing + auth) requires a
+  // signed-in user. Wait for the initial session check before bouncing.
+  if (!isPending && !user && !isPublicScreen) {
     return <AuthFlowShell />
   }
 

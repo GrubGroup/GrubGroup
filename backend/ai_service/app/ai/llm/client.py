@@ -1,4 +1,8 @@
-"""Async LLM client — Salesforce model gateway (active) / OpenRouter DeepSeek (deploy)."""
+"""Async LLM client — provider selected by LLM_PROVIDER (env), no code edit needed.
+
+  LLM_PROVIDER=salesforce → Salesforce internal model gateway (Claude) — local dev.
+  LLM_PROVIDER=openrouter → OpenRouter/DeepSeek (default) — deploy.
+"""
 
 from functools import lru_cache
 from typing import Any
@@ -11,25 +15,27 @@ from app.core.config import settings
 
 @lru_cache(maxsize=1)
 def get_llm_client() -> AsyncOpenAI:
-    """Build the active LLM client — Salesforce internal gateway (OpenAI-compatible).
+    """Build the chat LLM client for the provider named by settings.llm_provider.
 
-    Uses the corporate CA bundle from NODE_EXTRA_CA_CERTS when set, otherwise
-    falls back to the default certifi verification (verify=True).
+    Salesforce (LLM_PROVIDER=salesforce): the OpenAI-compatible internal gateway,
+    verifying TLS against the corporate CA bundle from NODE_EXTRA_CA_CERTS when set.
+    OpenRouter (default): OPENROUTER_API_KEY / OPENROUTER_BASE_URL. The process
+    reads one provider per run (lru_cache), and settings.active_llm_model already
+    resolves to the matching model name.
     """
-    return AsyncOpenAI(
-        api_key=settings.salesforce_api_key,
-        base_url=settings.salesforce_base_url,
-        http_client=httpx.AsyncClient(
-            verify=settings.node_extra_ca_certs or True,
-        ),
-    )
+    if settings.llm_provider.strip().lower() == "salesforce":
+        return AsyncOpenAI(
+            api_key=settings.salesforce_api_key,
+            base_url=settings.salesforce_base_url,
+            http_client=httpx.AsyncClient(
+                verify=settings.node_extra_ca_certs or True,
+            ),
+        )
 
-    # --- DEPLOYMENT (OpenRouter/DeepSeek): comment out the Salesforce client above
-    # --- and uncomment this block to route LLM calls through OpenRouter in prod.
-    # return AsyncOpenAI(
-    #     api_key=settings.openrouter_api_key,
-    #     base_url=settings.openrouter_base_url,
-    # )
+    return AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
 
 
 async def chat_completion(
@@ -41,11 +47,12 @@ async def chat_completion(
 ) -> str:
     """Run a chat completion and return the assistant message content.
 
-    `model` defaults to settings.llm_model. `response_format` (e.g. JSON mode) is
-    passed through when provided; providers that ignore it simply return text.
+    `model` defaults to settings.active_llm_model (the model for the selected
+    provider). `response_format` (e.g. JSON mode) is passed through when provided;
+    providers that ignore it simply return text.
     """
     kwargs: dict[str, Any] = {
-        "model": model or settings.llm_model,
+        "model": model or settings.active_llm_model,
         "messages": messages,
         "temperature": temperature,
     }

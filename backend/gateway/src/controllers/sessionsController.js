@@ -24,6 +24,66 @@ const broadcastToGroup = (req, groupId, event, payload) => {
 };
 
 /**
+ * Broadcast a ready recommendation to the session's group room. Recommendations
+ * are delivered into the SESSION / RESULTS flow only — never as a group-chat
+ * message — so this carries just the ids + ranked items (no messageId, no
+ * persisted GroupMessage). Shared by the manual generate path and the auto-
+ * complete path so both emit an identical `session:picks` event.
+ */
+const broadcastPicks = (io, groupId, sessionId, recommendation) => {
+  if (groupId == null) return;
+  try {
+    io?.to(`group:${groupId}`).emit('session:picks', {
+      groupId,
+      sessionId,
+      recommendationId: recommendation.id,
+      items: recommendation.items ?? [],
+    });
+  } catch (err) {
+    console.error('socket broadcast session:picks failed', err);
+  }
+};
+
+// In-flight auto-complete guard: session ids currently generating results, so two
+// members finishing near-simultaneously don't both kick off the pipeline in this
+// process. Paired with a DB check (a prior Recommendation row) below; a
+// multi-instance deploy would want an advisory lock, but this closes the common
+// single-process race and never blocks the status write.
+const autoCompleting = new Set();
+
+/**
+ * Auto-complete a session the moment EVERY member has finished: generate the
+ * group recommendation and broadcast it — no host click, no timer wait. Fire-
+ * and-forget (never awaited by the request) so the member's "I'm Finished" PATCH
+ * returns immediately rather than blocking on the ≤120s pipeline. Best-effort:
+ * any failure is logged and the timer fallback can still force picks later.
+ *
+ * Guarded three ways so it runs once: only when this turn is the LAST finish
+ * (doneCount === total), an in-process lock, and a DB check for an existing
+ * Recommendation row.
+ */
+const maybeAutoComplete = async (io, sessionId, groupId) => {
+  if (autoCompleting.has(sessionId)) return;
+  autoCompleting.add(sessionId);
+  try {
+    const existing = await prisma.recommendation.findFirst({
+      where: { session_id: sessionId },
+      select: { id: true },
+    });
+    if (existing) return; // already generated (timer/manual/another finisher)
+
+    const recommendation = await fetchRecommendations(sessionId, { forcePartial: false });
+    broadcastPicks(io, groupId, sessionId, recommendation);
+  } catch (err) {
+    // 409 (not all confirmed — shouldn't happen here), 502 (upstream), etc. The
+    // timer fallback / manual generate remain as recovery paths.
+    console.error(`auto-complete generation failed for session ${sessionId}`, err);
+  } finally {
+    autoCompleting.delete(sessionId);
+  }
+};
+
+/**
  * POST /api/sessions/:session_id/recommendations — proxy the group orchestrator.
  *
  * Delegates to the ai_service, which reconciles member preferences into a ranked
@@ -32,11 +92,11 @@ const broadcastToGroup = (req, groupId, event, payload) => {
  * rather than collapsing everything to a 500.
  *
  * Auth-guarded + member-scoped (see the route): only a session member may
- * trigger picks, since success WRITES a SESSION_BLOCK message into the group
- * chat and broadcasts it. On success the top picks are delivered INTO the group
- * chat: we persist a SESSION_BLOCK GroupMessage carrying the ranked items as JSON
- * (so it survives a reload via chat:history) and broadcast `session:picks` to the
- * group room. Both are best-effort — a chat-delivery hiccup never fails the call.
+ * trigger picks. On success we broadcast `session:picks` to the group room so
+ * every client adopts the ranked items into the SESSION / RESULTS flow. The
+ * recommendation is NOT written into the group chat — it stays durable in the
+ * Recommendation table (fetchable via GET /:id/recommendations). The broadcast
+ * is best-effort — a socket hiccup never fails the call.
  */
 const getRecommendations = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -48,7 +108,7 @@ const getRecommendations = async (req, res, next) => {
 
   try {
     // Membership guard: reject a caller who isn't part of this session before we
-    // proxy (and before any group-chat write) — mirrors submitQa/analyzeTurn.
+    // proxy — mirrors submitQa/analyzeTurn.
     const member = await prisma.sessionMember.findUnique({
       where: { session_id_user_id: { session_id: sessionId, user_id: req.user.id } },
     });
@@ -56,47 +116,52 @@ const getRecommendations = async (req, res, next) => {
       return res.status(403).json({ error: 'Not a session member.' });
     }
 
+    // force_partial is the TIMEOUT / expiry path: the session's clock ran out, so
+    // it completes now regardless of who finished. Force-finish every remaining
+    // member and broadcast an all-done completion so every client's card flips to
+    // complete (matching "on timeout, allDone should be true"), then generate over
+    // whoever actually answered.
+    if (forcePartial) {
+      await prisma.sessionMember.updateMany({
+        where: { session_id: sessionId, status: false },
+        data: { status: true },
+      });
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: {
+          group_id: true,
+          closed_at: true,
+          members: { select: { user_id: true } },
+        },
+      });
+      if (session?.group_id != null) {
+        const total = session.members.length;
+        broadcastToGroup(req, session.group_id, 'session:member_done', {
+          groupId: session.group_id,
+          sessionId,
+          userId: req.user.id,
+          status: true,
+          doneCount: total,
+          total,
+          allDone: true,
+          closedAt: session.closed_at ?? null,
+          at: new Date().toISOString(),
+        });
+      }
+    }
+
     const recommendation = await fetchRecommendations(sessionId, { forcePartial });
 
-    // Deliver the picks into the group chat (best-effort). Look up the session's
-    // group + host so we can attribute the SESSION_BLOCK message and route the
-    // broadcast to the right room.
+    // Announce the ready picks to the group room (best-effort) so every client's
+    // session/results view can adopt them without polling.
     try {
       const session = await prisma.session.findUnique({
         where: { id: sessionId },
-        select: { group_id: true, host_user_id: true },
+        select: { group_id: true },
       });
-      if (session?.group_id != null) {
-        // The block payload is the SAME shape whether delivered live (session:picks)
-        // or reconstructed from chat:history (toWireMessage parses this JSON back
-        // into `block`), so both paths render the identical picks card.
-        const blockPayload = {
-          kind: 'top_picks',
-          session_id: sessionId,
-          recommendation_id: recommendation.id,
-          items: recommendation.items ?? [],
-        };
-        const block = await prisma.groupMessage.create({
-          data: {
-            group_id: session.group_id,
-            user_id: session.host_user_id,
-            content: JSON.stringify(blockPayload),
-            message_type: 'SESSION_BLOCK',
-          },
-        });
-        // Mirror the wire shape of a SESSION_BLOCK history message so the client
-        // handles the live event and a reloaded message with one code path.
-        broadcastToGroup(req, session.group_id, 'session:picks', {
-          groupId: session.group_id,
-          sessionId,
-          messageId: String(block.id),
-          userId: session.host_user_id,
-          block: blockPayload,
-          at: block.created_at.toISOString(),
-        });
-      }
+      broadcastPicks(req.app.get('io'), session?.group_id, sessionId, recommendation);
     } catch (deliveryErr) {
-      console.error('top-picks group-chat delivery failed', deliveryErr);
+      console.error('top-picks broadcast failed', deliveryErr);
     }
 
     return res.status(200).json(recommendation);
@@ -252,7 +317,7 @@ const getSession = async (req, res, next) => {
             user_id: true,
             status: true,
             joined_at: true,
-            user: { select: { display_name: true } },
+            user: { select: { display_name: true, username: true } },
           },
         },
       },
@@ -267,6 +332,7 @@ const getSession = async (req, res, next) => {
     const members = session.members.map(({ user, user_id, status, joined_at }) => ({
       user_id,
       display_name: user?.display_name ?? null,
+      username: user?.username ?? null,
       status,
       joined_at,
     }));
@@ -328,7 +394,7 @@ const listMembers = async (req, res, next) => {
         user_id: true,
         status: true,
         joined_at: true,
-        user: { select: { display_name: true } },
+        user: { select: { display_name: true, username: true } },
       },
       orderBy: { joined_at: 'asc' },
     });
@@ -339,6 +405,7 @@ const listMembers = async (req, res, next) => {
     const shaped = members.map(({ user, user_id, status, joined_at }) => ({
       user_id,
       display_name: user?.display_name ?? null,
+      username: user?.username ?? null,
       status,
       joined_at,
     }));
@@ -356,6 +423,10 @@ const listMembers = async (req, res, next) => {
  * every client's live progress bar updates when a member finishes (the frontend
  * renders solely from this broadcast — no optimistic local flip). The payload
  * carries the fresh done/total counts so a late joiner or reload can reconcile.
+ *
+ * AUTO-COMPLETE: when this turn is the one that makes EVERY member done, we kick
+ * off recommendation generation server-side (fire-and-forget, after responding)
+ * so the group flips to results without waiting for the timer or a host click.
  */
 const setReady = async (req, res, next) => {
   const sessionId = toPositiveInt(req.params.session_id);
@@ -381,16 +452,23 @@ const setReady = async (req, res, next) => {
       data: { status },
     });
 
-    // Broadcast live progress to the group room. Load the session (for group_id)
-    // + the fresh member counts in one go; best-effort so a socket hiccup never
-    // fails the status write.
+    // Broadcast live progress to the group room. Load the session (for group_id
+    // + closed_at) and the fresh member counts in one go; best-effort so a socket
+    // hiccup never fails the status write.
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      select: { group_id: true, members: { select: { user_id: true, status: true } } },
+      select: {
+        group_id: true,
+        closed_at: true,
+        members: { select: { user_id: true, status: true } },
+      },
     });
+
+    const total = session?.members.length ?? 0;
+    const doneCount = session?.members.filter((m) => m.status).length ?? 0;
+    const allDone = total > 0 && doneCount === total;
+
     if (session?.group_id != null) {
-      const total = session.members.length;
-      const doneCount = session.members.filter((m) => m.status).length;
       broadcastToGroup(req, session.group_id, 'session:member_done', {
         groupId: session.group_id,
         sessionId,
@@ -398,11 +476,23 @@ const setReady = async (req, res, next) => {
         status,
         doneCount,
         total,
+        // Let clients flip the card to a completed state without a separate fetch.
+        allDone,
+        closedAt: session.closed_at ?? null,
         at: new Date().toISOString(),
       });
     }
 
-    return res.status(200).json(member);
+    // Respond BEFORE generating so the member's "I'm Finished" button never hangs
+    // on the pipeline. Auto-complete only when THIS turn was the last finish
+    // (existing status was false, now true, and everyone is done) and the session
+    // isn't already closed.
+    res.status(200).json(member);
+
+    if (existing.status === false && status === true && allDone && !session?.closed_at) {
+      void maybeAutoComplete(req.app.get('io'), sessionId, session?.group_id ?? null);
+    }
+    return;
   } catch (err) {
     return next(err);
   }

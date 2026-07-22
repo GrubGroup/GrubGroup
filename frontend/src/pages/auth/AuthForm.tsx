@@ -4,8 +4,8 @@ import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import { useAuthStore } from '@/stores/authStore'
 import { signIn, signUp } from '@/lib/authClient'
-import { fetchProfile } from '@/api/profile.api'
-import { fetchAuthMethods } from '@/api/auth.api'
+import { fetchProfile } from '@/api/profileApi'
+import { fetchAuthMethods } from '@/api/authApi'
 import type { SessionUser } from '@/stores/authStore'
 
 export interface AuthFormProps {

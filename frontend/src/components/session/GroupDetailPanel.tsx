@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Avatar, Button, Icon, IconButton, Input, Modal, SkeletonRow, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
-import { fetchGroup, addGroupMember } from '@/api/groups.api'
-import { searchUsers } from '@/api/users.api'
+import { fetchGroup, addGroupMember } from '@/api/groupsApi'
+import { searchUsers } from '@/api/usersApi'
 import { useGroupsStore } from '@/stores/groupsStore'
 import { memberColor } from '@/utils/memberColor'
 import { cn } from '@/utils/cn'
+import { nameForMember } from '@/utils/memberName'
 import type { GroupDetail, UserSearchResult } from '@/types'
 import { isAxiosError } from 'axios'
 
@@ -309,7 +310,7 @@ export function GroupDetailPanel({
               ) : (
                 <AnimatePresence initial={false}>
                   {members.map((m) => {
-                    const name = m.display_name ?? `User ${m.user_id}`
+                    const name = m.display_name ?? nameForMember(m.user_id)
                     const isYou = m.user_id === currentUserId
                     return (
                       <motion.div

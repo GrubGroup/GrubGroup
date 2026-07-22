@@ -4,14 +4,13 @@ import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCard'
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
 import { MenuList } from '@/components/restaurant/MenuList'
-import { Button } from '@/components/ui'
+import { Button, Spinner } from '@/components/ui'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { EASE } from '@/lib/motion'
-import { USE_MOCK } from '@/lib/env'
-import { closeSession } from '@/api/session.api'
+import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
   const reduce = useReducedMotion()
@@ -19,8 +18,9 @@ export function TopPicksPage() {
   const session = useSessionStore((s) => s.session)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const recommendation = useSessionStore((s) => s.recommendation)
+  const recommendationLoading = useSessionStore((s) => s.recommendationLoading)
+  const recommendationError = useSessionStore((s) => s.recommendationError)
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
-  const loadSession = useSessionStore((s) => s.load)
   const votes = useSessionStore((s) => s.votes)
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
@@ -34,13 +34,17 @@ export function TopPicksPage() {
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    if (USE_MOCK && !session) void loadSession(42, currentUserId)
     if (!restaurantsLoaded) void loadRestaurants()
-  }, [session, loadSession, currentUserId, restaurantsLoaded, loadRestaurants])
+  }, [restaurantsLoaded, loadRestaurants])
 
   useEffect(() => {
-    if (session && !recommendation) void loadRecommendation()
-  }, [session, recommendation, loadRecommendation])
+    // Fetch once when we have a session but no rec yet — and NOT while a fetch is
+    // in flight or after it errored (else this loops). Retry is user-driven via
+    // the error state's button; a live session:picks socket delivery also fills it.
+    if (session && !recommendation && !recommendationLoading && !recommendationError) {
+      void loadRecommendation()
+    }
+  }, [session, recommendation, recommendationLoading, recommendationError, loadRecommendation])
 
   const picks = (recommendation?.items ?? [])
     .map((item) => {
@@ -51,16 +55,25 @@ export function TopPicksPage() {
     })
     .filter((p): p is NonNullable<typeof p> => p !== null)
     .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+    // The results screen shows the group's Top 5.
+    .slice(0, 5)
 
   // Default the detail panel to the top pick.
   const activeId = selectedId ?? picks[0]?.restaurant_id ?? null
   const active = picks.find((p) => p.restaurant_id === activeId)
 
+  // Distinct results states (replacing a single permanent "Loading picks…"):
+  //   loading → a fetch (or restaurant catalog load) is in flight
+  //   error   → the read-back failed; offer a retry
+  //   else    → a recommendation exists but nothing renders (no match / not loaded)
+  const isLoading = recommendationLoading || !restaurantsLoaded || (!recommendation && !recommendationError)
+  const isError = recommendationError && picks.length === 0
+
   const handleConfirm = async () => {
     if (activeId == null || confirming) return
     chooseRestaurant(activeId)
     const sessionId = activeSessionId ?? session?.id ?? null
-    if (!USE_MOCK && sessionId != null) {
+    if (sessionId != null) {
       setConfirming(true)
       try {
         await closeSession(sessionId, activeId)
@@ -147,8 +160,30 @@ export function TopPicksPage() {
               )}
             </div>
           </>
+        ) : isLoading ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-text-muted">
+            <Spinner size="md" />
+            <p className="text-sm">Finding the group's picks…</p>
+          </div>
+        ) : isError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            <p className="text-sm font-medium text-text">Couldn't load results</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              Something went wrong fetching the group's picks. Give it another try.
+            </p>
+            <Button variant="primary" size="sm" onClick={() => void loadRecommendation()}>
+              Retry
+            </Button>
+          </div>
         ) : (
-          <p className="p-6 text-text-muted">Loading picks…</p>
+          // Empty: a recommendation came back with nothing that matches the group.
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+            <p className="text-sm font-medium text-text">No matching spots found</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              We couldn't find restaurants that fit everyone's budget and location. Try a
+              wider budget or a more central meeting spot next time.
+            </p>
+          </div>
         )}
       </div>
     </div>

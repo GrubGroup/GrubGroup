@@ -6,7 +6,7 @@ import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { NewGroupModal } from '@/components/session/NewGroupModal'
 import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore } from '@/stores/groupsStore'
-import { MOCK_MEMBER_COLORS } from '@/api/mock/session.mock'
+import { memberColor } from '@/constants/memberColors'
 
 // "How it works" steps — emoji tiles, mirroring the no-groups Figma reference.
 const HOW_IT_WORKS: { emoji: string; title: string; body: string }[] = [
@@ -44,7 +44,7 @@ const COMMUNITY_PICKS: { name: string; score: number; tags: string[] }[] = [
 
 // Small colored avatar initial, matching the member-identity colors.
 function MemberDot({ userId, name }: { userId: number; name: string }) {
-  const colorClass = MOCK_MEMBER_COLORS[userId] ?? 'member-purple'
+  const colorClass = memberColor(userId)
   const bg: Record<string, string> = {
     'member-purple': 'bg-member-purple',
     'member-pink': 'bg-member-pink',
