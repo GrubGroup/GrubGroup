@@ -4,7 +4,7 @@ import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCard'
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
 import { MenuList } from '@/components/restaurant/MenuList'
-import { Button, Spinner } from '@/components/ui'
+import { Button, Icon, Spinner } from '@/components/ui'
 import {
   useSessionStore,
   selectSession,
@@ -126,6 +126,13 @@ export function TopPicksPage() {
       {/* Center: ranked list */}
       <div className="flex w-[420px] shrink-0 flex-col overflow-y-auto border-r border-border bg-surface">
         <div className="px-4 pb-2 pt-4">
+          {/* Back to the group chat — same muted chevron style as Profile/Edit. */}
+          <button
+            onClick={() => go('group-chat')}
+            className="mb-2 flex items-center gap-1 text-sm text-text-muted hover:text-text"
+          >
+            <Icon name="chevron-left" size={14} /> Back
+          </button>
           <h1 className="font-display text-lg font-bold text-text">Top picks for your group</h1>
           <p className="text-xs text-text-muted">
             Matched to everyone's preferences · vote for your favorite
