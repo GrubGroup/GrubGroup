@@ -4,7 +4,16 @@ import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCa
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
 import { MenuList } from '@/components/restaurant/MenuList'
 import { Button, Spinner } from '@/components/ui'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useSessionStore,
+  selectSession,
+  selectActiveSessionId,
+  selectRecommendation,
+  selectRecommendationLoading,
+  selectRecommendationError,
+  selectVotes,
+  selectIsHost,
+} from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
@@ -13,17 +22,19 @@ import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
   const go = useNavStore((s) => s.go)
-  const session = useSessionStore((s) => s.session)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const recommendation = useSessionStore((s) => s.recommendation)
-  const recommendationLoading = useSessionStore((s) => s.recommendationLoading)
-  const recommendationError = useSessionStore((s) => s.recommendationError)
+  const groupId = useNavStore((s) => s.groupId)
+  // Session state is keyed by group — read THIS group's slice via selectors.
+  const session = useSessionStore(selectSession(groupId))
+  const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const recommendation = useSessionStore(selectRecommendation(groupId))
+  const recommendationLoading = useSessionStore(selectRecommendationLoading(groupId))
+  const recommendationError = useSessionStore(selectRecommendationError(groupId))
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
   const loadSession = useSessionStore((s) => s.load)
-  const votes = useSessionStore((s) => s.votes)
+  const votes = useSessionStore(selectVotes(groupId))
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
-  const isHost = useSessionStore((s) => s.isHost())
+  const isHost = useSessionStore(selectIsHost(groupId))
   const byId = useRestaurantStore((s) => s.byId)
   const restaurantsLoaded = useRestaurantStore((s) => s.loaded)
   const loadRestaurants = useRestaurantStore((s) => s.load)
@@ -33,18 +44,18 @@ export function TopPicksPage() {
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    if (USE_MOCK && !session) void loadSession(42, currentUserId)
+    if (USE_MOCK && !session) void loadSession(groupId, 42, currentUserId)
     if (!restaurantsLoaded) void loadRestaurants()
-  }, [session, loadSession, currentUserId, restaurantsLoaded, loadRestaurants])
+  }, [session, loadSession, currentUserId, groupId, restaurantsLoaded, loadRestaurants])
 
   useEffect(() => {
     // Fetch once when we have a session but no rec yet — and NOT while a fetch is
     // in flight or after it errored (else this loops). Retry is user-driven via
     // the error state's button; a live session:picks socket delivery also fills it.
     if (session && !recommendation && !recommendationLoading && !recommendationError) {
-      void loadRecommendation()
+      void loadRecommendation(groupId)
     }
-  }, [session, recommendation, recommendationLoading, recommendationError, loadRecommendation])
+  }, [session, recommendation, recommendationLoading, recommendationError, loadRecommendation, groupId])
 
   const picks = (recommendation?.items ?? [])
     .map((item) => {
@@ -71,7 +82,7 @@ export function TopPicksPage() {
 
   const handleConfirm = async () => {
     if (activeId == null || confirming) return
-    chooseRestaurant(activeId)
+    chooseRestaurant(groupId, activeId)
     const sessionId = activeSessionId ?? session?.id ?? null
     if (!USE_MOCK && sessionId != null) {
       setConfirming(true)
@@ -106,7 +117,7 @@ export function TopPicksPage() {
             pick={pick}
             selected={pick.restaurant_id === activeId}
             hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
-            onVote={() => castVote(pick.restaurant_id, currentUserId)}
+            onVote={() => castVote(groupId, pick.restaurant_id, currentUserId)}
             onSelect={() => setSelectedId(pick.restaurant_id)}
             showHours
           />
@@ -165,7 +176,7 @@ export function TopPicksPage() {
             <p className="max-w-xs text-xs text-text-muted">
               Something went wrong fetching the group's picks. Give it another try.
             </p>
-            <Button variant="primary" size="sm" onClick={() => void loadRecommendation()}>
+            <Button variant="primary" size="sm" onClick={() => void loadRecommendation(groupId)}>
               Retry
             </Button>
           </div>

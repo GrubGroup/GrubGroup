@@ -44,34 +44,51 @@ export function useSocket(groupId: number) {
       startedBy?: number | null
       at?: string
     }) => {
+      // Defense in depth: only handle a broadcast for the room this hook joined.
+      if (payload.groupId !== groupId) return
       useGroupChatStore.getState().receiveSessionStart(payload.groupId, payload.sessionId)
       if (payload.sessionId != null) {
         const store = useSessionStore.getState()
         // The host already set the session locally via the modal; others load it.
-        if (store.activeSessionId !== payload.sessionId) {
-          void store.load(payload.sessionId, currentUserId ?? store.currentUserId)
+        // Read THIS group's slice to tell the two apart.
+        if (store.byGroup[payload.groupId]?.activeSessionId !== payload.sessionId) {
+          void store.load(payload.groupId, payload.sessionId, currentUserId ?? store.currentUserId)
         } else {
           // Host path: the session is already adopted, so load() is skipped — but
           // the create response carried no member names. Hydrate the roster so the
           // host's own avatar/roster shows real names instead of "User N".
-          void store.hydrateMembers(payload.sessionId)
+          void store.hydrateMembers(payload.groupId, payload.sessionId)
         }
-        if (payload.at) store.setStartedAt(payload.at)
+        if (payload.at) store.setStartedAt(payload.groupId, payload.at)
       }
     }
     socket.on('session:start', handleSessionStart)
 
     // Live progress: a member finished sharing. Reconcile from the server counts
-    // so every client's progress bar + roster update from the echo.
+    // so every client's progress bar + roster update from the echo. The gateway
+    // stamps groupId + sessionId on this event (sessionsController.js), so we can
+    // attribute it to the RIGHT group's slice and reject a stale echo: only apply
+    // when it's for the room this hook joined AND matches that group's live
+    // session id — otherwise a member_done for group A, delivered during an A→B
+    // switch, could flip "you finished" in B.
     const handleMemberDone = (payload: {
+      groupId: number
+      sessionId: number
       doneCount: number
       total: number
       userId: number
       status: boolean
     }) => {
-      useSessionStore
-        .getState()
-        .applyProgress(payload.doneCount, payload.total, payload.userId, payload.status)
+      if (payload.groupId !== groupId) return
+      const store = useSessionStore.getState()
+      if (store.byGroup[payload.groupId]?.activeSessionId !== payload.sessionId) return
+      store.applyProgress(
+        payload.groupId,
+        payload.doneCount,
+        payload.total,
+        payload.userId,
+        payload.status,
+      )
     }
     socket.on('session:member_done', handleMemberDone)
 
@@ -84,7 +101,10 @@ export function useSocket(groupId: number) {
       recommendationId: number
       items: RecommendationItem[]
     }) => {
-      useSessionStore.getState().receivePicks({
+      // Defense in depth: only handle picks for the room this hook joined; then
+      // adopt them into THAT group's slice.
+      if (payload.groupId !== groupId) return
+      useSessionStore.getState().receivePicks(payload.groupId, {
         recommendationId: payload.recommendationId,
         sessionId: payload.sessionId,
         items: payload.items,

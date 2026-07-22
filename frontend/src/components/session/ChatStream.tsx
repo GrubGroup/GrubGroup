@@ -1,15 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { ChatMessage } from './ChatMessage'
 import { Icon } from '@/components/ui'
-import { useChatStore } from '@/stores/chatStore'
+import { useChatStore, selectChatMessages } from '@/stores/chatStore'
 
 export interface ChatStreamProps {
+  /** The group whose transcript to render (chat state is keyed by group). */
+  groupId: number
   /** When true, appends the "You're done · waiting for the group" pill in-stream. */
   done?: boolean
 }
 
-export function ChatStream({ done = false }: ChatStreamProps) {
-  const messages = useChatStore((s) => s.messages)
+export function ChatStream({ groupId, done = false }: ChatStreamProps) {
+  const messages = useChatStore(selectChatMessages(groupId))
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

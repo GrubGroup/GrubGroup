@@ -18,7 +18,18 @@ import {
 } from '@/api/mock/groupChatMock'
 import { MOCK_MEMBER_COLORS, MOCK_MEMBER_NAMES } from '@/api/mock/sessionMock'
 import { nameForMember } from '@/utils/memberName'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useSessionStore,
+  selectMembers,
+  selectDoneCount,
+  selectProgressTotal,
+  selectSession,
+  selectActiveSessionId,
+  selectRecommendation,
+  selectPhase,
+  selectStartedAt,
+} from '@/stores/sessionStore'
+import { fetchCurrentGroupSession } from '@/api/groupsApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
@@ -43,17 +54,20 @@ export function GroupChatPage() {
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
   const groupId = useNavStore((s) => s.groupId)
-  const members = useSessionStore((s) => s.members)
-  const doneCount = useSessionStore((s) => s.doneCount())
-  const progressTotal = useSessionStore((s) => s.progressTotal())
-  const sessionObj = useSessionStore((s) => s.session)
-  const recommendation = useSessionStore((s) => s.recommendation)
-  const phase = useSessionStore((s) => s.phase)
+  // Session state is keyed by group — read THIS group's slice via selectors.
+  const members = useSessionStore(selectMembers(groupId))
+  const doneCount = useSessionStore(selectDoneCount(groupId))
+  const progressTotal = useSessionStore(selectProgressTotal(groupId))
+  const sessionObj = useSessionStore(selectSession(groupId))
+  const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const recommendation = useSessionStore(selectRecommendation(groupId))
+  const phase = useSessionStore(selectPhase(groupId))
+  const startedAt = useSessionStore(selectStartedAt(groupId))
   const join = useSessionStore((s) => s.join)
   const loadSession = useSessionStore((s) => s.load)
+  const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
   const setSession = useSessionStore((s) => s.setSession)
   const hydrateMembers = useSessionStore((s) => s.hydrateMembers)
-  const startedAt = useSessionStore((s) => s.startedAt)
   const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 1)
 
@@ -85,10 +99,40 @@ export function GroupChatPage() {
 
   useEffect(() => {
     // Mock mode seeds a demo session/roster (id 42) so the card renders offline.
-    // In live mode the roster is populated when a session is created/adopted via
-    // the socket, so we don't hit a real session id that the user may not be in.
-    if (USE_MOCK && members.length === 0) void loadSession(42, currentUserId)
-  }, [members.length, loadSession, currentUserId])
+    // `members` is now this group's own slice, so `members.length === 0` means
+    // "this group has no session yet" — each mock group gets its own independent
+    // copy of the demo session, so progress/results diverge per group. In live mode
+    // the roster is populated when a session is created/adopted via the socket (or
+    // rebound on reload, below), so we don't hit a session id the user isn't in.
+    if (USE_MOCK && members.length === 0) {
+      void loadSession(groupId, 42, currentUserId)
+    }
+  }, [members.length, loadSession, currentUserId, groupId])
+
+  useEffect(() => {
+    // Live-mode reload survival: on a fresh page load the socket `session:start`
+    // was already missed and isn't replayed on join, so an in-progress session
+    // would otherwise vanish. If THIS group's slice has no active session yet, ask
+    // the gateway for the group's current OPEN session and rebind it — reusing the
+    // same load()/loadRecommendation() the socket path uses, plus receiveSessionStart
+    // so the inline card renders. Returns null (→ no-op) when the group has none.
+    // The effect is keyed on activeSessionId, so once bound it won't re-fetch, and a
+    // null result leaves the deps unchanged → no loop.
+    if (USE_MOCK || activeSessionId != null) return
+    let cancelled = false
+    void (async () => {
+      const session = await fetchCurrentGroupSession(groupId)
+      if (cancelled || session == null) return
+      await loadSession(groupId, session.id, currentUserId)
+      // Place the inline card at the current end of the (reloaded) backlog.
+      receiveSessionStart(groupId, session.id)
+      // Pull any already-generated results so a completed session rebinds its card.
+      void loadRecommendation(groupId)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSessionId, groupId, currentUserId, loadSession, loadRecommendation, receiveSessionStart])
 
   useEffect(() => {
     // Mock demo bootstrap: the socket is disabled offline, so nothing seeds the
@@ -124,6 +168,8 @@ export function GroupChatPage() {
   //   waiting  → this user finished but the group hasn't. Shows "Waiting for
   //     others" (#6).
   //   else     → the screen-derived state (continue if mid-session, else Join).
+  // All reads above are THIS group's own slice (keyed store), so there is nothing
+  // from another group to leak — no group gate needed.
   const allDone = total > 0 && doneCount === total
   const isComplete = recommendation != null || allDone || sessionObj?.closed_at != null
   const iAmDone =
@@ -143,7 +189,7 @@ export function GroupChatPage() {
   // broadcast session:start WITH its id so every member's client can adopt it and
   // share one countdown. The inline card appears via the server echo.
   const handleSessionCreated = (session: Session) => {
-    setSession(session, currentUserId)
+    setSession(groupId, session, currentUserId)
     startSession(groupId, session.id)
     // Live: the card appears via the server's session:start echo. Mock: the
     // socket is null, so drop the card inline locally.
@@ -151,12 +197,12 @@ export function GroupChatPage() {
     // Live: the create response has no member names, and the host skips the
     // session:start load() — so fetch the name-carrying roster now, else the
     // host's own avatar/roster shows "User N"/"U1".
-    else void hydrateMembers(session.id)
+    else void hydrateMembers(groupId, session.id)
     setHostModalOpen(false)
   }
 
   const handleJoin = () => {
-    join()
+    join(groupId)
     go('agent-chat')
   }
 
@@ -230,7 +276,10 @@ export function GroupChatPage() {
             <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} members={members} />
           ))}
 
-          {/* Session-started divider + card — inline at the point the user started it */}
+          {/* Session-started divider + card — inline at the point the user started
+              it. `sessionStartIndex` is already per-group (groupChatStore), and the
+              session state read above is this group's own slice, so the card only
+              ever reflects THIS group's session. */}
           {sessionStartIndex !== null && (
             <>
               <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
@@ -249,7 +298,7 @@ export function GroupChatPage() {
                 onJoin={handleJoin}
                 onContinue={() => go('agent-chat')}
                 onViewResults={() => go('top-picks')}
-                onExpire={() => void triggerExpiryGeneration()}
+                onExpire={() => void triggerExpiryGeneration(groupId)}
                 onReview={() => go('agent-chat-done')}
               />
 

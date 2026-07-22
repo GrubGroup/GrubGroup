@@ -1,10 +1,15 @@
 import { Icon } from '@/components/ui'
-import { useChatStore } from '@/stores/chatStore'
+import { useChatStore, selectNotedPreferences } from '@/stores/chatStore'
+
+export interface NotedSoFarPanelProps {
+  /** The group whose noted preferences to render (chat state is keyed by group). */
+  groupId: number
+}
 
 // "Noted so far" — captured preferences as white cards with a check (or a
 // hollow dot for pending items), matching the wireframe.
-export function NotedSoFarPanel() {
-  const noted = useChatStore((s) => s.notedPreferences)
+export function NotedSoFarPanel({ groupId }: NotedSoFarPanelProps) {
+  const noted = useChatStore(selectNotedPreferences(groupId))
 
   return (
     <div className="flex flex-col gap-3">

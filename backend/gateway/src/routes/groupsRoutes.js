@@ -11,6 +11,7 @@ import {
   listMessages,
   postMessage,
   listGroupSessions,
+  getCurrentGroupSession,
   listGroupEvents,
 } from '../controllers/groupsController.js';
 
@@ -28,6 +29,9 @@ router.delete('/:group_id/members/:user_id', removeMember);
 router.get('/:group_id/messages', listMessages);
 router.post('/:group_id/messages', postMessage);
 
+// `/sessions/current` before `/sessions` — distinct paths, but keep the specific
+// one first for clarity. Used to rebind an in-progress session on page reload.
+router.get('/:group_id/sessions/current', getCurrentGroupSession);
 router.get('/:group_id/sessions', listGroupSessions);
 router.get('/:group_id/events', listGroupEvents);
 

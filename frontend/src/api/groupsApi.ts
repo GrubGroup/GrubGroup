@@ -1,4 +1,4 @@
-import type { Group, GroupDetail, GroupMember } from '@/types'
+import type { Group, GroupDetail, GroupMember, Session } from '@/types'
 import { USE_MOCK } from '@/lib/env'
 import { api } from '@/lib/axios'
 import { MOCK_GROUPS } from './mock/groupsMock'
@@ -56,6 +56,16 @@ const MOCK_GROUP_MEMBERS: GroupMember[] = Object.entries(MOCK_MEMBER_NAMES).map(
   avatar_url: null,
   joined_at: MOCK_JOINED_AT,
 }))
+
+// The group's current OPEN session, or null when none is in progress. Used to
+// rebind an in-progress session on page reload — the socket `session:start` was
+// already missed and isn't replayed on join. Mock mode has no persistence, so it
+// returns null (the mock demo session is seeded locally via loadSession instead).
+export async function fetchCurrentGroupSession(groupId: number): Promise<Session | null> {
+  if (USE_MOCK) return null
+  const { data } = await api.get<Session | null>(`/groups/${groupId}/sessions/current`)
+  return data
+}
 
 // Group detail with its member list (joined to User).
 export async function fetchGroup(groupId: number): Promise<GroupDetail> {
