@@ -1,4 +1,5 @@
 import { ChatMessage } from './ChatMessage'
+import { AgentTypingBubble } from './AgentTypingBubble'
 import { Icon } from '@/components/ui'
 import { useChatStore } from '@/stores/chatStore'
 import { useScrollToBottom } from '@/hooks/useScrollToBottom'
@@ -11,9 +12,13 @@ export interface ChatStreamProps {
 
 export function ChatStream({ done = false }: ChatStreamProps) {
   const messages = useChatStore((s) => s.messages)
-  // +1 on send/reply → smooth; the "done" pill is not a message, so fold it into
-  // the count so appending it still nudges to the bottom.
-  const endRef = useScrollToBottom<HTMLDivElement>(messages.length + (done ? 1 : 0))
+  // The agent is composing a reply — show the "…" typing bubble until it lands.
+  const sending = useChatStore((s) => s.sending)
+  // +1 on send/reply → smooth; the "done" pill and the typing bubble aren't
+  // messages, so fold them into the count so appending either nudges to bottom.
+  const endRef = useScrollToBottom<HTMLDivElement>(
+    messages.length + (done ? 1 : 0) + (sending ? 1 : 0),
+  )
   // Only genuinely new messages pop; the opening history renders static.
   const newIds = useNewItemIds(messages.map((m) => m.id))
 
@@ -22,6 +27,8 @@ export function ChatStream({ done = false }: ChatStreamProps) {
       {messages.map((m) => (
         <ChatMessage key={m.id} message={m} isNew={newIds.has(m.id)} />
       ))}
+      {/* Food agent typing "…" while its analyze reply is in flight. */}
+      <AgentTypingBubble visible={sending} />
       {done && (
         <div className="flex justify-center pt-1">
           <span className="flex items-center gap-2 rounded-pill border border-border bg-surface-raised px-4 py-2 text-sm text-text-muted shadow-sm">
