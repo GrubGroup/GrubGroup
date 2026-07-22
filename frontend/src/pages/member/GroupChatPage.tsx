@@ -1,28 +1,44 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import type { Session } from '@/types'
+import { EASE } from '@/lib/motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { GroupMessageRow } from '@/components/session/GroupMessageRow'
 import { SessionCard } from '@/components/session/SessionCard'
 import { GroupDetailPanel } from '@/components/session/GroupDetailPanel'
 import { HostSessionModal } from '@/components/session/HostSessionModal'
-import { Avatar, Icon } from '@/components/ui'
+import { Avatar, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { TypingIndicator } from '@/components/session/TypingIndicator'
 import { cn } from '@/utils/cn'
 import { memberColor } from '@/constants/memberColors'
 import { nameForMember } from '@/utils/memberName'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useSessionStore,
+  selectMembers,
+  selectDoneCount,
+  selectProgressTotal,
+  selectSession,
+  selectActiveSessionId,
+  selectRecommendation,
+  selectPhase,
+  selectStartedAt,
+} from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useGroupsStore, mostRecentGroup } from '@/stores/groupsStore'
 import {
   useGroupChatStore,
   selectGroupMessages,
+  selectHistoryLoaded,
   selectSessionStartIndex,
   selectTypers,
 } from '@/stores/groupChatStore'
+import { fetchCurrentGroupSession } from '@/api/groupsApi'
 import { useSocket } from '@/hooks/useSocket'
+import { useScrollToBottom } from '@/hooks/useScrollToBottom'
+import { useNewItemIds } from '@/hooks/useNewItemIds'
 
 // Card state derives from which group-chat screen we're on.
 const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'complete'> = {
@@ -33,29 +49,48 @@ const CARD_STATE: Record<string, 'not-joined' | 'continue' | 'waiting' | 'comple
 }
 
 export function GroupChatPage() {
+  const reduce = useReducedMotion()
   const screen = useNavStore((s) => s.screen)
   const go = useNavStore((s) => s.go)
   const setGroup = useNavStore((s) => s.setGroup)
   const groupId = useNavStore((s) => s.groupId)
-  const members = useSessionStore((s) => s.members)
-  const doneCount = useSessionStore((s) => s.doneCount())
-  const progressTotal = useSessionStore((s) => s.progressTotal())
-  const sessionObj = useSessionStore((s) => s.session)
-  const recommendation = useSessionStore((s) => s.recommendation)
-  const phase = useSessionStore((s) => s.phase)
+  // Session state is keyed by group — read THIS group's slice via selectors.
+  const members = useSessionStore(selectMembers(groupId))
+  const doneCount = useSessionStore(selectDoneCount(groupId))
+  const progressTotal = useSessionStore(selectProgressTotal(groupId))
+  const sessionObj = useSessionStore(selectSession(groupId))
+  const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const recommendation = useSessionStore(selectRecommendation(groupId))
+  const phase = useSessionStore(selectPhase(groupId))
   const join = useSessionStore((s) => s.join)
+  const loadSession = useSessionStore((s) => s.load)
+  const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
   const setSession = useSessionStore((s) => s.setSession)
   const hydrateMembers = useSessionStore((s) => s.hydrateMembers)
-  const startedAt = useSessionStore((s) => s.startedAt)
+  const startedAt = useSessionStore(selectStartedAt(groupId))
   const triggerExpiryGeneration = useSessionStore((s) => s.triggerExpiryGeneration)
   const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
 
-  // Live group chat: connect + join the selected room over the socket.
-  useSocket(groupId)
+  // Resolve membership BEFORE connecting the socket, so we never join a room the
+  // user isn't in — a group counts only if it's in the loaded list. groupId 0 is
+  // the no-group sentinel (see navStore).
+  const groups = useGroupsStore((s) => s.groups)
+  const groupsLoaded = useGroupsStore((s) => s.loaded)
+  const loadGroups = useGroupsStore((s) => s.load)
+  const group = groups.find((g) => g.id === groupId)
+  const groupName = group?.name ?? 'Group'
+  const isMember = groupId > 0 && !!group
+
+  // Live group chat: connect + join the selected room. Only join a room the user
+  // actually belongs to — pass 0 otherwise (useSocket skips the join for a
+  // non-positive id).
+  useSocket(isMember ? groupId : 0)
   const messages = useGroupChatStore(selectGroupMessages(groupId))
+  const historyLoaded = useGroupChatStore(selectHistoryLoaded(groupId))
   const sendMessage = useGroupChatStore((s) => s.sendMessage)
   const startSession = useGroupChatStore((s) => s.startSession)
   const clearSessionStart = useGroupChatStore((s) => s.clearSessionStart)
+  const receiveSessionStart = useGroupChatStore((s) => s.receiveSessionStart)
   const setTyping = useGroupChatStore((s) => s.setTyping)
   const typers = useGroupChatStore(selectTypers(groupId))
 
@@ -64,15 +99,66 @@ export function GroupChatPage() {
   // client shows the card inline at the same point. Broadcasts to the whole room.
   const sessionStartIndex = useGroupChatStore(selectSessionStartIndex(groupId))
 
-  const groups = useGroupsStore((s) => s.groups)
-  const loadGroups = useGroupsStore((s) => s.load)
-  const group = groups.find((g) => g.id === groupId)
-  const groupName = group?.name ?? 'Group'
+  // Auto-scroll to newest. Opening a chat (or switching groups via the groupId
+  // reset key, or the initial socket history bulk-load) jumps to the bottom
+  // instantly; a single new item (echo lands, +1) smooth-scrolls into view.
+  // The count sums EVERY thing that renders in the stream so any new item pushes
+  // the view down: chat + system messages (both in `messages`), the typing
+  // bubble, and the "started a session" card — which is placed via an index, not
+  // a message, so it must be folded in explicitly or a new session wouldn't scroll.
+  const endRef = useScrollToBottom<HTMLDivElement>(
+    messages.length + typers.length + (sessionStartIndex !== null ? 1 : 0),
+    groupId,
+  )
+  // Only messages that just arrived pop in; opening/switching a group renders the
+  // existing history static (keyed by groupId so a switch resets the "seen" set).
+  const newIds = useNewItemIds(messages.map((m) => m.id), groupId)
 
   // Group-detail (edit) panel visibility.
   const [editing, setEditing] = useState(false)
   // Host pre-session setup modal.
   const [hostModalOpen, setHostModalOpen] = useState(false)
+
+  // Redirect a user who has no valid selected group to the empty-groups screen —
+  // but only once the list has loaded, so an in-flight/empty list doesn't bounce
+  // a valid member off their chat.
+  useEffect(() => {
+    if (groupsLoaded && !isMember) go('empty-groups')
+  }, [groupsLoaded, isMember, go])
+
+  // Reload survival: on a fresh page load the socket `session:start` was already
+  // missed and isn't replayed on join, so an in-progress session would otherwise
+  // vanish. If THIS group's slice has no active session yet, ask the gateway for
+  // the group's current OPEN session and rebind it — reusing the same
+  // load()/loadRecommendation() the socket path uses, plus receiveSessionStart so
+  // the inline card renders. Returns null (→ no-op) when the group has none; keyed
+  // on activeSessionId so once bound it won't re-fetch.
+  useEffect(() => {
+    if (!isMember || activeSessionId != null) return
+    let cancelled = false
+    void (async () => {
+      const session = await fetchCurrentGroupSession(groupId)
+      if (cancelled || session == null) return
+      await loadSession(groupId, session.id, currentUserId)
+      receiveSessionStart(groupId, session.id)
+      void loadRecommendation(groupId)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    isMember,
+    activeSessionId,
+    groupId,
+    currentUserId,
+    loadSession,
+    loadRecommendation,
+    receiveSessionStart,
+  ])
+
+  // History loads async over the socket (chat:history) after joining. Show a
+  // loader until it arrives.
+  const loadingHistory = isMember && groupId > 0 && !historyLoaded
 
   const memberIds = members.map((m) => m.user_id)
   const total = progressTotal || members.length || 0
@@ -115,18 +201,18 @@ export function GroupChatPage() {
     // completes — otherwise the new session inherits the old card position and
     // stale picks.
     clearSessionStart(groupId)
-    setSession(session, currentUserId)
+    setSession(groupId, session, currentUserId)
     startSession(groupId, session.id)
     // The card appears via the server's session:start echo. The create response
     // has no member names, and the host skips the session:start load() — so fetch
     // the name-carrying roster now, else the host's own avatar/roster shows
     // "User N"/"U1".
-    void hydrateMembers(session.id)
+    void hydrateMembers(groupId, session.id)
     setHostModalOpen(false)
   }
 
   const handleJoin = () => {
-    join()
+    join(groupId)
     go('agent-chat')
   }
 
@@ -143,6 +229,10 @@ export function GroupChatPage() {
     }
   }
 
+  // Paint guard (after all hooks): don't render group 7 / a foreign room for the
+  // frame before the redirect effect fires.
+  if (!isMember) return null
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface-raised">
       <GroupsSidebar />
@@ -153,20 +243,34 @@ export function GroupChatPage() {
         <div className={cn('flex items-center justify-between border-b border-border px-5', COLUMN_HEADER_H)}>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-display text-[15px] font-bold text-text">{groupName}</span>
+              <span className="font-display text-item-title font-bold text-text">{groupName}</span>
+              {/* Overlapping member stack — a newly added member pops into the
+                  cluster (spring scale-in) when the roster grows. */}
               <div className="flex -space-x-1.5">
-                {memberIds.slice(0, 5).map((id) => (
-                  <Avatar
-                    key={id}
-                    name={nameForMember(id, members)}
-                    size="sm"
-                    colorClass={memberColor(id)}
-                    className="h-4 w-4 border border-surface-raised text-[7px]"
-                  />
-                ))}
+                <AnimatePresence initial={false}>
+                  {memberIds.slice(0, 5).map((id) => (
+                    <motion.span
+                      key={id}
+                      layout={!reduce}
+                      initial={{ opacity: 0, scale: reduce ? 1 : 0.4 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: reduce ? 1 : 0.4 }}
+                      transition={
+                        reduce ? { duration: 0.15 } : { type: 'spring', stiffness: 520, damping: 26 }
+                      }
+                    >
+                      <Avatar
+                        name={nameForMember(id, members)}
+                        size="sm"
+                        colorClass={memberColor(id)}
+                        className="h-4 w-4 border border-surface-raised text-[7px]"
+                      />
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
-            <p className="text-xs text-text-muted">
+            <p className="text-caption text-text-muted">
               {memberCount} members
               {/* "Session active" only while a live session is in progress — not
                   before one starts, and not once it's complete. */}
@@ -190,7 +294,7 @@ export function GroupChatPage() {
             </button>
             <button
               onClick={() => setEditing(true)}
-              className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-sunken"
+              className="flex items-center gap-1.5 rounded-input border border-border px-3 py-1.5 text-caption font-medium text-text hover:bg-surface-sunken"
             >
               <Icon name="users" size={12} /> Edit group
             </button>
@@ -199,40 +303,69 @@ export function GroupChatPage() {
 
         {/* Messages */}
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+          {loadingHistory ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted">
+              <Spinner size="md" />
+              <span className="text-caption">Loading messages…</span>
+            </div>
+          ) : (
+          <>
           {/* Messages that existed before the session started */}
           {(sessionStartIndex === null ? messages : messages.slice(0, sessionStartIndex)).map((m) => (
-            <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} members={members} />
+            <GroupMessageRow
+              key={m.id}
+              message={m}
+              currentUserId={currentUserId}
+              members={members}
+              isNew={newIds.has(m.id)}
+            />
           ))}
 
           {/* Session-started divider + card — inline at the point the user started it */}
           {sessionStartIndex !== null && (
             <>
-              <div className="flex items-center gap-3 py-1 text-xs text-text-muted">
-                <span className="h-px flex-1 bg-border" />
-                {nameForMember(sessionObj?.host_user_id ?? 0, members)} started a
-                session
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              <SessionCard
-                state={cardState}
-                members={members}
-                readyCount={cardState === 'complete' ? total : doneCount}
-                total={total}
-                startedAt={startedAt}
-                minutes={sessionObj?.time_limit}
-                onJoin={handleJoin}
-                onContinue={() => go('agent-chat')}
-                onViewResults={() => go('top-picks')}
-                onExpire={() => void triggerExpiryGeneration()}
-                onReview={() => go('agent-chat-done')}
-              />
+              {/* The session announcement rises into the transcript like a message. */}
+              <motion.div
+                className="flex flex-col gap-3"
+                initial={{ opacity: 0, y: reduce ? 0 : 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: reduce ? 0.2 : 0.3, ease: EASE }}
+              >
+                <div className="flex items-center gap-3 py-1 text-caption text-text-muted">
+                  <span className="h-px flex-1 bg-border" />
+                  {nameForMember(sessionObj?.host_user_id ?? 0, members)} started a session
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <SessionCard
+                  state={cardState}
+                  members={members}
+                  readyCount={cardState === 'complete' ? total : doneCount}
+                  total={total}
+                  startedAt={startedAt}
+                  minutes={sessionObj?.time_limit}
+                  onJoin={handleJoin}
+                  onContinue={() => go('agent-chat')}
+                  onViewResults={() => go('top-picks')}
+                  onExpire={() => void triggerExpiryGeneration(groupId)}
+                  onReview={() => go('agent-chat-done')}
+                />
+              </motion.div>
 
               {/* Messages that arrived after the session started */}
               {messages.slice(sessionStartIndex).map((m) => (
-                <GroupMessageRow key={m.id} message={m} currentUserId={currentUserId} members={members} />
+                <GroupMessageRow
+                  key={m.id}
+                  message={m}
+                  currentUserId={currentUserId}
+                  members={members}
+                  isNew={newIds.has(m.id)}
+                />
               ))}
             </>
           )}
+          </>
+          )}
+          <div ref={endRef} />
         </div>
 
         {/* Live "… is typing" bubble, pinned just above the composer */}

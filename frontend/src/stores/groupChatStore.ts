@@ -29,6 +29,9 @@ interface TypingUpdate {
 
 interface GroupChatState {
   messagesByGroup: Record<number, GroupMessage[]>
+  // Per group: true once the persisted backlog (chat:history) has been received,
+  // so the UI can tell "still loading history" from "loaded, no messages".
+  historyLoadedByGroup: Record<number, boolean>
   // Per group: index in the message list where the session card belongs, or null
   // if no session has started. null = not started.
   sessionStartIndexByGroup: Record<number, number | null>
@@ -58,6 +61,7 @@ const EMPTY_TYPERS: Typer[] = []
 
 export const useGroupChatStore = create<GroupChatState>((set) => ({
   messagesByGroup: {},
+  historyLoadedByGroup: {},
   sessionStartIndexByGroup: {},
   typingByGroup: {},
 
@@ -83,6 +87,7 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
         ...s.messagesByGroup,
         [groupId]: messages.filter((m) => m.type !== 'session_block'),
       },
+      historyLoadedByGroup: { ...s.historyLoadedByGroup, [groupId]: true },
     })),
 
   sendMessage: (groupId, text) => {
@@ -136,6 +141,10 @@ export const useGroupChatStore = create<GroupChatState>((set) => ({
 // Selector helper: returns the stable EMPTY array when a group has no messages.
 export const selectGroupMessages = (groupId: number) => (s: GroupChatState) =>
   s.messagesByGroup[groupId] ?? EMPTY
+
+// Selector: whether this group's persisted backlog has been received yet.
+export const selectHistoryLoaded = (groupId: number) => (s: GroupChatState) =>
+  s.historyLoadedByGroup[groupId] ?? false
 
 // Selector: the message index where the session card belongs, or null.
 export const selectSessionStartIndex = (groupId: number) => (s: GroupChatState) =>

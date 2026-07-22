@@ -1,27 +1,41 @@
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { GroupsSidebar } from '@/components/session/GroupsSidebar'
 import { RankedRestaurantCard } from '@/components/restaurant/RankedRestaurantCard'
 import { RestaurantHeader } from '@/components/restaurant/RestaurantHeader'
 import { MenuList } from '@/components/restaurant/MenuList'
 import { Button, Spinner } from '@/components/ui'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useSessionStore,
+  selectSession,
+  selectActiveSessionId,
+  selectRecommendation,
+  selectRecommendationLoading,
+  selectRecommendationError,
+  selectVotes,
+  selectIsHost,
+} from '@/stores/sessionStore'
 import { useRestaurantStore } from '@/stores/restaurantStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
+import { EASE } from '@/lib/motion'
 import { closeSession } from '@/api/sessionApi'
 
 export function TopPicksPage() {
+  const reduce = useReducedMotion()
   const go = useNavStore((s) => s.go)
-  const session = useSessionStore((s) => s.session)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const recommendation = useSessionStore((s) => s.recommendation)
-  const recommendationLoading = useSessionStore((s) => s.recommendationLoading)
-  const recommendationError = useSessionStore((s) => s.recommendationError)
+  const groupId = useNavStore((s) => s.groupId)
+  // Session state is keyed by group — read THIS group's slice via selectors.
+  const session = useSessionStore(selectSession(groupId))
+  const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const recommendation = useSessionStore(selectRecommendation(groupId))
+  const recommendationLoading = useSessionStore(selectRecommendationLoading(groupId))
+  const recommendationError = useSessionStore(selectRecommendationError(groupId))
   const loadRecommendation = useSessionStore((s) => s.loadRecommendation)
-  const votes = useSessionStore((s) => s.votes)
+  const votes = useSessionStore(selectVotes(groupId))
   const castVote = useSessionStore((s) => s.castVote)
   const chooseRestaurant = useSessionStore((s) => s.chooseRestaurant)
-  const isHost = useSessionStore((s) => s.isHost())
+  const isHost = useSessionStore(selectIsHost(groupId))
   const byId = useRestaurantStore((s) => s.byId)
   const restaurantsLoaded = useRestaurantStore((s) => s.loaded)
   const loadRestaurants = useRestaurantStore((s) => s.load)
@@ -39,9 +53,9 @@ export function TopPicksPage() {
     // in flight or after it errored (else this loops). Retry is user-driven via
     // the error state's button; a live session:picks socket delivery also fills it.
     if (session && !recommendation && !recommendationLoading && !recommendationError) {
-      void loadRecommendation()
+      void loadRecommendation(groupId)
     }
-  }, [session, recommendation, recommendationLoading, recommendationError, loadRecommendation])
+  }, [session, recommendation, recommendationLoading, recommendationError, loadRecommendation, groupId])
 
   const picks = (recommendation?.items ?? [])
     .map((item) => {
@@ -68,7 +82,7 @@ export function TopPicksPage() {
 
   const handleConfirm = async () => {
     if (activeId == null || confirming) return
-    chooseRestaurant(activeId)
+    chooseRestaurant(groupId, activeId)
     const sessionId = activeSessionId ?? session?.id ?? null
     if (sessionId != null) {
       setConfirming(true)
@@ -84,6 +98,27 @@ export function TopPicksPage() {
     go('session-complete')
   }
 
+  // While the group's picks are still being fetched/generated, take over the whole
+  // results area (everything right of the sidebar) with a single contained loading
+  // screen — the GrubGroup loading circle — instead of an empty list beside a small
+  // panel spinner. The sidebar stays put so the app frame never flickers.
+  if (isLoading) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-surface">
+        <GroupsSidebar />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-text-muted">
+          <Spinner size="lg" className="text-primary" />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <p className="text-sm font-medium text-text">Finding the group's picks…</p>
+            <p className="max-w-xs text-xs text-text-muted">
+              Matching everyone's preferences, budget, and location. This can take a moment.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
       <GroupsSidebar />
@@ -97,16 +132,22 @@ export function TopPicksPage() {
           </p>
         </div>
         {picks.map((pick, i) => (
-          <RankedRestaurantCard
+          <motion.div
             key={pick.restaurant_id}
-            rank={i + 1}
-            pick={pick}
-            selected={pick.restaurant_id === activeId}
-            hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
-            onVote={() => castVote(pick.restaurant_id, currentUserId)}
-            onSelect={() => setSelectedId(pick.restaurant_id)}
-            showHours
-          />
+            initial={{ opacity: 0, y: reduce ? 0 : 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduce ? 0.2 : 0.4, delay: reduce ? 0 : i * 0.07, ease: EASE }}
+          >
+            <RankedRestaurantCard
+              rank={i + 1}
+              pick={pick}
+              selected={pick.restaurant_id === activeId}
+              hasVoted={(votes[pick.restaurant_id] ?? []).includes(currentUserId)}
+              onVote={() => castVote(groupId, pick.restaurant_id, currentUserId)}
+              onSelect={() => setSelectedId(pick.restaurant_id)}
+              showHours
+            />
+          </motion.div>
         ))}
       </div>
 
@@ -151,18 +192,13 @@ export function TopPicksPage() {
               )}
             </div>
           </>
-        ) : isLoading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-text-muted">
-            <Spinner size="md" />
-            <p className="text-sm">Finding the group's picks…</p>
-          </div>
         ) : isError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
             <p className="text-sm font-medium text-text">Couldn't load results</p>
             <p className="max-w-xs text-xs text-text-muted">
               Something went wrong fetching the group's picks. Give it another try.
             </p>
-            <Button variant="primary" size="sm" onClick={() => void loadRecommendation()}>
+            <Button variant="primary" size="sm" onClick={() => void loadRecommendation(groupId)}>
               Retry
             </Button>
           </div>

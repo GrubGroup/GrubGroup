@@ -1,5 +1,4 @@
 import { Button, Chip } from '@/components/ui'
-import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
 import { DIETARY_RESTRICTIONS, isAllergen } from '@/constants/dietary'
 import { useProfileStore } from '@/stores/profileStore'
 import { useNavStore } from '@/stores/navStore'
@@ -11,7 +10,10 @@ import { useEffect } from 'react'
 const DIET_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => !isAllergen(o.value))
 const ALLERGEN_OPTIONS = DIETARY_RESTRICTIONS.filter((o) => isAllergen(o.value))
 
-export function Onboarding1() {
+// Onboarding step 1 content (dietary needs). Rendered inside AuthFlowShell,
+// which owns the brand panel, progress ticks, title/subtitle, and the slide
+// transition — this component is just the right-panel form + footer.
+export function DietaryStep() {
   const go = useNavStore((s) => s.go)
   const profile = useProfileStore((s) => s.profile)
   const load = useProfileStore((s) => s.load)
@@ -23,12 +25,7 @@ export function Onboarding1() {
   }, [profile, load])
 
   return (
-    <OnboardingLayout
-      step={1}
-      total={4}
-      title="Any dietary needs?"
-      subtitle="Set once — the AI remembers for every session. You'll never be asked again."
-    >
+    <>
       <div className="flex flex-wrap gap-2">
         {DIET_OPTIONS.map((opt) => (
           <Chip
@@ -41,7 +38,7 @@ export function Onboarding1() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Allergies
         </span>
         <div className="flex flex-wrap gap-2">
@@ -64,6 +61,6 @@ export function Onboarding1() {
           Skip
         </Button>
       </div>
-    </OnboardingLayout>
+    </>
   )
 }

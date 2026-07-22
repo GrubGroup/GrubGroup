@@ -8,8 +8,22 @@ import { VoiceComposer } from '@/components/voice/VoiceComposer'
 import { Button, Icon, Spinner } from '@/components/ui'
 import { COLUMN_HEADER_H } from '@/components/layout/AppSidebar'
 import { cn } from '@/utils/cn'
-import { useChatStore } from '@/stores/chatStore'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useChatStore,
+  selectChatMessages,
+  selectChatSessionId,
+  selectSending,
+  selectMissingSignals,
+  selectIsComplete,
+} from '@/stores/chatStore'
+import {
+  useSessionStore,
+  selectPhase,
+  selectDoneCount,
+  selectProgressTotal,
+  selectRecommendation,
+  selectActiveSessionId,
+} from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavStore } from '@/stores/navStore'
 import { useSocket } from '@/hooks/useSocket'
@@ -17,27 +31,29 @@ import { setReady } from '@/api/sessionApi'
 import { chipsForMissing } from '@/constants/agentChat'
 
 export function AgentChatPage() {
-  const messages = useChatStore((s) => s.messages)
-  const seed = useChatStore((s) => s.seed)
-  const chatSessionId = useChatStore((s) => s.sessionId)
-  const sendUserMessage = useChatStore((s) => s.sendUserMessage)
-  const adoptSessionId = useChatStore((s) => s.adoptSessionId)
-  const sending = useChatStore((s) => s.sending)
-  const missingSignals = useChatStore((s) => s.missingSignals)
-  const isComplete = useChatStore((s) => s.isComplete)
-
-  const phase = useSessionStore((s) => s.phase)
-  const setPhase = useSessionStore((s) => s.setPhase)
-  const setMemberDone = useSessionStore((s) => s.setMemberDone)
-  const doneCount = useSessionStore((s) => s.doneCount())
-  const progressTotal = useSessionStore((s) => s.progressTotal())
-  const recommendation = useSessionStore((s) => s.recommendation)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
-  const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
   const screen = useNavStore((s) => s.screen)
   const groupId = useNavStore((s) => s.groupId)
   const go = useNavStore((s) => s.go)
+
+  // Agent-chat transcript + session state are both keyed by group.
+  const messages = useChatStore(selectChatMessages(groupId))
+  const seed = useChatStore((s) => s.seed)
+  const chatSessionId = useChatStore(selectChatSessionId(groupId))
+  const sendUserMessage = useChatStore((s) => s.sendUserMessage)
+  const adoptSessionId = useChatStore((s) => s.adoptSessionId)
+  const sending = useChatStore(selectSending(groupId))
+  const missingSignals = useChatStore(selectMissingSignals(groupId))
+  const isComplete = useChatStore(selectIsComplete(groupId))
+
+  const phase = useSessionStore(selectPhase(groupId))
+  const setPhase = useSessionStore((s) => s.setPhase)
+  const setMemberDone = useSessionStore((s) => s.setMemberDone)
+  const doneCount = useSessionStore(selectDoneCount(groupId))
+  const progressTotal = useSessionStore(selectProgressTotal(groupId))
+  const recommendation = useSessionStore(selectRecommendation(groupId))
+  const activeSessionId = useSessionStore(selectActiveSessionId(groupId))
+  const currentUserId = useAuthStore((s) => s.user?.id ?? 0)
+  const displayName = useAuthStore((s) => s.user?.display_name ?? s.user?.username ?? null)
 
   // Quick-reply chips follow the question the agent just asked (its first
   // still-missing signal), mirroring interactive_session.py's per-question chips.
@@ -71,12 +87,13 @@ export function AgentChatPage() {
     const isDifferentSession =
       chatSessionId != null && activeSessionId != null && chatSessionId !== activeSessionId
     if (messages.length === 0 || isDifferentSession) {
-      seed(activeSessionId, displayName)
+      seed(groupId, activeSessionId, displayName)
     } else if (chatSessionId == null && activeSessionId != null) {
-      adoptSessionId(activeSessionId)
+      adoptSessionId(groupId, activeSessionId)
     }
-    if (phase === 'joining' || phase === 'waiting') setPhase('chatting')
+    if (phase === 'joining' || phase === 'waiting') setPhase(groupId, 'chatting')
   }, [
+    groupId,
     displayName,
     messages.length,
     chatSessionId,
@@ -92,7 +109,7 @@ export function AgentChatPage() {
   const isDone = screen === 'agent-chat-done'
   const [marking, setMarking] = useState(false)
 
-  const handleSend = (text: string) => void sendUserMessage(text, activeSessionId)
+  const handleSend = (text: string) => void sendUserMessage(groupId, text, activeSessionId)
 
   const handleDone = async () => {
     if (marking) return // guard against a double-click during the REST round-trip
@@ -106,10 +123,10 @@ export function AgentChatPage() {
       } catch {
         // Even if the REST call fails, advance this user's own UI so they aren't
         // stuck; the broadcast reconciles the shared roster when it lands.
-        setMemberDone(currentUserId)
+        setMemberDone(groupId, currentUserId)
       }
     } else {
-      setMemberDone(currentUserId)
+      setMemberDone(groupId, currentUserId)
     }
     go('agent-chat-done')
   }
@@ -117,7 +134,7 @@ export function AgentChatPage() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
       {/* Full-width session bar: "Your food agent" + live countdown (center) */}
-      <SessionTopBar />
+      <SessionTopBar groupId={groupId} />
 
       <div className="flex flex-1 overflow-hidden">
         <GroupsSidebar />
@@ -133,7 +150,7 @@ export function AgentChatPage() {
               <Icon name="chevron-left" size={18} />
             </button>
             <div>
-              <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-white/50">
+              <p className="flex items-center gap-1.5 text-overline uppercase tracking-wide text-white/50">
                 <Icon name="lock" size={10} /> Private · only you can see this
               </p>
               <p className="text-sm font-semibold text-white">Your food agent</p>
@@ -141,7 +158,7 @@ export function AgentChatPage() {
           </div>
 
           {/* Conversation always visible; the done pill renders in-stream. */}
-          <ChatStream done={isDone} />
+          <ChatStream done={isDone} groupId={groupId} />
 
           {!isDone ? (
             <>
@@ -222,11 +239,11 @@ export function AgentChatPage() {
         {/* Right: progress + noted */}
         <aside className="flex w-60 shrink-0 flex-col border-l border-border bg-surface-panel">
           <div className={cn('flex flex-col justify-center border-b border-border px-4', COLUMN_HEADER_H)}>
-            <GroupProgressPanel headerOnly />
+            <GroupProgressPanel headerOnly groupId={groupId} />
           </div>
           <div className="flex flex-col gap-5 overflow-y-auto p-4">
-            <GroupProgressPanel rosterOnly />
-            <NotedSoFarPanel />
+            <GroupProgressPanel rosterOnly groupId={groupId} />
+            <NotedSoFarPanel groupId={groupId} />
           </div>
         </aside>
       </div>

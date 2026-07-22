@@ -29,6 +29,11 @@ export function mostRecentGroup(groups: Group[]): Group | undefined {
 
 interface GroupsState {
   groups: Group[]
+  // True once load() has settled at least once (success OR failure). Lets the UI
+  // distinguish "no groups" from "not loaded yet" so it never redirects a valid
+  // member off a chat while the list is still in flight. Mock mode is seeded, so
+  // it starts true.
+  loaded: boolean
   load: () => Promise<void>
   reset: () => void
   addGroup: (name: string, memberIds?: number[]) => Promise<Group>
@@ -40,20 +45,22 @@ interface GroupsState {
 export const useGroupsStore = create<GroupsState>((set, get) => ({
   // Starts empty and is filled by load() from the gateway.
   groups: [],
+  loaded: false,
 
   // Refresh the list from the backend. Clear on failure so one account never
-  // shows another account's groups.
+  // shows another account's groups. Either way, mark loaded so membership
+  // becomes knowable.
   load: async () => {
     try {
-      set({ groups: await fetchGroups() })
+      set({ groups: await fetchGroups(), loaded: true })
     } catch {
-      set({ groups: [] })
+      set({ groups: [], loaded: true })
     }
   },
 
   // Drop the current account's groups (call on sign-out so the next account
   // never sees the previous one's list before load() runs).
-  reset: () => set({ groups: [] }),
+  reset: () => set({ groups: [], loaded: false }),
 
   // Create a real group via POST /api/groups (with the picked member ids; the
   // caller is added server-side), then refresh the list so previews and counts

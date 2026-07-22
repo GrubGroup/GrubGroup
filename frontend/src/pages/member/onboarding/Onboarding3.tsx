@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Button, Input, Icon } from '@/components/ui'
-import { OnboardingLayout } from '@/components/layout/OnboardingLayout'
 import { DIETARY_RESTRICTIONS, labelFor } from '@/constants/dietary'
 import { usePlacesInput } from '@/hooks/usePlacesInput'
 import { useProfileStore } from '@/stores/profileStore'
@@ -11,7 +10,9 @@ import { cn } from '@/utils/cn'
 const DISTANCES = [0.5, 1, 2, 5]
 const DEFAULT_RADIUS = 1
 
-export function Onboarding3() {
+// Onboarding step 4 of 4 content (default location + radius, profile summary, and
+// the final save). Rendered inside AuthFlowShell.
+export function LocationStep() {
   const go = useNavStore((s) => s.go)
   const profile = useProfileStore((s) => s.profile)
   const save = useProfileStore((s) => s.save)
@@ -45,16 +46,11 @@ export function Onboarding3() {
   }
 
   return (
-    <OnboardingLayout
-      step={4}
-      total={4}
-      title="Where do you usually eat?"
-      subtitle="Helps us prioritise nearby restaurants. You can change this per session."
-    >
+    <>
       <Input label="DEFAULT ADDRESS" value={value} onChange={(e) => setValue(e.target.value)} />
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Max distance
         </span>
         <div className="flex gap-2">
@@ -77,7 +73,7 @@ export function Onboarding3() {
 
       {/* Profile summary card */}
       <div className="flex flex-col gap-1.5 rounded-card bg-surface-sunken p-4 text-sm text-text">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        <span className="text-overline font-semibold uppercase tracking-wide text-text-muted">
           Your profile
         </span>
         {dietary.map((d) => (
@@ -109,6 +105,6 @@ export function Onboarding3() {
           Done — let's eat
         </Button>
       </div>
-    </OnboardingLayout>
+    </>
   )
 }

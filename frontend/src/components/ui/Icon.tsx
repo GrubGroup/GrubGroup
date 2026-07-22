@@ -16,6 +16,7 @@ export type IconName =
   | 'arrow-right'
   | 'utensils'
   | 'users'
+  | 'calendar'
   | 'message'
   | 'sparkles'
   | 'map-pin'
@@ -78,6 +79,12 @@ const PATHS: Record<IconName, ReactSvgContent> = {
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
     </>
   ),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />,
@@ -147,6 +154,40 @@ const PATHS: Record<IconName, ReactSvgContent> = {
   ),
 }
 
+// A few icons only make sense as a clean SOLID glyph when `filled` (their stroke
+// paths have open arcs/ticks that auto-close into artifacts under fill). Provide
+// purpose-built filled variants for those; everything else just fills its stroke
+// path. Only the rail tab icons (users, calendar) need this today.
+const FILLED_PATHS: Partial<Record<IconName, ReactSvgContent>> = {
+  // Solid mic: filled capsule head + a solid "cradle" wedge (the u-shaped stand
+  // ring, drawn as a closed shape so no open arc self-intersects) + a short
+  // filled stem/base. Built purpose-first so the outline's open base tick
+  // (M12 18v4M8 22h8) doesn't auto-close into artifacts under fill.
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 6 6.93V21H8.5a1 1 0 0 0 0 2h7a1 1 0 0 0 0-2H13v-3.07A7 7 0 0 0 19 11v-1a1 1 0 0 0-2 0v1a5 5 0 0 1-10 0v-1a1 1 0 0 0-2 0Z" />
+    </>
+  ),
+  users: (
+    // Back person drawn FIRST (behind), its body sharing the SAME y=21 baseline
+    // as the front person so no corner protrudes; the front body then covers the
+    // seam, leaving a clean shoulder peeking on the right.
+    <>
+      <circle cx="17" cy="7" r="3.5" />
+      <path d="M16 14h2a4 4 0 0 1 4 4v2a1 1 0 0 1-1 1h-4Z" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M15 14H6a4 4 0 0 0-4 4v2a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1v-2a4 4 0 0 0-4-4Z" />
+    </>
+  ),
+  calendar: (
+    <>
+      <path d="M8 2a1 1 0 0 0-1 1v1H6a3 3 0 0 0-3 3v1h18V7a3 3 0 0 0-3-3h-1V3a1 1 0 1 0-2 0v1H9V3a1 1 0 0 0-1-1Z" />
+      <path d="M3 10v8a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-8H3Z" />
+    </>
+  ),
+}
+
 type ReactSvgContent = React.ReactNode
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
@@ -156,6 +197,8 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
 }
 
 export function Icon({ name, size = 16, filled = false, ...props }: IconProps) {
+  // Prefer a purpose-built solid glyph when filling an icon that has one.
+  const content = filled ? (FILLED_PATHS[name] ?? PATHS[name]) : PATHS[name]
   return (
     <svg
       width={size}
@@ -169,7 +212,7 @@ export function Icon({ name, size = 16, filled = false, ...props }: IconProps) {
       aria-hidden="true"
       {...props}
     >
-      {PATHS[name]}
+      {content}
     </svg>
   )
 }

@@ -1,8 +1,15 @@
 import { MemberRoster } from './MemberRoster'
 import { SegmentedProgress } from './SegmentedProgress'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useSessionStore,
+  selectMembers,
+  selectDoneCount,
+  selectProgressTotal,
+} from '@/stores/sessionStore'
 
 export interface GroupProgressPanelProps {
+  /** The group whose session progress to render (session state is keyed by group). */
+  groupId: number
   /** Render only the header band (title + count + segmented bar). */
   headerOnly?: boolean
   /** Render only the member roster. */
@@ -12,13 +19,14 @@ export interface GroupProgressPanelProps {
 // Right-panel content: "Group progress N/total" + segmented bar (header) and the
 // member roster (body). Split via props so the header can align to the shared
 // column header height while the roster scrolls below it.
-export function GroupProgressPanel({ headerOnly, rosterOnly }: GroupProgressPanelProps) {
-  const members = useSessionStore((s) => s.members)
+export function GroupProgressPanel({ groupId, headerOnly, rosterOnly }: GroupProgressPanelProps) {
+  const members = useSessionStore(selectMembers(groupId))
+  // currentUserId is GLOBAL identity, not per-group.
   const currentUserId = useSessionStore((s) => s.currentUserId)
-  const doneCount = useSessionStore((s) => s.doneCount())
+  const doneCount = useSessionStore(selectDoneCount(groupId))
   // Prefer the server-authoritative total so the denominator is correct even
   // before this client's roster has fully loaded (or after a reload).
-  const total = useSessionStore((s) => s.progressTotal())
+  const total = useSessionStore(selectProgressTotal(groupId))
 
   if (rosterOnly) {
     return <MemberRoster members={members} currentUserId={currentUserId} />

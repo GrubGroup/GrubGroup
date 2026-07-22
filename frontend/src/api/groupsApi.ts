@@ -1,4 +1,4 @@
-import type { Group, GroupDetail } from '@/types'
+import type { Group, GroupDetail, Session } from '@/types'
 import { api } from '@/lib/axios'
 
 // Emoji is UI-only (the backend has no emoji column), so default it to a generic
@@ -38,4 +38,12 @@ export async function removeGroupMember(groupId: number, userId: number): Promis
 export async function fetchGroup(groupId: number): Promise<GroupDetail> {
   const { data } = await api.get<GroupDetail>(`/groups/${groupId}`)
   return { ...withEmoji(data), members: data.members ?? [] }
+}
+
+// The group's current OPEN session, or null when none is in progress. Used to
+// rebind an in-progress session on page reload — the socket `session:start` was
+// already missed and isn't replayed on join.
+export async function fetchCurrentGroupSession(groupId: number): Promise<Session | null> {
+  const { data } = await api.get<Session | null>(`/groups/${groupId}/sessions/current`)
+  return data
 }

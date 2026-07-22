@@ -400,6 +400,37 @@ const listGroupSessions = async (req, res, next) => {
 };
 
 /**
+ * GET /api/groups/:group_id/sessions/current — the group's current OPEN session,
+ * or null. Lets a client rebind an in-progress session on page reload (the socket
+ * `session:start` was already missed and isn't replayed). "Open" = not host-closed:
+ * `closed_at` is set ONLY by the host's explicit restaurant confirm (closeSession);
+ * a session that finishes by timeout or auto-complete keeps `closed_at = null`, so
+ * newest `closed_at: null` is the right "current" signal. Returns 200 with the
+ * session or null (not 404) so "no active session" is a normal state. 403 for
+ * non-members.
+ */
+const getCurrentGroupSession = async (req, res, next) => {
+  const groupId = toPositiveInt(req.params.group_id);
+  if (!groupId) {
+    return res.status(400).json({ error: 'group_id must be a positive integer.' });
+  }
+
+  try {
+    if (!(await isGroupMember(groupId, req.user.id))) {
+      return res.status(403).json({ error: 'Not a group member.' });
+    }
+
+    const session = await prisma.session.findFirst({
+      where: { group_id: groupId, closed_at: null },
+      orderBy: { created_at: 'desc' },
+    });
+    return res.status(200).json(session ?? null);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
  * GET /api/groups/:group_id/events — finalized outings for this group.
  * 403 for non-members.
  */
@@ -433,5 +464,6 @@ export {
   listMessages,
   postMessage,
   listGroupSessions,
+  getCurrentGroupSession,
   listGroupEvents,
 };

@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Icon } from '@/components/ui'
-import { useChatStore } from '@/stores/chatStore'
-import { useSessionStore } from '@/stores/sessionStore'
+import {
+  useChatStore,
+  selectCurrentSignals,
+  selectMissingSignals,
+  selectChatMessages,
+} from '@/stores/chatStore'
+import { useSessionStore, selectIsHost } from '@/stores/sessionStore'
 
 // How many cuisine tags to show before collapsing behind a "+N more" toggle, so
 // a broad answer ("Asian") that expands to ~20 tags never overflows the panel.
@@ -65,14 +70,20 @@ function TagPills({ tags }: { tags: string[] }) {
 // that stayed empty because the user is happy with the group's choice. The host
 // never sees a "Your spot" row (they set the group location in the pre-session
 // modal); a non-host does. Long cuisine lists collapse behind a "+N more" toggle.
-export function NotedSoFarPanel() {
-  const signals = useChatStore((s) => s.currentSignals)
-  const missing = useChatStore((s) => s.missingSignals)
+export interface NotedSoFarPanelProps {
+  /** The group whose captured preferences to render (state is keyed by group). */
+  groupId: number
+}
+
+export function NotedSoFarPanel({ groupId }: NotedSoFarPanelProps) {
+  const signals = useChatStore(selectCurrentSignals(groupId))
+  const missing = useChatStore(selectMissingSignals(groupId))
   // Whether the user has taken at least one turn. Before that, an empty +
   // not-missing field is "pending" (not yet reached), NOT "None" — the greeting
   // hasn't asked anything and missing_signals is still empty.
-  const hasAnswered = useChatStore((s) => s.messages.some((m) => m.role === 'user'))
-  const isHost = useSessionStore((s) => s.isHost())
+  const messages = useChatStore(selectChatMessages(groupId))
+  const hasAnswered = messages.some((m) => m.role === 'user')
+  const isHost = useSessionStore(selectIsHost(groupId))
 
   const rows = useMemo<NotedRow[]>(() => {
     const isMissing = (key: string) => missing.includes(key)
@@ -143,7 +154,7 @@ export function NotedSoFarPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+      <h3 className="text-overline font-semibold uppercase tracking-wide text-text-muted">
         Noted so far
       </h3>
       <ul className="flex flex-col gap-1.5">
