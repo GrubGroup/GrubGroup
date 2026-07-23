@@ -21,7 +21,7 @@ The backend is itself split into **two services**:
   handles real-time updates, auth (Better Auth cookie sessions), and forwards AI requests to the
   AI service.
 - **`backend/ai_service/`** — Python + FastAPI. The "brains": AI agents, restaurant
-  search (RAG), the database, and voice processing.
+  search (RAG), and the database.
 
 ### How the pieces talk to each other
 
@@ -76,114 +76,131 @@ live chat/session sync, Prisma writes for frontend data, and proxying AI/RAG req
 `ai_service`. Auth is **Better Auth**, mounted at `/api/auth/*` directly in `app.js` — there is
 no `auth.routes.js` / `auth.controller.js` / `jwt.service.js`.
 
+Filenames are **camelCase with a role suffix** (`*Routes.js`, `*Controller.js`, `*Middleware.js`);
+service clients are `*Client.js`. There is no dotted `*.routes.js` / `*.service.js` convention.
+
 ```
 gateway/
 ├── package.json                  # Deps (Express, Socket.IO, better-auth, @prisma/client, axios) + Bun scripts
 ├── .env.example                  # Sample environment variables
-├── .gitignore
 ├── server.js                     # Entry point: starts the HTTP + WebSocket server
+├── prisma/                       # Prisma schema + migrations (owns the DB DDL + pgvector) + seeds
+│   ├── schema.prisma  SCHEMA.md
+│   ├── migrations/               # SQL migrations (incl. enable vector extension)
+│   └── seed.mjs  seed_groups.mjs
 └── src/
-    ├── app.js                    # Express app: mounts Better Auth /api/auth/* (before express.json), /api/me, routes
+    ├── app.js                    # Express app: mounts Better Auth /api/auth/* (before express.json), then /api routes
     ├── lib/
     │   ├── auth.js               # Better Auth config (Prisma adapter, email/password + Google)
     │   └── prisma.js             # Prisma client singleton
     ├── config/
     │   └── index.js              # Loads & validates environment config
     ├── routes/                   # URL → controller mappings
-    │   ├── index.js              # Combines routes; mounts /health, /restaurants, /sessions
-    │   ├── restaurants.routes.js # /restaurants — create + embed (WIRED)
-    │   ├── sessions.routes.js    # /sessions — POST /:id/recommendations proxy (WIRED)
-    │   └── ai.routes.js          # /ai — one-line starter, NOT mounted (proxy lives in sessions + aiClient)
+    │   ├── index.js              # Mounts /health, /auth-methods, /geocode, /restaurants, /sessions,
+    │   │                         #   /profile, /user, /users, /groups, /events
+    │   ├── restaurantsRoutes.js  # /restaurants — create + embed
+    │   ├── sessionsRoutes.js     # /sessions — recommendations + analyze proxy, close, members
+    │   ├── profileRoutes.js      # /profile — read/update the caller's Profile
+    │   ├── userRoutes.js         # /user — caller identity (GET /me, PATCH /)
+    │   ├── usersRoutes.js        # /users — username search (member-picker)
+    │   ├── groupsRoutes.js       # /groups — group CRUD + membership
+    │   └── eventsRoutes.js       # /events — the caller's dining history
     ├── controllers/              # Request handlers (the logic per route)
-    │   ├── restaurants.controller.js  # create Restaurant + embed via ai_service + ::vector write (WIRED)
-    │   ├── sessions.controller.js     # proxy to ai_service w/ status passthrough (WIRED)
-    │   └── ai.controller.js           # one-line starter (NOT wired)
+    │   ├── restaurantsController.js  # create Restaurant + embed via ai_service + ::vector write
+    │   ├── sessionsController.js     # session lifecycle + AI proxy (recommendations/analyze) + geocode
+    │   ├── profileController.js  userController.js  usersController.js
+    │   ├── groupsController.js  eventsController.js  authMethodsController.js
     ├── middleware/               # Cross-cutting request logic
-    │   ├── auth.middleware.js    # Better Auth session guard (requireAuth / requireRole)
-    │   └── error.middleware.js   # Central error handling
+    │   ├── authMiddleware.js     # Better Auth session guard (requireAuth)
+    │   └── errorMiddleware.js    # Central error handling
     ├── sockets/                  # Real-time WebSocket logic
     │   ├── index.js              # Socket.IO setup + session-cookie handshake
-    │   └── session.handlers.js   # group:join/leave, chat:message, session:start, typing:* (ephemeral)
-    ├── services/                 # Reusable helpers
-    │   └── aiClient.js           # Talks to the FastAPI ai_service (embed + getRecommendations)
+    │   └── sessionHandlers.js    # group:join/leave, chat:message, session:start/picks/confirmed, typing:*
+    ├── services/                 # Outbound clients
+    │   ├── aiClient.js           # Talks to the FastAPI ai_service (embed, recommendations, analyze)
+    │   └── geocodeClient.js      # Server-side geocoding (Geocodio) for the host modal
     └── utils/
         └── logger.js             # Logging helper
 ```
 
+> The AI proxy lives in `sessionsController.js` + `services/aiClient.js`. There is **no**
+> `aiRoutes.js` / `aiController.js` (an earlier empty starter pair was removed), and no
+> `auth.routes.js` / `jwt.service.js` — Better Auth owns `/api/auth/*` directly in `app.js`.
+
 ### 3b. `backend/ai_service/` — AI / Data Service (FastAPI)
 
-The Python "brains." Responsibilities: the database, AI agents, restaurant search, and
-voice processing.
+The Python "brains." Responsibilities: the database (read-side mirror + recommendation/Qa writes),
+the AI agents, and restaurant search (RAG). Voice input arrives as browser-transcribed text today;
+a **server-side STT/TTS voice relay is scaffolded but unwired** (`ai/voice/`, `routes/voice.py`,
+`schemas/voice.py`) — the next planned feature. After the July 2026 cleanup the tree is almost
+entirely wired; the only stubs are `db/init_db.py` (intentional — Prisma owns DDL) and the voice
+scaffolding.
 
 ```
 ai_service/
 ├── pyproject.toml / uv.lock / .python-version   # Python project + locked dependencies
 ├── .env.example / .gitignore / .dockerignore
-├── Dockerfile                    # How to package this service for deployment
+├── Dockerfile                    # Packages the service (CMD: uvicorn app.main:app)
 ├── README.md                     # Service-specific setup instructions
-├── main.py                       # Small shim → runs app/main.py
 ├── scripts/                      # One-off dev/ops scripts
 │   ├── seed_restaurants.py       # Fills the DB with ~54 mock restaurants (with embeddings)
-│   ├── reset_db.py               # Resets the database for local development
 │   ├── smoke_orchestrator.py     # Direct end-to-end orchestrator graph smoke test
+│   ├── demo_orchestrator.py      # Narrated terminal walkthrough of the recommendation pipeline
+│   ├── analyze_turn_demo.py      # Conversational analyze-turn demo
+│   ├── interactive_session.py    # Interactive session harness
 │   └── live_http_gateway_e2e.py  # Live HTTP harness across ai_service + gateway (401/409/200)
 └── app/                          # The actual application code
-    ├── main.py                   # Builds & configures the FastAPI app (WIRED)
-    ├── core/                     # App-wide infrastructure
-    │   ├── config.py             # Reads settings from environment (WIRED)
-    │   ├── security.py           # End-user token verify — one-line starter; internal hop uses X-Internal-Secret
-    │   ├── logging.py            # one-line starter
-    │   └── exceptions.py         # one-line starter
+    ├── main.py                   # Builds & configures the FastAPI app (the canonical entrypoint)
+    ├── core/
+    │   └── config.py             # Reads settings from environment (Pydantic Settings)
     ├── db/                       # Database connection & setup
-    │   ├── session.py            # Async database engine/session (WIRED)
-    │   ├── base.py               # Registers all tables (metadata mirror of Prisma)
-    │   └── init_db.py            # Starter, unused — Prisma (gateway) owns DDL + pgvector; ai_service never runs create_all
-    ├── models/                   # Database tables (SQLModel read-side mirror)
-    │   ├── user.py  profile.py  session.py  session_member.py     # WIRED
-    │   ├── restaurant.py  qa.py  group.py                         # WIRED (restaurant has vector(1024) embedding)
-    │   ├── recommendation.py  recommendation_item.py              # WIRED
-    │   ├── timestamps.py  enums.py                                # WIRED (utcnow helper; Role/MessageType)
-    │   └── message.py  menu_item.py                               # one-line starters (no table yet)
+    │   ├── session.py            # Async engine + async_session_factory
+    │   └── init_db.py            # Intentional stub — Prisma (gateway) owns DDL + pgvector; never runs create_all
+    ├── models/                   # Database tables (SQLModel read-side mirror of Prisma)
+    │   ├── user.py  profile.py  session.py  session_member.py     # core
+    │   ├── restaurant.py  qa.py  group.py                         # restaurant has vector(1024) embedding
+    │   ├── recommendation.py  recommendation_item.py
+    │   └── timestamps.py  enums.py                                # utcnow helper; Role/MessageType
     ├── schemas/                  # Request/response shapes (Pydantic)
-    │   ├── ai.py                 # AI request/response DTOs (WIRED: Embed*, Recommendation*)
-    │   └── user.py  profile.py  session.py  restaurant.py  voice.py  common.py   # starters
+    │   ├── ai.py                 # Embed / Recommendation / Analyze DTOs (the wired schema module)
+    │   └── voice.py              # STT/TTS DTOs — one-line stub, scaffolding for the voice feature
     ├── api/                      # The HTTP endpoints
-    │   ├── deps.py               # Shared deps: get_db_session, require_internal_secret (WIRED)
+    │   ├── deps.py               # require_internal_secret (the X-Internal-Secret guard)
     │   └── v1/                   # Version 1 of the API (mounted at /api/v1)
-    │       ├── router.py         # Combines v1 routes — mounts only health + ai today
+    │       ├── router.py         # Mounts exactly two route files: health + ai
     │       └── routes/
-    │           ├── health.py         # Is the service up? (WIRED)
-    │           ├── ai.py             # POST /embed, POST /sessions/{id}/recommendations (WIRED)
-    │           ├── voice.py          # STT / TTS — starter, not mounted
-    │           ├── public.py         # Public browsing — starter, not mounted
-    │           ├── members.py        # Member endpoints — starter, not mounted
-    │           ├── restaurants.py    # Owner endpoints — starter, not mounted
-    │           └── admin.py          # Admin endpoints — starter, not mounted
+    │           ├── health.py         # Is the service up?
+    │           ├── ai.py             # POST /embed, POST /sessions/{id}/recommendations,
+    │           │                     #   POST /sessions/{id}/analyze, POST /analyze
+    │           └── voice.py          # STT / TTS — one-line stub, NOT mounted (scaffolding)
     ├── services/                 # Business logic (multi-step workflows)
-    │   ├── recommendation_service.py  # WIRED (orchestrator wrapper: guard → pipeline → persist)
-    │   └── session_service.py  profile_service.py  message_service.py  restaurant_service.py  # starters
+    │   ├── recommendation_service.py  # orchestrator wrapper: guard → pipeline → persist
+    │   ├── session_service.py         # analyze_member_turn (in-session Qa)
+    │   ├── profile_service.py         # persist_qa / persist_profile + diffs
+    │   └── geocode.py                 # address → lat/lon helper
     ├── crud/                     # Direct database read/write helpers
-    │   ├── base.py               # Generic async CRUDBase (WIRED)
-    │   ├── session.py            # Reads: members, profiles, Qa, all_confirmed (WIRED)
-    │   ├── restaurant.py         # Reads + pgvector similarity search (WIRED)
-    │   ├── recommendation.py     # WRITES Recommendation + RecommendationItem (WIRED)
-    │   └── user.py  message.py   # one-line starters
-    └── ai/                       # The AI subsystem (all WIRED except voice/)
+    │   ├── session.py            # Reads members/profiles/Qa; host-gated upsert_qa_signals (WRITE)
+    │   ├── restaurant.py         # Reads + counts (similarity search lives in ai/rag/retriever.py)
+    │   ├── recommendation.py     # WRITES Recommendation + RecommendationItem
+    │   └── user.py               # Reads Profile; upsert_profile_signals (update-only)
+    └── ai/                       # The AI subsystem (feature-sliced)
         ├── llm/                  # Talking to language models
-        │   ├── client.py         # Salesforce gateway → Claude (active; OpenRouter/DeepSeek commented)
-        │   └── prompts.py        # Prompt templates (preference-normalize, group re-rank)
+        │   ├── client.py         # Chat client — provider chosen by LLM_PROVIDER; shared strip_json_fence
+        │   └── prompts.py        # Prompt templates (conversational turn, group re-rank)
         ├── rag/                  # Restaurant search by meaning ("RAG")
         │   ├── embeddings.py     # Turns text into vectors (Qwen3 via OpenRouter, 1024-dim)
         │   └── retriever.py      # pgvector cosine search + hard filters (dietary/price/geo)
         ├── agents/               # The AI "personas"
         │   ├── preference_agent.py    # Normalizes one member's Profile → MemberPref
-        │   └── orchestrator_agent.py  # Reconciles the group: retrieve → LLM re-rank → fallback
+        │   ├── orchestrator_agent.py  # Reconciles the group: retrieve → LLM re-rank → fallback
+        │   └── conversation_agent.py  # analyze_turn — parses a member's natural-language turn
         ├── graph/                # Multi-step AI pipeline (LangGraph)
         │   ├── pipeline.py       # StateGraph: fan-out preference → orchestrator
         │   └── state.py          # Typed state passed between steps
-        └── voice/                # Voice input/output — one-line starters
-            ├── stt.py            # Speech → text (Whisper / Gemini)
-            └── tts.py            # Text → speech (ElevenLabs)
+        ├── voice/                # STT/TTS relay — one-line stubs, unwired (scaffolding for the voice feature)
+        │   ├── stt.py            # Speech → text (Whisper / Gemini)
+        │   └── tts.py            # Text → speech (ElevenLabs)
+        └── taxonomy.py  geo.py  hours.py   # cuisine taxonomy; geo helpers; open/closed hours filter
 ```
 
 ---
@@ -221,42 +238,48 @@ The feature structure below **exists and is populated** — build new work into 
 
 ```
 src/
-├── api/            # HTTP calls to the gateway via axios
-│   ├── sessionApi.ts  eventsApi.ts  restaurantsApi.ts  profileApi.ts   # live modules (camelCase)
-│   └── mock/           # mock modules (sessionMock, restaurantsMock, profileMock, groupChatMock, groupsMock, eventsMock, usersMock, agentAnalyzeMock)
+├── api/            # HTTP calls to the gateway via axios (live only — no mock layer)
+│   └── authApi.ts  sessionApi.ts  eventsApi.ts  restaurantsApi.ts
+│       profileApi.ts  groupsApi.ts  userApi.ts  usersApi.ts
 ├── pages/          # Full screens (navStore-driven; no react-router)
-│   ├── auth/           # AuthPage (Better Auth sign-in/up + Google)
-│   └── member/         # EmptyGroupsPage, GroupChatPage, EventsPage
-│       ├── onboarding/     # Onboarding1-3
+│   ├── public/         # LandingPage
+│   ├── auth/           # AuthForm (Better Auth sign-in/up + Google)
+│   └── member/         # EmptyGroupsPage, GroupChatPage, EventsPage, ProfilePage, ProfileEditPage
+│       ├── onboarding/     # Onboarding1-3 + OnboardingCuisines
 │       └── session/        # AgentChatPage, TopPicksPage
 ├── components/     # reusable UI pieces
 │   ├── ui/             # Design-system primitives (Button, Input, Card, Modal, …) + index.ts
-│   ├── layout/         # AppSidebar, BrandPanel, OnboardingLayout
-│   ├── session/        # Session/chat widgets (HostSessionModal, SessionTopBar, SessionTimer, SessionPicksBlock, SessionCard, ChatStream, …)
-│   ├── restaurant/     # Restaurant/menu cards (RankedRestaurantCard — reused for TopPicks + in-chat picks, MenuList, VoteControl, …)
-│   ├── profile/        # Profile fields (Dietary, Cuisine, Budget, Location, LikedRestaurants)
-│   ├── event/          # Shared group event (EventDrawer, EventItemRow, EventSummary)
+│   ├── layout/         # AppSidebar, BrandPanel, AppSplash, AuthFlowShell, AccountMenu
+│   ├── session/        # Session/chat widgets (HostSessionModal, SessionTopBar, SessionTimer,
+│   │                   #   GroupMessageRow, ChatStream, SessionCard, MemberRoster, …)
+│   ├── restaurant/     # RankedRestaurantCard (reused by TopPicksPage), MenuList (placeholder),
+│   │                   #   RestaurantHeader, TagRow, MenuItemRow
+│   ├── profile/        # CuisineTriStatePicker, PreferenceTag
 │   └── voice/          # VoiceComposer (react-speech-recognition)
-├── hooks/          # useSocket, useSessionCountdown, useVoiceInput, usePlacesInput
-├── stores/         # 10 zustand stores: auth, session, groupChat, chat, event, eventList, profile, groups, restaurant, nav
-├── lib/            # Client setup: axios, socket, authClient (Better Auth), env
-├── types/          # Shared TypeScript types (user, profile, session, recommendation, analyze, group, restaurant, …)
-├── utils/          # Small helpers (cn.ts, hours.ts — TS mirror of ai_service app/ai/hours.py)
-└── constants/      # App-wide constants (dietary.ts)
+├── hooks/          # useSocket, useSessionCountdown, useVoiceInput, usePlacesInput,
+│                   #   useMediaQuery, useNewItemIds, useScrollToBottom
+├── stores/         # 10 zustand stores: auth, session, groupChat, chat, event, eventList,
+│                   #   profile, groups, restaurant, nav
+├── lib/            # Client setup: axios, socket, authClient (Better Auth), env, motion
+├── types/          # Shared TypeScript types (user, profile, session, recommendation, analyze,
+│                   #   group, groupChat, chat, restaurant, qa, menu, …)
+├── utils/          # Small helpers (cn.ts, hours.ts — TS mirror of ai_service app/ai/hours.py,
+│                   #   memberColor.ts, memberName.ts, timeAgo.ts)
+└── constants/      # App-wide constants (dietary.ts, memberColors.ts, agentChat.ts)
 ```
 
 ---
 
 ## 5. Quick reference — "Where do I put…?"
 
-| I want to add…                | It goes in…                                    |
-| ----------------------------- | ---------------------------------------------- |
-| A new API endpoint (Python)   | `backend/ai_service/app/api/v1/routes/`        |
-| A new database table          | `backend/ai_service/app/models/`               |
-| AI agent / prompt logic       | `backend/ai_service/app/ai/`                   |
-| A real-time (WebSocket) event | `backend/gateway/src/sockets/`                 |
-| Auth (sign-in/up, OAuth)      | `backend/gateway/src/lib/auth.js` (Better Auth; mounted in `app.js`) |
+| I want to add…                | It goes in…                                                             |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| A new API endpoint (Python)   | `backend/ai_service/app/api/v1/routes/`                                 |
+| A new database table          | `backend/ai_service/app/models/`                                        |
+| AI agent / prompt logic       | `backend/ai_service/app/ai/`                                            |
+| A real-time (WebSocket) event | `backend/gateway/src/sockets/`                                          |
+| Auth (sign-in/up, OAuth)      | `backend/gateway/src/lib/auth.js` (Better Auth; mounted in `app.js`)    |
 | An AI-proxy route (Node)      | `backend/gateway/src/routes/` + `controllers/` + `services/aiClient.js` |
-| A new screen/page (React)     | `frontend/src/pages/`                          |
-| A reusable UI element (React) | `frontend/src/components/`                     |
-| A product/planning doc        | `planning/`                                    |
+| A new screen/page (React)     | `frontend/src/pages/`                                                   |
+| A reusable UI element (React) | `frontend/src/components/`                                              |
+| A product/planning doc        | `planning/`                                                             |
