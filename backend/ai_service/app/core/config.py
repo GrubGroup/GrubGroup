@@ -59,7 +59,6 @@ class Settings(BaseSettings):
     # Shared internal secret guarding service-to-service endpoints (must match
     # the gateway JWT_SECRET).
     jwt_secret: str = "change-me"
-    jwt_algorithm: str = "HS256"
 
     # Geocodio API key — turns a member's named location into lat/lon on the
     # conversational analyze path. Accepts either GEOCODIO_API_KEY or the

@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.ai.llm.client import chat_completion
+from app.ai.llm.client import chat_completion, strip_json_fence
 from app.ai.llm.prompts import build_preference_turn_messages
 from app.ai.taxonomy import (
     expand_cuisine_terms,
@@ -53,7 +53,6 @@ _MISSING_ORDER = [
 # sub-agent — host or member — asks about it, reports it missing, or extracts it
 # (see _ask_order / _reconcile). is_host is retained only to frame the optional
 # per-member location question relative to the host's chosen spot.
-_HOST_ONLY_SIGNALS: set[str] = set()
 
 _VALID_LOCATION_MODES = {"named", "realtime", "unset"}
 
@@ -89,23 +88,6 @@ class TurnResult:
         self.missing_signals = missing_signals
         # True when the LLM output was unusable and we fell back to prior signals.
         self.degraded = degraded
-
-
-def _strip_json_fence(raw: str) -> str:
-    """Strip markdown code fences so json.loads sees a bare JSON payload.
-
-    Mirrors orchestrator_agent._strip_json_fence — the Salesforce/Claude gateway
-    does not honor OpenAI JSON mode, so we prompt for strict JSON and strip
-    fences here rather than relying on response_format.
-    """
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1] if "\n" in text else text
-        if text.endswith("```"):
-            text = text[: -len("```")]
-        if text.lstrip().lower().startswith("json"):
-            text = text.lstrip()[len("json"):]
-    return text.strip()
 
 
 def _clean_tags(value: Any) -> list[str] | None:
@@ -424,7 +406,7 @@ async def analyze_turn(
     raw = await chat_completion(messages, temperature=0.2) or ""
 
     try:
-        parsed = json.loads(_strip_json_fence(raw))
+        parsed = json.loads(strip_json_fence(raw))
     except (ValueError, TypeError):
         parsed = None
 

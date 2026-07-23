@@ -1,4 +1,4 @@
-"""Prompt templates: optional preference normalization and group re-rank."""
+"""Prompt templates: conversational preference turn and group re-rank."""
 
 import json
 from typing import Any
@@ -8,29 +8,9 @@ from app.ai.taxonomy import (
     PROMPT_STYLE_CATALOG,
 )
 
-# --- Optional per-member preference normalization -----------------------------
-# The preference agent is deterministic by default (structured Profile straight
-# from the DB). This cheap-LLM enrichment prompt exists only as an off-by-default
-# hook for turning free-text preference notes into the MemberPref field shape.
-PREFERENCE_NORMALIZE_SYSTEM = (
-    "You normalize a diner's free-text preferences into structured fields. "
-    "Return STRICT JSON with keys: dietary_restrictions (list[str]), "
-    "preferred_cuisines (list[str]), disliked_cuisines (list[str]). "
-    "Use lowercase single-word tags. Output JSON only, no prose, no code fences."
-)
-
-
-def build_preference_normalize_messages(raw_text: str) -> list[dict[str, Any]]:
-    """Build chat messages for optional free-text -> MemberPref-field extraction."""
-    return [
-        {"role": "system", "content": PREFERENCE_NORMALIZE_SYSTEM},
-        {"role": "user", "content": raw_text},
-    ]
-
-
 # --- Conversational preference turn (per-member QA sub-agent) ------------------
-# The bigger sibling of the normalize prompt above: this one drives the back-and-
-# forth where a diner talks to their personal agent. It (a) reads the new message
+# This drives the back-and-forth where a diner talks to their personal agent.
+# It (a) reads the new message
 # in the context of prior turns + already-known signals, (b) extracts/updates the
 # preference signal set (dietary / cuisines / budget / a member's optional
 # location) — NOT the event's occasion or time, which the host sets in the

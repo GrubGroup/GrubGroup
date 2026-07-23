@@ -145,14 +145,3 @@ def is_open_at(hours: str | None, when: datetime) -> bool:
     if prev_day in open_days and minute < close_min:
         return True
     return False
-
-
-def format_hours(hours: str | None) -> str | None:
-    """Return the raw hours string for display, or None when absent.
-
-    A thin passthrough today (the seed strings are already human-readable); kept
-    as a seam so display formatting can evolve without touching call sites.
-    """
-    if not hours or not isinstance(hours, str) or not hours.strip():
-        return None
-    return hours.strip()

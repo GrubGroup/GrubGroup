@@ -73,15 +73,3 @@ async def similarity_search(
     async with async_session_factory() as session:
         result = await session.execute(statement)
         return [(row.Restaurant, row.distance) for row in result.all()]
-
-
-async def retrieve_for_query(
-    query_text: str, **kwargs
-) -> list[tuple[Restaurant, float]]:
-    """Embed `query_text` (1024-dim) then run `similarity_search` with `kwargs`."""
-    # Imported lazily so a missing/misconfigured embeddings provider fails here
-    # at call time rather than at module import.
-    from app.ai.rag.embeddings import embed_text
-
-    query_embedding = await embed_text(query_text)
-    return await similarity_search(query_embedding, **kwargs)

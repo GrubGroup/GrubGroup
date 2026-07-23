@@ -61,3 +61,21 @@ async def chat_completion(
 
     response = await get_llm_client().chat.completions.create(**kwargs)
     return response.choices[0].message.content
+
+
+def strip_json_fence(raw: str) -> str:
+    """Strip markdown code fences so json.loads sees a bare JSON payload.
+
+    The Salesforce/Claude gateway does not honor OpenAI JSON mode, so callers
+    prompt for strict JSON and strip fences here rather than relying on
+    response_format.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1] if "\n" in text else text
+        if text.endswith("```"):
+            text = text[: -len("```")]
+        # Drop a leading language hint (e.g. ``` remaining after "```json").
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[len("json"):]
+    return text.strip()

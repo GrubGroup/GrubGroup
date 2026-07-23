@@ -14,16 +14,12 @@ def _get(profile: Any, key: str, default: Any) -> Any:
     return getattr(profile, key, default)
 
 
-async def normalize_member(
-    profile: Any, *, enrich: bool = False
-) -> MemberPref:
+async def normalize_member(profile: Any) -> MemberPref:
     """Normalize a Profile-like object (or dict) into a MemberPref.
 
-    Deterministic by default: the structured Profile columns are copied straight
-    through. `enrich=True` is an off-by-default hook that could route free-text
-    preference notes through a cheap LLM (see prompts.build_preference_normalize_
-    messages); no free-text column exists in the schema today, so it is a no-op
-    layered on top of the deterministic result.
+    Deterministic: the structured Profile columns are copied straight through
+    (no free-text column exists in the schema, so there is nothing to enrich via
+    an LLM).
     """
     member = MemberPref(
         user_id=_get(profile, "user_id", 0),
@@ -44,12 +40,5 @@ async def normalize_member(
         qa_location_lat=_get(profile, "qa_location_lat", None),
         qa_location_lon=_get(profile, "qa_location_lon", None),
     )
-
-    if enrich:
-        # Reserved cheap-LLM enrichment hook. Intentionally inert until a
-        # free-text preference field exists on Profile; when it does, extract
-        # extra tags here via chat_completion + build_preference_normalize_messages
-        # and merge them into `member`.
-        pass
 
     return member

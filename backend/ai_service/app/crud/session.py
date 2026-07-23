@@ -25,19 +25,6 @@ async def list_members(db: AsyncSession, session_id: int) -> list[SessionMember]
     return list(result.scalars().all())
 
 
-async def list_confirmed_members(
-    db: AsyncSession, session_id: int
-) -> list[SessionMember]:
-    """Return member rows whose status is True (confirmed) for a session."""
-    result = await db.execute(
-        select(SessionMember).where(
-            SessionMember.session_id == session_id,
-            SessionMember.status.is_(True),
-        )
-    )
-    return list(result.scalars().all())
-
-
 async def get_profiles_for_users(
     db: AsyncSession, user_ids: Sequence[int]
 ) -> list[Profile]:

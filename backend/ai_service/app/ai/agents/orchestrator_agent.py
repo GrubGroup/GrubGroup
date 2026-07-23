@@ -12,7 +12,7 @@ from app.ai.graph.state import (
     ReconciledConstraints,
 )
 from app.ai.hours import is_open_at
-from app.ai.llm.client import chat_completion
+from app.ai.llm.client import chat_completion, strip_json_fence
 from app.ai.llm.prompts import build_group_rerank_messages
 from app.ai.rag.embeddings import embed_text
 from app.ai.rag.retriever import similarity_search
@@ -158,19 +158,6 @@ def _build_query_text(
     return " ".join(parts)
 
 
-def _strip_json_fence(raw: str) -> str:
-    """Strip markdown code fences so json.loads sees a bare JSON payload."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1] if "\n" in text else text
-        if text.endswith("```"):
-            text = text[: -len("```")]
-        # Drop a leading language hint (e.g. ``` remaining after "```json").
-        if text.lstrip().lower().startswith("json"):
-            text = text.lstrip()[len("json"):]
-    return text.strip()
-
-
 def _parse_ranked(raw: str, valid_ids: set[int]) -> list[RankedItem]:
     """Parse the strict-JSON re-rank response into validated RankedItems.
 
@@ -182,7 +169,7 @@ def _parse_ranked(raw: str, valid_ids: set[int]) -> list[RankedItem]:
     if not raw:
         return []
     try:
-        parsed = json.loads(_strip_json_fence(raw))
+        parsed = json.loads(strip_json_fence(raw))
     except (ValueError, TypeError):
         return []
 

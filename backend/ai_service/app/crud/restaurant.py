@@ -9,14 +9,6 @@ from sqlmodel import select
 from app.models.restaurant import Restaurant
 
 
-async def list_all(db: AsyncSession, limit: int = 100) -> list[Restaurant]:
-    """Return a page of restaurants ordered by id."""
-    result = await db.execute(
-        select(Restaurant).order_by(Restaurant.id).limit(limit)
-    )
-    return list(result.scalars().all())
-
-
 async def get_by_ids(db: AsyncSession, ids: Sequence[int]) -> list[Restaurant]:
     """Return restaurant rows for the given ids."""
     if not ids:
