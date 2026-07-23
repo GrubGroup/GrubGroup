@@ -15,19 +15,9 @@ export const EASE = [0.22, 1, 0.36, 1] as const
 // Scroll-into-view trigger: fire once, when 30% visible.
 export const viewport = { once: true, amount: 0.3 } as const
 
-// Fade + rise on enter. `custom` (index) staggers siblings. Static (always
-// animates) — prefer `useFadeUp()` in components so it respects reduced motion.
-export const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  show: (i = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, delay: i * 0.08, ease: EASE },
-  }),
-}
-
-// Reduced-motion-aware fadeUp: when reduced, keep the fade but drop the rise +
-// delays (no perceptible movement).
+// Reduced-motion-aware fade + rise on enter. `custom` (index) staggers siblings.
+// When reduced, keep the fade but drop the rise + delays (no perceptible
+// movement). Prefer `useFadeUp()` in components so it respects reduced motion.
 export const makeFadeUp = (reduce: boolean): Variants => ({
   hidden: { opacity: 0, y: reduce ? 0 : 24 },
   show: (i = 0) => ({
@@ -38,7 +28,7 @@ export const makeFadeUp = (reduce: boolean): Variants => ({
 })
 
 // Hook form — reads the OS reduced-motion setting and returns the right variants.
-// Drop-in replacement for the static `fadeUp` inside a component.
+// Use this inside components for reduced-motion-aware fade + rise.
 export const useFadeUp = (): Variants => makeFadeUp(!!useReducedMotion())
 
 // Gentle infinite Y-oscillation for layered/floating panels. Returns an empty

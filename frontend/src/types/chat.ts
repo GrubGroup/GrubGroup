@@ -1,6 +1,5 @@
-// Chat + extracted-preference shapes for the agent session. The AI/message
-// contracts are not yet implemented server-side (schemas are stubs), so these
-// are frontend-shaped and fed by mock scripts today; socket-fed later.
+// Chat + extracted-preference shapes for the agent session. These are
+// frontend-shaped; the agent chat is fed live via analyzeTurn / chatStore.
 
 export type ChatRole = 'agent' | 'user' | 'system'
 

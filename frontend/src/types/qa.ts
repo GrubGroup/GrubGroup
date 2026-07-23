@@ -18,8 +18,8 @@ export interface Qa {
   member_status?: string | null
 }
 
-// Client-side helper for a resolved location preference (used by the Profile
-// LocationField as a default, and to seed a session's Qa later).
+// Client-side helper for a resolved location preference (used as the profile
+// default, and to seed a session's Qa later).
 export interface LocationPref {
   mode: LocationMode
   label?: string

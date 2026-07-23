@@ -159,7 +159,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     if (!p) return false
     set({ saving: true })
     // Fold any in-flight picker label onto the profile before persisting, so the
-    // LocationField path (which only sets preferredLocation) still saves the
+    // location picker path (which only sets preferredLocation) still saves the
     // default_address. An explicit default_address on the profile wins.
     const loc = get().preferredLocation
     const toSave: Profile =

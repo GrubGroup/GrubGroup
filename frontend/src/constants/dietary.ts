@@ -106,31 +106,6 @@ export const CUISINE_GROUPS: CuisineGroup[] = [
 // the preferred/disliked pickers, ProfilePage display) work unchanged.
 export const CUISINES: Option[] = CUISINE_GROUPS.flatMap((g) => g.options)
 
-// Restaurant STYLE (the kind of place, not the cuisine) — mirrors the backend
-// QA sub-agent's master style taxonomy (ai_service `app/ai/taxonomy.py`
-// RESTAURANT_STYLES). Values are the same underscore tags the agent records
-// into a session's `preferred_cuisines` (there is no separate style column), so
-// they weight restaurant `cuisine_tags` exactly like a cuisine does — a soft
-// preference, not a hard filter. This is a controlled constant only; no picker
-// UI is wired to it yet. Keep it in sync with the backend taxonomy keys.
-export const RESTAURANT_STYLES: Option[] = [
-  { value: 'barbecue', label: 'Barbecue' },
-  { value: 'fast_food', label: 'Fast Food' },
-  { value: 'seafood', label: 'Seafood' },
-  { value: 'fine_dining', label: 'Fine Dining' },
-  { value: 'bakery', label: 'Bakery' },
-  { value: 'cafe', label: 'Café' },
-  { value: 'buffet', label: 'Buffet' },
-  { value: 'food_truck', label: 'Food Truck' },
-  { value: 'steakhouse', label: 'Steakhouse' },
-  { value: 'vegetarian_vegan', label: 'Vegetarian / Vegan' },
-  { value: 'dessert', label: 'Dessert' },
-  { value: 'brunch', label: 'Brunch' },
-  { value: 'pizza', label: 'Pizza' },
-  { value: 'sandwich_deli', label: 'Sandwich / Deli' },
-  { value: 'pub_bar', label: 'Pub / Bar' },
-]
-
 export function labelFor(options: Option[], value: string): string {
   return options.find((o) => o.value === value)?.label ?? value
 }

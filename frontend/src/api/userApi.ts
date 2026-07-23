@@ -21,11 +21,6 @@ export class UserUpdateError extends Error {
   }
 }
 
-export async function fetchMe(): Promise<User> {
-  const { data } = await api.get<User>('/user/me')
-  return data
-}
-
 export async function updateMe(input: UpdateUserInput): Promise<User> {
   try {
     const { data } = await api.patch<User>('/user', input)

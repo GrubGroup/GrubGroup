@@ -25,8 +25,3 @@ export function getSocket(auth?: SocketAuth): Socket | null {
   }
   return socket
 }
-
-export function disconnectSocket() {
-  socket?.disconnect()
-  socket = null
-}

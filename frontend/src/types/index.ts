@@ -1,5 +1,5 @@
 export type { Role, User, UserSearchResult } from './user'
-export type { Profile, ProfilePreferencesClient } from './profile'
+export type { Profile } from './profile'
 export type { Qa, LocationMode, LocationPref } from './qa'
 export type { Session, SessionMember, SessionPhase } from './session'
 export type { Restaurant } from './restaurant'

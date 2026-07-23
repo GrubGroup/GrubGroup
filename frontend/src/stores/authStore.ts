@@ -30,7 +30,6 @@ function toDomainUser(su: SessionUser): User {
 interface AuthState {
   user: User | null
   role: Role | null
-  isGuest: boolean
   // True once the interactive sign-in/up form has successfully handled auth this
   // session. App uses it to stand down its own post-auth forwarding + splash: the
   // form routes itself (and a brand-new account SLIDES from sign-up into
@@ -44,7 +43,6 @@ interface AuthState {
   // Merge edited identity fields (display_name/username) after a saved update,
   // so the header/sidebar reflect the change without a full session refresh.
   patchUser: (patch: Partial<User>) => void
-  loginAsGuest: (name: string) => void
   logout: () => void
 }
 
@@ -53,18 +51,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // setSessionUser (from useSession in App).
   user: null,
   role: null,
-  isGuest: false,
   entryFlowActive: false,
 
   setEntryFlowActive: (v) => set({ entryFlowActive: v }),
 
   setSessionUser: (su) => {
     if (!su) {
-      set({ user: null, role: null, isGuest: false })
+      set({ user: null, role: null })
       return
     }
     const user = toDomainUser(su)
-    set({ user, role: user.role, isGuest: false })
+    set({ user, role: user.role })
   },
 
   patchUser: (patch) => {
@@ -73,24 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: { ...current, ...patch } })
   },
 
-  loginAsGuest: (name) => {
-    set({
-      isGuest: true,
-      role: 'USER',
-      user: {
-        id: -1,
-        username: name,
-        email: '',
-        role: 'USER',
-        display_name: name,
-        avatar_url: null,
-        created_at: '',
-        updated_at: '',
-      },
-    })
-  },
-
   logout: () => {
-    set({ user: null, role: null, isGuest: false, entryFlowActive: false })
+    set({ user: null, role: null, entryFlowActive: false })
   },
 }))

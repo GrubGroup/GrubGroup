@@ -13,14 +13,14 @@ export interface Group {
   id: number
   name: string
   emoji: string
-  // When the group was created (ISO). From GET /api/groups[/:id]; absent in mock.
+  // When the group was created (ISO). From GET /api/groups[/:id]; may be absent.
   created_at?: string
   // Latest message from the DB (null when the group has no messages yet).
   last_message?: GroupLastMessage | null
-  // Member count from GET /api/groups (UI only; absent in mock).
+  // Member count from GET /api/groups (UI only; may be absent).
   member_count?: number
-  preview?: string // last-message preview (UI only; mock fallback)
-  time?: string // relative time label, e.g. "2m" (UI only; mock fallback)
+  preview?: string // last-message preview (UI only; optional fallback)
+  time?: string // relative time label, e.g. "2m" (UI only; optional fallback)
 }
 
 // A group member, as returned by GET /api/groups/:id (joined to User).

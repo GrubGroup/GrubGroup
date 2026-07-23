@@ -1,5 +1,3 @@
-import type { LocationPref } from './qa'
-
 // Modeled on Prisma `Profile`. `liked_restaurant_ids` is a denormalized int[]
 // (no FK) — resolve against the restaurant store for display.
 export interface Profile {
@@ -20,12 +18,4 @@ export interface Profile {
   liked_restaurant_ids: number[]
   created_at: string
   updated_at: string
-}
-
-// CLIENT-SIDE location helper. The durable default now persists on `Profile`
-// (default_address + optional lat/lon + radius). This holds the richer in-flight
-// `LocationPref` (mode/radius) the picker works with before it's flattened onto
-// the profile; a session's `Qa` still owns per-session location.
-export interface ProfilePreferencesClient {
-  preferredLocation?: LocationPref
 }
