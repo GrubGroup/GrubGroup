@@ -36,6 +36,4 @@ router.use('/groups', groupsRouter);
 router.use('/users', usersRouter);
 router.use('/events', eventsRouter);
 
-// TODO: mount the ai router here once implemented.
-
 export default router;

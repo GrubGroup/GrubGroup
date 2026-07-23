@@ -22,18 +22,4 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
-/**
- * Require the authenticated user to hold one of the given roles.
- * Use after requireAuth.
- * @param {...string} roles
- */
-const requireRole = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden.' });
-    }
-    next();
-  };
-};
-
-export { requireAuth, requireRole };
+export { requireAuth };
