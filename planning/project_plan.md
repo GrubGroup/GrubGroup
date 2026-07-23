@@ -119,15 +119,23 @@ match-insights · AI regression harness for admins · session time-limit nudges.
 
 ### Screen inventory
 
-| Screen                       | Route/`navStore` screen | Role            | Serves stories   |
-| ---------------------------- | ----------------------- | --------------- | ---------------- |
-| Auth (sign-in / sign-up)     | `AuthPage`              | Public → member | prereq (M\*)     |
-| Onboarding profile (3 steps) | `Onboarding1–3`         | member          | M1, M2           |
-| Groups list / empty state    | `EmptyGroupsPage`       | member          | M3, M15          |
-| Group chat room              | `GroupChatPage`         | member          | M4, M5, M7       |
-| Agent chat (voice/text)      | `AgentChatPage`         | member          | M6, M9, M12      |
-| Top picks (recommendations)  | `TopPicksPage`          | member          | M8, M9, M11, M13 |
-| Events / history             | `EventsPage`            | member          | M14, M15         |
+| Screen                        | Route/`navStore` screen               | Role            | Serves stories   |
+| ----------------------------- | ------------------------------------- | --------------- | ---------------- |
+| Auth (sign-in / sign-up)      | `AuthPage`                            | Public → member | prereq (M\*)     |
+| Onboarding profile (4 steps)  | `Onboarding1` · `OnboardingCuisines` · `Onboarding2` · `Onboarding3` | member | M1, M2 |
+| Profile view                  | `ProfilePage`                         | member          | M1, M2           |
+| Profile edit                  | `ProfileEditPage`                     | member          | M2               |
+| Groups list / empty state     | `EmptyGroupsPage`                     | member          | M3, M15          |
+| Group chat room               | `GroupChatPage`                       | member          | M4, M5, M7       |
+| Agent chat (voice/text)       | `AgentChatPage`                       | member          | M6, M9, M12      |
+| Top picks (recommendations)   | `TopPicksPage`                        | member          | M8, M9, M11, M13 |
+| Events / history              | `EventsPage`                          | member          | M14, M15         |
+
+> Onboarding is a **4-step** flow: dietary restrictions (`Onboarding1`) → cuisine tri-state
+> like/avoid (`OnboardingCuisines`) → budget (`Onboarding2`) → default location + radius
+> (`Onboarding3`). The file names are offset from the nav step numbers because `OnboardingCuisines`
+> was inserted as step 2. Navigation is driven by `navStore` (no `react-router`); `navStore` tracks a
+> `returnTo` origin so `openProfile` returns Back to the screen the user came from.
 
 Below are text wireframes for the **three key screens**. Each wireframe is a visual component spec:
 the indented boxes are the implied component hierarchy.
@@ -256,9 +264,16 @@ Postgres (with the `vector`/pgvector extension), mirrored from `backend/gateway/
 | preferred_cuisines   | string[] | favored cuisines                            |
 | budget_min           | int      | lower budget bound (per person)             |
 | budget_max           | int      | upper budget bound (per person)             |
+| default_address      | string?  | durable default dining location (address label shown in the profile UI); geocoded to lat/lon on save |
+| default_lat          | float?   | latitude derived from `default_address`     |
+| default_lon          | float?   | longitude derived from `default_address`    |
+| default_radius       | float?   | preferred search radius in miles            |
 | liked_restaurant_ids | int[]    | denormalized list of restaurant IDs, no FK  |
 | created_at           | datetime | row creation time                           |
 | updated_at           | datetime | last update time                            |
+
+A session's `Qa` inherits these coordinates when the member doesn't override location — so a member
+who set a default address never re-geocodes it per session.
 
 ### `Session` — a live restaurant-finding session
 
@@ -270,7 +285,9 @@ Postgres (with the `vector`/pgvector extension), mirrored from `backend/gateway/
 | time_limit   | int       | session time limit                               |
 | created_at   | datetime  | when the session started                         |
 | closed_at    | datetime? | when the session was closed                      |
-| avg_budget   | float     | averaged group budget                            |
+
+There is **no `avg_budget` column**. The averaged group budget is computed on demand (mean of
+members' effective budget caps) by the `ai_service` orchestrator and never persisted.
 
 ### `SessionMember` — join table (User ↔ Session)
 
@@ -283,21 +300,32 @@ Postgres (with the `vector`/pgvector extension), mirrored from `backend/gateway/
 
 Composite primary key `(session_id, user_id)`.
 
-### `Qa` — one member's questionnaire answers for a session
+### `Qa` — one member's session-scoped questionnaire answers
 
-| column name   | type    | description                            |
-| ------------- | ------- | -------------------------------------- |
-| id            | int     | primary key                            |
-| session_id    | int     | foreign key to Session; cascade delete |
-| occasion      | string? | occasion (e.g. "casual dinner")        |
-| location_mode | string? | how location is chosen                 |
-| location_lat  | float?  | latitude, only if provided             |
-| location_lon  | float?  | longitude, only if provided            |
-| radius_miles  | float?  | search radius in miles                 |
-| time_slot     | string? | desired time                           |
-| budget_min    | int?    | per-person lower budget                |
-| budget_max    | int?    | per-person upper budget                |
-| member_status | string? | free-form member status note           |
+One row **per (session, member)**: each member's temporary, session-scoped preference overrides
+captured by their QA sub-agent. These outrank the durable `Profile` for this session only and are
+**deleted when the Event is created** (session close). `occasion` and `time_slot` are **host-only**
+(they describe the shared event); a non-host's row leaves them null.
+
+| column name        | type    | description                                                              |
+| ------------------ | ------- | ------------------------------------------------------------------------ |
+| id                 | int     | primary key                                                              |
+| session_id         | int     | foreign key to Session; cascade delete                                   |
+| user_id            | int     | foreign key to User (the member); cascade delete                         |
+| preferred_cuisines | string[]| session-scoped cuisine preferences (override Profile)                    |
+| disliked_cuisines  | string[]| session-scoped cuisines to avoid (override Profile)                      |
+| occasion           | string? | occasion (e.g. "casual dinner") — **host-only**                          |
+| location_mode      | string? | how location is chosen (`named` / `realtime` / `unset`)                  |
+| location_address   | string? | free-text address the member entered; geocoded into `location_lat/lon`   |
+| location_lat       | float?  | latitude, only if provided                                               |
+| location_lon       | float?  | longitude, only if provided                                              |
+| radius_miles       | float?  | search radius in miles                                                   |
+| time_slot          | string? | desired time — **host-only**                                             |
+| budget_min         | int?    | per-person lower budget                                                  |
+| budget_max         | int?    | per-person upper budget                                                  |
+| member_status      | string? | free-form member status note                                            |
+
+Unique on `(session_id, user_id)` — one row per member per session (get-or-create keys on this).
 
 ### `Event` — a finalized outing produced by closing a session
 
@@ -308,6 +336,8 @@ Composite primary key `(session_id, user_id)`.
 | address         | string   | outing address                                     |
 | restaurant_id   | int      | foreign key to Restaurant                          |
 | restaurant_name | string   | restaurant name snapshot (denormalized)            |
+| occasion        | string?  | host-only occasion, snapshotted from the host's `Qa` row at close |
+| time_slot       | string?  | host-only time slot, snapshotted from the host's `Qa` row at close |
 | group_id        | int?     | foreign key to Group; set null on group delete     |
 | group_name      | string?  | group name snapshot; persists after group deletion |
 
@@ -435,11 +465,11 @@ Unique on `token`; indexed on `userId`.
 - **`Profile.liked_restaurant_ids`** is a plain `int[]` (denormalized), not a managed relation — no FK integrity. Resolve separately: `prisma.restaurant.findMany({ where: { id: { in: profile.liked_restaurant_ids } } })`.
 - **`Restaurant.embedding`** is an `Unsupported("vector(1024)")` pgvector column — it can't be read/written through the typed Prisma client, so embeddings are written with raw SQL (`::vector` cast).
 - **Group deletion is asymmetric.** A `Session` is transient, so deleting its group **cascades**. An `Event` is a historical record, so deleting its group uses **SetNull** — the event survives with `group_id` null but keeps the `group_name` snapshot copied at creation.
-- **Event creation flow:** all members fill the Q&A (or the session times out) → AI produces recommendations → the host confirms one → an `Event` is created, stamping `group_id` and copying the group's current `name` into `group_name`.
+- **Event creation flow:** all members fill the Q&A (or the session times out) → AI produces recommendations → the host confirms one → an `Event` is created, stamping `group_id`, copying the group's current `name` into `group_name`, and snapshotting the host's `occasion` / `time_slot` from their `Qa` row. In the same transaction the session's `Qa` rows are **deleted** (they were temporary session-scoped overrides — the durable `Profile` is never mutated, and occasion/time_slot survive on the Event).
 
 ## Endpoints
 
-Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/responses use **snake_case**; failures return `{ error: "<message>" }`. Every endpoint except `register`/`login` requires `Authorization: Bearer <jwt>` (implied `401` on missing/invalid token).
+Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/responses use **snake_case**; failures return `{ error: "<message>" }`. Authentication is a **Better Auth httpOnly session cookie** (the browser rides `withCredentials: true`) — there is no `Authorization: Bearer` token. Every endpoint below requires a valid session (implied `401` on a missing/invalid cookie) **except** the Better Auth routes themselves, `GET /api/auth-methods`, `GET /health`, and `POST /api/sessions/:id/recommendations` (intentionally unguarded).
 
 ### Auth — `/api/auth`
 
@@ -455,13 +485,33 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 | Read   | GET       | `/api/auth/get-session`      | Current session + user from the cookie                                                                                  | —                                       | `{ session, user } \| null`                                              | —                                           | Session bootstrap       |
 | Action | POST      | `/api/auth/sign-out`         | Clear the session cookie                                                                                                | —                                       | `{ success: true }` + cleared cookie                                     | —                                           | Sign out                |
 | Read   | GET       | `/api/me`                    | Gateway convenience route: current user from the session cookie                                                         | —                                       | `{ user: { id, email, username, role, display_name, avatar_url, ... } }` | 401 not authenticated                       | Session bootstrap       |
+| Read   | GET       | `/api/auth-methods?email=`   | **Public** pre-login lookup of which providers an email uses (used by the sign-in form to nudge Google-registered emails) | — (query `email`)                     | `{ google, password, exists }` (all false for an unknown email)         | 400 missing email                           | Sign-in provider hint   |
+
+### User — `/api/user`
+
+| CRUD   | HTTP Verb | Endpoint          | Description                                        | Request Shape                | Response Shape                                                                       | Error Cases                              | User Stories        |
+| ------ | --------- | ----------------- | -------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------- | ------------------- |
+| Read   | GET       | `/api/user/me`    | Caller's own account identity                      | —                            | `{ id, username, email, display_name, avatar_url, role, created_at, updated_at }`   | 404 no user                              | Account identity    |
+| Update | PATCH     | `/api/user`       | Update caller's `display_name` and/or `username`   | `{ display_name?, username? }` | `{ ...user }`                                                                       | 400 invalid username; 409 username taken | Manage account name |
+
+> Email and password are owned by Better Auth and are **not** editable here. `username` must match
+> `^[a-zA-Z0-9._]{3,30}$` and is uniqueness-checked (409 on conflict, including a race-condition
+> fallback).
 
 ### Profile — `/api/profile`
 
-| CRUD          | HTTP Verb | Endpoint       | Description                     | Request Shape                                                                             | Response Shape                                                                                                                                       | Error Cases                 | User Stories             |
-| ------------- | --------- | -------------- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------ |
-| Read          | GET       | `/api/profile` | Get caller's preference profile | —                                                                                         | `{ id, user_id, dietary_restrictions, disliked_cuisines, preferred_cuisines, budget_min, budget_max, liked_restaurant_ids, created_at, updated_at }` | 404 no profile              | Set preferences once     |
-| Create/Update | PUT       | `/api/profile` | Upsert caller's profile         | `{ dietary_restrictions, disliked_cuisines, preferred_cuisines, budget_min, budget_max }` | `{ ...profile }`                                                                                                                                     | 400 invalid/inverted budget | Set once; update anytime |
+> The request body's location fields (`default_address`, `default_lat`, `default_lon`,
+> `default_radius`) are optional. When a non-empty `default_address` is supplied the gateway
+> **geocodes it server-side** and the derived coordinates override any client-sent lat/lon (a geocode
+> miss yields null coords rather than a rejected save). `liked_restaurant_ids` is owned by the
+> restaurant like/unlike endpoints and is left untouched by create/update.
+
+| CRUD   | HTTP Verb | Endpoint       | Description                          | Request Shape                                                                                                                                     | Response Shape                                                                                                                                                                                              | Error Cases                                          | User Stories         |
+| ------ | --------- | -------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------- |
+| Read   | GET       | `/api/profile` | Get caller's preference profile      | —                                                                                                                                                 | `{ id, user_id, dietary_restrictions, disliked_cuisines, preferred_cuisines, budget_min, budget_max, default_address, default_lat, default_lon, default_radius, liked_restaurant_ids, created_at, updated_at }` | 404 no profile                                       | Set preferences once |
+| Create | POST      | `/api/profile` | Create caller's profile (first time) | `{ dietary_restrictions?, disliked_cuisines?, preferred_cuisines?, budget_min, budget_max, default_address?, default_lat?, default_lon?, default_radius? }` | `{ ...profile }`                                                                                                                                                                                          | 400 invalid/inverted budget; 409 already exists      | Set preferences once |
+| Update | PUT       | `/api/profile` | Upsert caller's profile (create-on-first-save) | `{ dietary_restrictions?, disliked_cuisines?, preferred_cuisines?, budget_min, budget_max, default_address?, default_lat?, default_lon?, default_radius? }` | `{ ...profile }`                                                                                                                                                                                          | 400 invalid/inverted budget                          | Update anytime       |
+
 
 ### Groups — `/api/groups`
 
@@ -474,23 +524,31 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 | Delete | DELETE    | `/api/groups/:group_id/members/:user_id`        | Remove member (self = leave)               | —                                 | `204`                                                                            | 403; 404                       | Leave group           |
 | Read   | GET       | `/api/groups/:group_id/messages?limit=&before=` | Paginated chat history (newest-first)      | —                                 | `[{ id, group_id, user_id, content, message_type, created_at }]`                 | 403 not a member               | Group chat history    |
 | Create | POST      | `/api/groups/:group_id/messages`                | Persist a message                          | `{ content, message_type }`       | `{ id, group_id, user_id, content, message_type, created_at }`                   | 400 empty/bad type; 403        | Group chat            |
-| Read   | GET       | `/api/groups/:group_id/sessions`                | Past & active sessions in group            | —                                 | `[{ id, host_user_id, time_limit, avg_budget, created_at, closed_at }]`          | 403                            | Session history       |
+| Read   | GET       | `/api/groups/:group_id/sessions`                | Past & active sessions in group            | —                                 | `[{ id, host_user_id, group_id, time_limit, created_at, closed_at }]`            | 403                            | Session history       |
 | Read   | GET       | `/api/groups/:group_id/events`                  | Finalized outings for group                | —                                 | `[{ id, date, address, restaurant_id, restaurant_name, group_id, group_name }]`  | 403                            | Remember where we ate |
 
 ### Sessions — `/api/sessions`
 
 | CRUD   | HTTP Verb | Endpoint                                    | Description                                          | Request Shape                                                                                                      | Response Shape                                                                                                  | Error Cases                                         | User Stories             |
 | ------ | --------- | ------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
-| Create | POST      | `/api/sessions`                             | Start a session (optionally from a group)            | `{ group_id?, time_limit, avg_budget }`                                                                            | `{ id, host_user_id, group_id, time_limit, avg_budget, created_at, closed_at, members: [{ user_id, status }] }` | 400 invalid; 403 not in group; 404                  | Start session from group |
+| Create | POST      | `/api/sessions`                             | Start a session (optionally from a group)            | `{ group_id?, time_limit }`                                                                                        | `{ id, host_user_id, group_id, time_limit, created_at, closed_at, members: [{ user_id, status }] }`             | 400 invalid; 403 not in group; 404                  | Start session from group |
 | Read   | GET       | `/api/sessions/:session_id`                 | Session with members & readiness                     | —                                                                                                                  | `{ ...session, members: [{ user_id, display_name, status, joined_at }] }`                                       | 403; 404                                            | Session view             |
 | Create | POST      | `/api/sessions/:session_id/members`         | Join session (status=false)                          | —                                                                                                                  | `{ session_id, user_id, status, joined_at }`                                                                    | 404; 409 already joined; 400 closed                 | Join session             |
 | Read   | GET       | `/api/sessions/:session_id/members`         | Members & readiness (poll)                           | —                                                                                                                  | `[{ user_id, display_name, status, joined_at }]`                                                                | 403                                                 | See who's ready          |
 | Update | PATCH     | `/api/sessions/:session_id/members/me`      | Set caller's ready status                            | `{ status }`                                                                                                       | `{ session_id, user_id, status, joined_at }`                                                                    | 403; 404                                            | Signal I'm done          |
-| Create | POST      | `/api/sessions/:session_id/qa`              | Submit occasion/location/time/budget answers         | `{ occasion?, location_mode?, location_lat?, location_lon?, radius_miles?, time_slot?, budget_min?, budget_max? }` | `{ ...qa }`                                                                                                     | 400 invalid range; 403                              | Share prefs, no form     |
+| Create | POST      | `/api/sessions/:session_id/qa`              | Upsert the caller's per-member Q&A row               | `{ preferred_cuisines?, disliked_cuisines?, occasion?, location_mode?, location_address?, location_lat?, location_lon?, radius_miles?, time_slot?, budget_min?, budget_max? }` | `{ ...qa, host_only_ignored }`                                                       | 400 invalid range; 403 not a member; 404            | Share prefs, no form     |
 | Action | POST      | `/api/sessions/:session_id/recommendations` | Run orchestrator, return ranked shortlist _(exists)_ | `{ force_partial? }`                                                                                               | `{ id, session_id, created_at, items: [{ restaurant_id, name, match_score, justification }] }`                  | 400 bad id; 409 members not confirmed; 502 upstream | Group shortlist + why    |
 | Read   | GET       | `/api/sessions/:session_id/recommendations` | Fetch latest stored recommendation                   | —                                                                                                                  | `{ id, session_id, created_at, items: [...] }`                                                                  | 404 none yet                                        | Re-view shortlist        |
 | Action | POST      | `/api/sessions/:session_id/close`           | Close session, create Event from choice              | `{ restaurant_id, date, address }`                                                                                 | `{ session: {...}, event: { id, restaurant_id, restaurant_name, ... } }`                                        | 400; 403 host only; 409 already closed              | End & save result        |
 | Read   | GET       | `/api/sessions/:session_id/summary`         | Compact recap of a closed session                    | —                                                                                                                  | `{ session_id, closed_at, chosen: { restaurant_id, name }, attendees, reason }`                                 | 404; 409 not closed                                 | Summary of decision      |
+
+> **Qa is per-member and upserted:** `POST /:id/qa` creates-or-updates only the caller's own row.
+> `occasion` and `time_slot` are **host-only** — for a non-host they are silently dropped and the
+> response sets `host_only_ignored: true` so the client can explain why. A supplied `location_address`
+> is geocoded server-side (derived coords override any client-sent `location_lat/lon`).
+> **Two endpoints share the `/recommendations` path:** the **POST** proxies the orchestrator in
+> `ai_service` (unguarded), while the **GET** is a gateway-direct Prisma read of the latest stored
+> recommendation.
 
 ### Restaurants — `/api/restaurants`
 
@@ -510,7 +568,7 @@ Frontend-facing REST API exposed by the **gateway** under `/api`. All bodies/res
 
 ## State Architecture
 
-GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of state any component can read directly, so we skip prop-drilling and React Context (and use a `navStore` instead of a router). Each store owns one concern: `authStore`, `eventStore`, `sessionStore`, etc.
+GrubGroup keeps most shared data in **Zustand stores** — standalone "boxes" of state any component can read directly, so we skip prop-drilling and React Context (and use a `navStore` instead of a router). There are **9** stores, each owning one concern: `authStore`, `eventStore`, `sessionStore`, `profileStore`, `groupChatStore`, `chatStore`, `groupsStore`, `restaurantStore`, `navStore`.
 
 Auth is the exception: the gateway (Express) manages login with **Better Auth** and gives the browser an httpOnly cookie it can't read. The app calls **`useSession()`** to ask "who am I?" and mirrors that into `authStore`. In the **Owner** column, most rows are a _store_; a few (like `AuthPage`) are a _component_ — throwaway form fields only one screen needs.
 
@@ -524,6 +582,7 @@ Auth is the exception: the gateway (Express) manages login with **Better Auth** 
 | `session` (Better Auth)    | `object \| null`                 | `null`                             | `useSession()` (App) | Sign-in / sign-out, cookie refresh              |
 | `screen`                   | `Screen` (union)                 | `'sign-in'`                        | navStore             | Navigation (`go()`)                             |
 | `groupId`                  | `number`                         | `7`                                | navStore             | Selecting a group (`setGroup()`)                |
+| `returnTo`                 | `Screen`                         | `'group-chat'`                     | navStore             | `openProfile()` stamps origin so Profile's Back returns to it |
 | `groups`                   | `Group[]`                        | `MOCK_GROUPS`                      | groupsStore          | Create group (`addGroup`)                       |
 | `profile`                  | `Profile \| null`                | `null`                             | profileStore         | Fetch on load; edit prefs; save                 |
 | `preferredLocation`        | `LocationPref \| undefined`      | `undefined`                        | profileStore         | Location autocomplete (client-only)             |
@@ -563,7 +622,7 @@ Auth is the exception: the gateway (Express) manages login with **Better Auth** 
 | `name`         | `string`         | `''`                                       | GuestNameModal        | Typing the guest name                      |
 | `value`        | `string`         | `initial` arg (e.g. `'San Francisco, CA'`) | usePlacesInput (hook) | Location autocomplete typing               |
 
-The major decisions nailed down: **authentication state lives in Better Auth's cookie session** (mirrored into `authStore`, so there's one source of truth that survives refresh); **live data re-fetches** are triggered by store `load*` actions hitting the gateway; and **real-time group chat / session sync flows in over Socket.IO** into `groupChatStore`. State flows out of the stores via hooks — components subscribe to the slices they need instead of prop-drilling from a single top-level owner.
+The major decisions nailed down: **authentication state lives in Better Auth's cookie session** (mirrored into `authStore`, so there's one source of truth that survives refresh); **live data re-fetches** are triggered by store `load*` actions hitting the gateway; and **real-time group chat / session sync flows in over Socket.IO** into `groupChatStore`. State flows out of the stores via hooks — components subscribe to the slices they need instead of prop-drilling from a single top-level owner. `profileStore` also holds the durable location fields (`default_address`, `default_radius`) and an in-flight `preferredLocation` for the address autocomplete; `navStore` tracks `returnTo` so `openProfile` can send the user back to their origin screen.
 
 ## AI Feature Specification
 
@@ -655,27 +714,40 @@ state; the UI shows "waiting on N members").
 **What it does (user's words):** "Let me just say what I'm in the mood for, and have it understood
 and remembered." — serves **M6, M9, M12**.
 
-**Where it lives:** `AgentChatPage`, on every user turn (voice or text via `VoiceComposer`).
+**Where it lives:** `AgentChatPage`, on every user turn (voice or text via `VoiceComposer`), and on
+profile-edit turns outside a session.
 
-**Endpoint (planned):** `POST /api/ai/analyze` (gateway) → `ai_service` (extends `ai.py`).
-_Status: proposal-sketched, targeted Sprint 2._ See `planning/project_proposal.md` for the full
-request/response sketch.
+**Endpoint:** implemented **in `ai_service`** as two variants (both `X-Internal-Secret` guarded):
+`POST /api/v1/sessions/{session_id}/analyze` (in-session QA sub-agent turn) and `POST /api/v1/analyze`
+(profile-edit turn, `session_id` null). This is the snake_case realization of the proposal's
+`POST /ai/analyze` sketch. **Status: implemented in `ai_service`; the gateway proxy route and the
+frontend wiring are still pending** (the browser does not yet call analyze — the gateway exposes no
+`/api/ai/analyze` route yet). Backed by the new `ai/agents/conversation_agent.py`.
 
-**Input:** `{ user_id, session_id | null, message, message_source: "voice"|"text",
-conversation_history: [{role, content}], current_profile }`.
+**Input:** `{ user_id, message, message_source: "voice"|"text", conversation_history: [{role,
+content}], current_signals, persist_profile? }` (`session_id` comes from the path). `current_signals`
+carries the previously-extracted signals so the model reconciles a new turn against what was already
+said (this is what makes corrections work).
 
-**Output:** structured `extracted_signals` (cuisine inclinations/exclusions, vibe, noise tolerance,
-new dietary flags, and `location_intent: { mode: "named"|"realtime"|"unset", resolved_label }`),
-plus `profile_updated`, a natural-language `agent_reply`, and `missing_signals[]`.
+**Output:** `{ user_id, session_id, extracted_signals, profile_updated, qa_updated, agent_reply,
+missing_signals[] }`. `extracted_signals` covers dietary restrictions, preferred/disliked cuisines,
+budget, occasion, `location_mode: "named"|"realtime"|"unset"`, `location_label` (+ lat/lon), radius,
+and time slot.
 
-**Validation:** strict JSON-only from the model; extracted dietary flags never _silently_ override
-existing hard restrictions (additive/confirmation only); location is captured **only** when the
-user expresses it (`unset` by default — never proactively prompt for GPS — enforces M12); the
-`agent_reply` acknowledges what was understood and asks for the top missing signal.
+**How the two tables split:** on an **in-session** turn the sub-agent writes **only** the member's
+session-scoped `Qa` row (their temporary override) and never mutates the durable `Profile`; on a
+**profile-edit** turn it persists the durable `Profile` diff. `occasion`/`time_slot` are host-only
+(dropped for a non-host, who gets a nudge in the reply). A named location is **geocoded** server-side
+(Geocodio) into coordinates.
 
-**Fallback:** on failure, save the raw message as a plain session note (no structured extraction);
-the orchestrator skips this member's structured signals but does **not** block the session; UI
-banner: "We saved your message as a note."
+**Validation:** the model returns the full reconciled signal set as JSON (returned lists replace
+prior lists so a correction drops a stale tag; omitted scalars carry through); location is captured
+**only** when the user expresses it (`unset` by default — never proactively prompt for GPS — enforces
+M12); the `agent_reply` confirms what was understood and asks for the top missing signal.
+
+**Fallback (graceful degradation):** on any parse/transport failure the turn returns the prior
+signals plus a deterministic reply (flagged `degraded`) and never raises — so the endpoint won't 500
+and the session is never blocked.
 
 ### Feature 3 — Session Summary _(stretch)_
 
@@ -691,7 +763,8 @@ _Status: proposal-sketched, stretch._
 | Push hard dietary/price/geo filters into SQL **before** the LLM re-rank             | Sprint 0 (scaffold) | Architecture   | Guarantees the LLM can't surface a restaurant that violates a hard restriction; makes the safety property enforceable, not hoped-for |
 | Distance-ranked fallback when the LLM returns nothing parseable                     | Sprint 0 (scaffold) | Error handling | A blank shortlist is worse than an un-explained-but-valid one; keeps the core flow alive on LLM hiccups                              |
 | Catch `openai.APIConnectionError`/`APITimeoutError` explicitly → 502                | Sprint 0 (scaffold) | Error handling | These don't subclass `OSError`, so they'd fall through to 500 and break the gateway's status passthrough                             |
-| _(pending)_ Include recent session/conversation history as context in `/ai/analyze` | Sprint 2            | Prompt design  | TBD — initial extraction may be too generic without it                                                                               |
+| Pass `conversation_history` + `current_signals` into analyze so the sub-agent reconciles corrections | Sprint 2            | Prompt design  | Implemented in `conversation_agent`: the model returns the full reconciled set, so a returned list replaces the prior one and a correction drops a stale tag                                                                     |
+| Analyze lives in `ai_service` first (two variants); gateway proxy + FE wiring deferred | Sprint 2            | Sequencing     | The parse/persist logic is the risky part and is done + demoable via `scripts/analyze_turn_demo.py`; the gateway `/api/ai/analyze` route and `AgentChatPage` call are a thin follow-up                                          |
 
 ## Sprint Plan & Milestones
 
@@ -703,7 +776,7 @@ section it touches (a screen, an endpoint, a schema entity, or a story ID) for t
 _Goal: a logged-in member can set a profile and create/see a group._
 
 - Auth end-to-end (Better Auth sign-up/in, Google, session bootstrap) — stories: prereq
-- Profile onboarding + edit (`Onboarding1–3`, `GET/PUT /api/profile`) — **M1, M2**
+- Profile onboarding (4 steps) + view/edit (`Onboarding1`/`OnboardingCuisines`/`Onboarding2`/`Onboarding3`, `ProfilePage`, `ProfileEditPage`, `GET/POST/PUT /api/profile`) — **M1, M2**
 - Groups: create, list, detail, membership (`/api/groups*`) — **M3**
 - Data layer: Prisma schema + seeded restaurants live; `ai_service` read-mirror — supports all
 
@@ -712,7 +785,7 @@ _Goal: a logged-in member can set a profile and create/see a group._
 _Goal: a group starts a session, everyone shares prefs, and sees an explained shortlist._
 
 - Group chat room + real-time (Socket.IO) — **M4, M5, M7**
-- Personal agent chat + `POST /api/ai/analyze` — **M6**
+- Personal agent chat + analyze turn (`ai_service` `POST /api/v1/(sessions/{id}/)analyze` — implemented; gateway proxy + FE wiring pending) — **M6**
 - Start session / join / readiness / Q&A (`/api/sessions*`) — **M5, M7**
 - **Group recommendation orchestrator** wired to `TopPicksPage` — **M8, M9** _(pipeline exists)_
 
@@ -760,6 +833,8 @@ syncs, spec audits, and any time a feature is cut/changed/added, then commit.
 | Adopt **Better Auth (cookie sessions)** and drop hand-rolled JWT minting                             | Auth stubs were empty; Better Auth gives email/password + Google + sessions out of the box | Custom `jsonwebtoken` + bcrypt; Auth0/Clerk                     | Gained email verification/OAuth/session revocation fast; `JWT_SECRET` now means only the internal-hop secret, and the auth-session table had to be renamed `AuthSession` to avoid colliding with the domain `Session` |
 | **`?as=N` dev impersonation** for the live-chat demo                                                 | Needed two "users" in two browser tabs before real multi-account auth flows were exercised | Spin up two real accounts each demo                             | Fast scripted demo; must be removed before any real deployment                                                                                                                                                        |
 | **Screen-based `navStore` instead of react-router**                                                  | Flows are a linear session state machine, not deep-linkable pages (yet)                    | `react-router-dom`                                              | Simpler state-driven navigation now; will need a router if/when we want shareable URLs / deep links                                                                                                                   |
+| **Per-member `Qa` rows; drop `Session.avg_budget`**                                                   | Each member needs their own session-scoped overrides (cuisines/budget/location), and the group budget is derivable | One shared Qa row per session; keep a stored `avg_budget` column | Members' answers no longer collide, and `occasion`/`time_slot` can be host-only; the averaged budget is computed on demand in the orchestrator instead of persisted (one fewer column to keep in sync)                |
+| **Geocode named locations server-side (Geocodio)**                                                    | Profile `default_address` and session `Qa.location_address` need coordinates for pgvector geo-filtering | Client-side geocoding; store only free-text addresses           | Stored coords always match the stored address and the AI key/geo lookups stay server-side; a geocode miss degrades to null coords rather than blocking the save                                                       |
 | _(template)_ Cut / change / add …                                                                    | what prompted it                                                                           | what else we could have done                                    | what we gained / gave up                                                                                                                                                                                              |
 
 **_Don't forget to keep Issues, Milestones, and the Project Board in sync with this spec — when an issue closes, the spec should reflect what was built._**
