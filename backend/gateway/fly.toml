@@ -1,33 +1,34 @@
-# Fly.io config for the GrubGroup gateway (Node/Express/Socket.IO via Bun).
-# Secrets (DATABASE_URL, BETTER_AUTH_SECRET, JWT_SECRET, GOOGLE_*, GEOCODIO_API)
-# are set with `fly secrets set`, NEVER in this file. Non-secret runtime env
-# (CORS_ORIGIN, BETTER_AUTH_URL, AI_SERVICE_URL, CROSS_SITE_COOKIES) may go under
-# [env] or also be set as secrets.
-app = "grubgroup-gateway"
-primary_region = "sea"
+# fly.toml app configuration file generated for grubgroup-gateway on 2026-07-23T02:48:21-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'grubgroup-gateway'
+primary_region = 'sjc'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "4000"
-  # These are convenience defaults; override per-environment with `fly secrets`
-  # or edit here. CROSS_SITE_COOKIES must be "true" in prod (frontend on Render,
-  # gateway on Fly = cross-site cookie).
-  CROSS_SITE_COOKIES = "true"
+  CROSS_SITE_COOKIES = 'true'
+  PORT = '4000'
 
 [http_service]
   internal_port = 4000
   force_https = true
-  # Single machine at launch: no Socket.IO sticky-session concern. The Postgres
-  # adapter still covers the brief old+new overlap during a redeploy.
-  auto_stop_machines = false
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    method = "GET"
-    path = "/health"
-    interval = "15s"
-    timeout = "3s"
-    grace_period = "10s"
+    interval = '15s'
+    timeout = '3s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

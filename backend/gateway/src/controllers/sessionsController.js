@@ -194,6 +194,8 @@ const createSession = async (req, res, next) => {
     occasion,
     scheduled_for,
     location_address,
+    location_lat,
+    location_lon,
   } = req.body ?? {};
 
   if (!Number.isInteger(time_limit) || time_limit <= 0) {
@@ -211,6 +213,13 @@ const createSession = async (req, res, next) => {
     typeof location_address !== 'string'
   ) {
     return res.status(400).json({ error: 'location_address must be a string.' });
+  }
+  const clientLatValid =
+    location_lat === undefined || location_lat === null || typeof location_lat === 'number';
+  const clientLonValid =
+    location_lon === undefined || location_lon === null || typeof location_lon === 'number';
+  if (!clientLatValid || !clientLonValid) {
+    return res.status(400).json({ error: 'location_lat/location_lon must be numbers.' });
   }
   // scheduled_for: accept an ISO date string (custom time) or omit / "now"
   // (the host chose "Now") -> stamp the current time.
@@ -244,13 +253,21 @@ const createSession = async (req, res, next) => {
       memberIds = [...new Set([req.user.id, ...group.members.map((m) => m.user_id)])];
     }
 
-    // Geocode the host's chosen location so the orchestrator has the primary
-    // anchor coords. A miss/outage degrades to null coords (address text kept).
-    // Done BEFORE the transaction (it's an external HTTP call) so the tx stays
+    // Resolve the host's primary-anchor coords for the orchestrator. When the
+    // client already sent coordinates (a picked Places suggestion), trust them
+    // and skip the geocode — they match exactly what the host saw. Otherwise
+    // geocode the typed address; a miss/outage degrades to null coords (address
+    // text kept). Done BEFORE the transaction (external HTTP) so the tx stays
     // short and never holds a DB lock across the network round-trip.
     const hasAddress =
       typeof location_address === 'string' && location_address.trim();
-    const coords = hasAddress ? await geocode(location_address) : null;
+    const hasClientCoords =
+      typeof location_lat === 'number' && typeof location_lon === 'number';
+    const coords = hasClientCoords
+      ? { lat: location_lat, lon: location_lon }
+      : hasAddress
+        ? await geocode(location_address)
+        : null;
     const seedHostQa = hasAddress || (typeof occasion === 'string' && occasion.trim());
 
     // Create the session (+ seeded members) and seed the HOST's Qa row with the
