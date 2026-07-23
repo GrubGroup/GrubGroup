@@ -1,8 +1,49 @@
 // Socket.IO server setup and session-authenticated identity handshake.
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/postgres-adapter';
+import pg from 'pg';
 import { config } from '../config/index.js';
 import { auth } from '../lib/auth.js';
 import { registerSessionHandlers } from './sessionHandlers.js';
+
+/**
+ * Wire a Postgres adapter so room broadcasts (chat/typing/session) fan out
+ * across every gateway machine — Socket.IO's default in-memory rooms only reach
+ * clients on the emitting process, which splits chat during a redeploy overlap
+ * (or any scale-out). Uses LISTEN/NOTIFY + a `socket_io_attachments` table.
+ *
+ * Best-effort: if the pool can't be created we log and skip the adapter rather
+ * than crash the server — single-machine still works without it.
+ * @param {import('socket.io').Server} io
+ */
+const attachPostgresAdapter = async (io) => {
+  if (!config.DATABASE_URL) return;
+  // Low `max`: this pool is separate from Prisma's and Render's connection cap
+  // is shared. rejectUnauthorized:false — Render's PG cert chain isn't in the
+  // default CA bundle. This pool is adapter-only (not the app's Prisma client).
+  const pool = new pg.Pool({
+    connectionString: config.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+  });
+  pool.on('error', (err) => console.error('socket.io pg pool error', err));
+  try {
+    // Adapter-owned infra table (payloads too large for a NOTIFY message).
+    // Intentionally NOT a Prisma migration — it's transient adapter state, not
+    // part of the domain schema. Idempotent, safe to run on every boot.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS socket_io_attachments (
+        id          bigserial UNIQUE,
+        created_at  timestamptz DEFAULT NOW(),
+        payload     bytea
+      );
+    `);
+    io.adapter(createAdapter(pool));
+    console.log('Socket.IO Postgres adapter attached');
+  } catch (err) {
+    console.error('Failed to attach Socket.IO Postgres adapter; continuing single-node', err);
+  }
+};
 
 /**
  * Attach a Socket.IO server to the given HTTP server and wire chat handlers.
@@ -13,6 +54,9 @@ const createSocketServer = (httpServer) => {
   const io = new Server(httpServer, {
     cors: { origin: config.CORS_ORIGIN, credentials: true },
   });
+
+  // Fan broadcasts across machines (fire-and-forget; single-node works meanwhile).
+  void attachPostgresAdapter(io);
 
   // Authenticate every connection from the Better Auth session cookie, which the
   // browser sends on the handshake (client connects with withCredentials). The

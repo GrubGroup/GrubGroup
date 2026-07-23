@@ -63,6 +63,19 @@ const auth = betterAuth({
   advanced: {
     // The whole domain schema uses Int autoincrement PKs; let Postgres generate them.
     database: { generateId: 'serial' },
+
+    // Cross-site cookies (prod only, gated by CROSS_SITE_COOKIES). When the
+    // frontend and gateway are on DIFFERENT domains (Render ↔ Fly), the browser
+    // only sends the httpOnly session cookie cross-site if it's SameSite=None;
+    // Secure. `partitioned` (CHIPS) is increasingly required for third-party
+    // cookies in Chrome/Safari. Off locally so http dev keeps first-party Lax
+    // via the Vite proxy (Secure cookies are rejected over http). NOT
+    // crossSubDomainCookies — that needs a shared parent domain, which
+    // onrender.com ↔ fly.dev don't share.
+    ...(config.crossSiteCookies && {
+      useSecureCookies: true,
+      defaultCookieAttributes: { sameSite: 'none', secure: true, partitioned: true },
+    }),
   },
 
   user: {
